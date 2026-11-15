@@ -1,0 +1,17 @@
+{
+  "name": "zgestor",
+  "version": "1.0.0",
+  "description": "ZGestor Contábil - Sistema de Gestão de Escritório e Portal do Cliente",
+  "main": "index.html",
+  "scripts": {
+    "test": "node teste-zgestor-local.cjs ."
+  },
+  "keywords": [
+    "contabilidade",
+    "gestao-fiscal",
+    "portal-do-cliente"
+  ],
+  "author": "Zioto Contabilidade",
+  "license": "Private"
+}
+
