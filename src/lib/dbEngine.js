@@ -415,7 +415,11 @@
         const raw = localStorage.getItem(SUPABASE_CFG_KEY);
         if (raw) return JSON.parse(raw);
       } catch (e) {}
-      return { url: '', anonKey: '', autoSync: true };
+      return { 
+        url: 'https://ccosuhmulzqrpuaogmuk.supabase.co', 
+        anonKey: 'sb_publishable_zV9nC4mVQM44vapd4NTjOQ_O1ORCusU', 
+        autoSync: true 
+      };
     }
 
     saveSupabaseConfig(url, anonKey, autoSync = true) {
