@@ -2080,7 +2080,10 @@
         responsavel_nome: respNome,
         status: dados.status || 'PENDENTE',
         resposta_contabilidade: dados.resposta_contabilidade || '',
-        tarefa_vinculada_id: tarefaIdCriada
+        tarefa_vinculada_id: tarefaIdCriada,
+        anexo_nome: dados.anexo_nome || null,
+        anexo_tamanho: dados.anexo_tamanho || null,
+        anexo_base64: dados.anexo_base64 || null
       };
 
       this.data.central_cliente_registros.unshift(novo);

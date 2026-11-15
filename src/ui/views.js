@@ -422,7 +422,8 @@ window.ZGestorViews = {
               </button>
             </div>
 
-            <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[650px] text-left border-collapse">
               <thead>
                 <tr class="border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                   <th class="py-2 pr-2">Cliente</th>
@@ -487,6 +488,7 @@ window.ZGestorViews = {
                   `}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>
@@ -1057,8 +1059,8 @@ window.ZGestorViews = {
                     </div>
 
                     ${!isColapsado ? `
-                      <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse text-xs">
+                      <div class="overflow-x-auto w-full">
+                        <table class="w-full min-w-[880px] text-left border-collapse text-xs">
                           <thead>
                             <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 select-none">
                               <th class="py-2.5 px-3 w-[150px]">Status</th>
@@ -1477,8 +1479,8 @@ window.ZGestorViews = {
             </div>
 
             <!-- MATRIZ ANUAL JAN A DEZ POR EMPRESA -->
-            <div class="overflow-x-auto">
-              <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[920px] text-left border-collapse">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-600">
                     <th class="py-2.5 px-2.5 w-[18%]">Empresa Cliente & Regime</th>
@@ -1621,7 +1623,8 @@ window.ZGestorViews = {
               </div>
             </div>
 
-            <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[700px] text-left border-collapse">
               <thead>
                 <tr class="bg-white border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                   <th class="py-2.5 px-3 w-[12%]">Competência</th>
@@ -1664,6 +1667,7 @@ window.ZGestorViews = {
                 `}
               </tbody>
             </table>
+            </div>
           </div>
         ` : `
           <!-- SUB-ABA 3: CONTROLE DE ENVIO DE GUIAS DE IMPOSTOS (COM SEPARAÇÃO PRÓ-LABORE X FUNCIONÁRIOS FGTS) -->
@@ -1730,7 +1734,8 @@ window.ZGestorViews = {
               </span>
             </div>
 
-            <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[700px] text-left border-collapse">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                   <th class="py-3 px-3 w-[22%]">Cliente & Enquadramento DP</th>
@@ -1809,6 +1814,7 @@ window.ZGestorViews = {
                 `}
               </tbody>
             </table>
+            </div>
           </div>
         `}
       </div>
@@ -1934,7 +1940,8 @@ window.ZGestorViews = {
               <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">${guiasMes.length} guia(s)</span>
             </div>
 
-            <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[780px] text-left border-collapse">
               <thead>
                 <tr class="border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500 bg-white">
                   <th class="py-3 px-3 w-[18%]">Cliente</th>
@@ -2022,6 +2029,7 @@ window.ZGestorViews = {
                 `}
               </tbody>
             </table>
+            </div>
           </div>
         ` : `
           <!-- ABA 2: CADASTROS DE PARCELAMENTOS (VERIFICAR E EDITAR PRÉ-CADASTRADOS COM 2ª CONFIRMAÇÃO) -->
@@ -2038,7 +2046,8 @@ window.ZGestorViews = {
               </button>
             </div>
 
-            <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[750px] text-left border-collapse">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                   <th class="py-3 px-3 w-[22%]">Empresa Cliente</th>
@@ -2090,6 +2099,7 @@ window.ZGestorViews = {
     }).join('')}
               </tbody>
             </table>
+            </div>
           </div>
         `}
       </div>
@@ -2172,7 +2182,7 @@ window.ZGestorViews = {
         </div>
 
         <!-- KPIs de CNDs -->
-        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
           <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
             <span class="text-[11px] font-bold uppercase text-slate-500">Total Monitoradas</span>
             <div class="text-2xl font-extrabold text-slate-900 mt-1">${todasCNDs.length}</div>
@@ -2229,7 +2239,8 @@ window.ZGestorViews = {
 
         <!-- Tabela de CNDs (Estruturada por Esferas e Preparada para API) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <table class="w-full text-left border-collapse">
+          <div class="overflow-x-auto w-full">
+            <table class="w-full min-w-[780px] text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                 <th class="py-3 px-3 w-[20%]">Empresa Cliente</th>
@@ -2330,6 +2341,7 @@ window.ZGestorViews = {
               `}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     `;
@@ -2616,7 +2628,8 @@ window.ZGestorViews = {
 
             <!-- Tabela de Arquivos Disponibilizados no Portal -->
             <div class="border border-slate-200 rounded-2xl overflow-hidden">
-              <table class="w-full text-left border-collapse">
+              <div class="overflow-x-auto w-full">
+                <table class="w-full min-w-[750px] text-left border-collapse">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                     <th class="py-3 px-3 w-[20%]">Pasta do Portal</th>
@@ -2634,11 +2647,23 @@ window.ZGestorViews = {
                         <div class="text-[10px] text-slate-400 mt-1">Tam: ${arq.tamanho || '180 KB'}</div>
                       </td>
                       <td class="py-3 px-3">
-                        <div class="font-bold text-slate-900 flex items-center gap-1.5">
-                          <i data-lucide="file-text" class="w-3.5 h-3.5 text-indigo-600 shrink-0"></i>
-                          <span>${arq.titulo}</span>
-                        </div>
-                        <div class="text-[11px] font-mono text-indigo-700 mt-0.5">${arq.nome_arquivo}</div>
+                        ${(() => {
+                          const meta = (window.ZGestorApp && window.ZGestorApp.obterIconeEBadgeArquivo)
+                            ? window.ZGestorApp.obterIconeEBadgeArquivo(arq.nome_arquivo)
+                            : { icone: 'file-text', corTexto: 'text-indigo-600', corBg: 'bg-indigo-50', corBorder: 'border-indigo-200', tipoLabel: 'DOC' };
+                          return `
+                            <div class="font-bold text-slate-900 flex items-center gap-1.5">
+                              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${meta.corBg} ${meta.corTexto} border ${meta.corBorder}">
+                                ${meta.tipoLabel}
+                              </span>
+                              <span>${arq.titulo}</span>
+                            </div>
+                            <div class="text-[11px] font-mono text-slate-600 mt-0.5 flex items-center gap-1">
+                              <i data-lucide="${meta.icone}" class="w-3.5 h-3.5 ${meta.corTexto} shrink-0"></i>
+                              <span>${arq.nome_arquivo}</span>
+                            </div>
+                          `;
+                        })()}
                         ${arq.observacoes ? `<div class="text-[11px] text-slate-500 mt-0.5">${arq.observacoes}</div>` : ''}
                       </td>
                       <td class="py-3 px-2.5">
@@ -2696,6 +2721,7 @@ window.ZGestorViews = {
                   `}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         ` : subTabPortal === 'solicitacoes_portal' ? `
@@ -2717,7 +2743,8 @@ window.ZGestorViews = {
               </div>
             </div>
 
-            <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[720px] text-left border-collapse">
               <thead>
                 <tr class="bg-white border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                   <th class="py-3 px-3 w-[13%]">Data & Origem</th>
@@ -2742,6 +2769,18 @@ window.ZGestorViews = {
                     <td class="py-3 px-3">
                       <div class="font-bold text-slate-900">${this.escapeHtml(r.titulo)}</div>
                       <div class="text-slate-600 mt-0.5">${this.escapeHtml(r.descricao || '')}</div>
+                      ${r.anexo_nome ? `
+                        <div class="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onclick="ZGestorApp.baixarAnexoSolicitacao('${r.id}')"
+                            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold cursor-pointer transition">
+                            <i data-lucide="paperclip" class="w-3.5 h-3.5 text-indigo-600"></i>
+                            <span>Anexo: ${this.escapeHtml(r.anexo_nome)}</span>
+                            <span class="text-[10px] text-indigo-500 font-normal">(${r.anexo_tamanho || 'Anexo'})</span>
+                          </button>
+                        </div>
+                      ` : ''}
                       ${r.resposta_contabilidade ? `
                         <div class="mt-2 p-2 rounded-xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 text-[11px]">
                           <strong class="block text-[10px] uppercase text-emerald-800">↪ Resposta / Retorno da Contabilidade:</strong>
@@ -2780,6 +2819,7 @@ window.ZGestorViews = {
                 `}
               </tbody>
             </table>
+            </div>
           </div>
         ` : `
           <!-- SUB-ABA 3: VISÃO 360° DA EMPRESA (FICHA CADASTRAL, PRÓ-LABORE x FUNCIONÁRIOS, PARCELAMENTOS, CNDs E HONORÁRIOS) -->
@@ -2968,9 +3008,10 @@ window.ZGestorViews = {
           </div>
         </div>
 
-        <!-- Lista de Empresas (Compacta sem barra de rolagem horizontal) -->
+        <!-- Lista de Empresas (Responsiva com rolagem horizontal) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <table class="w-full text-left border-collapse">
+          <div class="overflow-x-auto w-full">
+            <table class="w-full min-w-[800px] text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                 <th class="py-3 px-3 ${canSeeHon ? 'w-[18%]' : 'w-[20%]'}">Cód / Empresa</th>
@@ -3068,6 +3109,7 @@ window.ZGestorViews = {
     }).join('')}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     `;
@@ -3400,9 +3442,10 @@ window.ZGestorViews = {
           </div>
         </div>
 
-        <!-- Tabela Principal de Honorários Compacta (Sem rolagem lateral) -->
+        <!-- Tabela Principal de Honorários (Responsiva com rolagem horizontal) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <table class="w-full text-left border-collapse">
+          <div class="overflow-x-auto w-full">
+            <table class="w-full min-w-[820px] text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                 <th class="py-3 px-3 w-[20%]">Cliente & Vencimento</th>
@@ -3490,6 +3533,7 @@ window.ZGestorViews = {
     }).join('')}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     `;
@@ -3601,8 +3645,8 @@ window.ZGestorViews = {
               </div>
             </div>
 
-            <div class="overflow-x-auto">
-              <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[650px] text-left border-collapse">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                     <th class="py-2.5 px-3">Colaborador</th>
@@ -3717,8 +3761,8 @@ window.ZGestorViews = {
               </button>
             </div>
 
-            <div class="overflow-x-auto">
-              <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[650px] text-left border-collapse">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                     <th class="py-2.5 px-3">Cliente / Contato</th>
@@ -3814,8 +3858,8 @@ window.ZGestorViews = {
               </button>
             </div>
 
-            <div class="overflow-x-auto">
-              <table class="w-full text-left border-collapse">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[650px] text-left border-collapse">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                     <th class="py-2.5 px-3">Destinatário</th>
@@ -4097,6 +4141,53 @@ window.ZGestorViews = {
         </div>
 
         <form id="form-cadastro-escritorio" onsubmit="ZGestorApp.salvarDadosEscritorio(event)" class="space-y-5">
+          <!-- CARD 0: LOGOTIPO OFICIAL DO ESCRITÓRIO -->
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div class="flex items-center gap-2.5">
+                <div class="p-2 rounded-xl bg-indigo-50 text-indigo-700">
+                  <i data-lucide="image" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h2 class="text-sm font-bold text-slate-900">Logotipo Oficial do Escritório</h2>
+                  <p class="text-[11px] text-slate-500">Exibido na tela de login, cabeçalhos do sistema e nos Recibos de Honorários em PDF</p>
+                </div>
+              </div>
+              ${esc.logo_customizada ? `
+                <span class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200">
+                  Logotipo Personalizado Ativo
+                </span>
+              ` : `
+                <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold">
+                  Logo Padrão ZIOTO
+                </span>
+              `}
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-center gap-4">
+              <div id="preview-box-logo" class="w-36 h-24 rounded-2xl bg-[#012147] border border-slate-300 flex items-center justify-center p-2 overflow-hidden shrink-0 shadow-sm">
+                <img src="${esc.logo_customizada || './assets/logo-zioto.png'}" class="max-w-full max-h-full object-contain" alt="Logo Escritório" />
+              </div>
+              <div class="space-y-2 flex-1 text-xs">
+                <p class="text-slate-600">
+                  Formatos aceitos: <strong>PNG, JPG, JPEG, SVG, WebP</strong> (até <strong>15 MB</strong>). Recomenda-se imagem com fundo transparente ou escuro para melhor legibilidade.
+                </p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <label class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition">
+                    <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                    <span>${esc.logo_customizada ? 'Trocar Logotipo' : 'Enviar Novo Logotipo'}</span>
+                    <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" onchange="ZGestorApp.handleLogoUpload(event)" class="hidden" />
+                  </label>
+                  ${esc.logo_customizada ? `
+                    <button type="button" onclick="ZGestorApp.removerLogoEscritorio()" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs border border-rose-200 transition">
+                      Restaurar Padrão
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- CARD 1: DADOS CADASTRAIS DO PRÓPRIO ESCRITÓRIO -->
           <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div class="flex items-center gap-2.5 pb-3 border-b border-slate-100">
@@ -4264,7 +4355,7 @@ window.ZGestorViews = {
                     <div class="space-y-1.5 flex-1">
                       <label class="block px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold text-center border border-indigo-200 cursor-pointer transition">
                         <span>${pPrinc.qrcode_img ? 'Trocar Imagem' : 'Anexar Imagem'}</span>
-                        <input type="file" accept="image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_principal', event)" class="hidden" />
+                        <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_principal', event)" class="hidden" />
                       </label>
                       ${pPrinc.qrcode_img ? `
                         <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_principal')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition">
@@ -4328,7 +4419,7 @@ window.ZGestorViews = {
                     <div class="space-y-1.5 flex-1">
                       <label class="block px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold text-center border border-indigo-200 cursor-pointer transition">
                         <span>${pSec.qrcode_img ? 'Trocar Imagem' : 'Anexar Imagem'}</span>
-                        <input type="file" accept="image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_secundario', event)" class="hidden" />
+                        <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_secundario', event)" class="hidden" />
                       </label>
                       ${pSec.qrcode_img ? `
                         <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_secundario')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition">
@@ -4392,7 +4483,7 @@ window.ZGestorViews = {
                     <div class="space-y-1.5 flex-1">
                       <label class="block px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold text-center border border-indigo-200 cursor-pointer transition">
                         <span>${pAut.qrcode_img ? 'Trocar Imagem' : 'Anexar Imagem'}</span>
-                        <input type="file" accept="image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_autonomo', event)" class="hidden" />
+                        <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_autonomo', event)" class="hidden" />
                       </label>
                       ${pAut.qrcode_img ? `
                         <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_autonomo')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition">

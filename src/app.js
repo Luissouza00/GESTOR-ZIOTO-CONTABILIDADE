@@ -108,6 +108,7 @@ window.ZGestorApp = {
   },
 
   navigate(tab) {
+    this.fecharMenuMobile();
     const db = window.zgestorDB;
     const user = db.getCurrentUser();
 
@@ -407,6 +408,102 @@ window.ZGestorApp = {
     this.renderSidebar();
   },
 
+  abrirMenuMobile() {
+    const sb = document.getElementById('main-sidebar');
+    const backdrop = document.getElementById('mobile-sidebar-backdrop');
+    if (sb) {
+      sb.classList.remove('-translate-x-full');
+      sb.classList.add('translate-x-0');
+    }
+    if (backdrop) backdrop.classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+  },
+
+  fecharMenuMobile() {
+    const sb = document.getElementById('main-sidebar');
+    const backdrop = document.getElementById('mobile-sidebar-backdrop');
+    if (sb) {
+      sb.classList.add('-translate-x-full');
+      sb.classList.remove('translate-x-0');
+    }
+    if (backdrop) backdrop.classList.add('hidden');
+  },
+
+  // Validação centralizada de arquivos de upload (extensões e limite de 15 MB)
+  validarArquivoUpload(file, formatosPermitidos, maxMb = 15) {
+    if (!file) return { valido: false, erro: 'Nenhum arquivo selecionado.' };
+    const maxBytes = maxMb * 1024 * 1024;
+    if (file.size > maxBytes) {
+      const mb = (file.size / (1024 * 1024)).toFixed(1);
+      return {
+        valido: false,
+        erro: `O arquivo "${file.name}" possui ${mb} MB e ultrapassa o limite máximo permitido de ${maxMb} MB.`
+      };
+    }
+    const ext = '.' + (file.name || '').split('.').pop().toLowerCase();
+    const permitidos = formatosPermitidos.map(f => f.toLowerCase());
+    if (!permitidos.includes(ext)) {
+      return {
+        valido: false,
+        erro: `Formato de arquivo "${ext}" não suportado. Formatos aceitos: ${formatosPermitidos.join(', ')}.`
+      };
+    }
+    return { valido: true, extensao: ext };
+  },
+
+  // Identificador visual e ícones para arquivos por extensão
+  obterIconeEBadgeArquivo(nomeOuExt) {
+    const ext = (nomeOuExt || '').split('.').pop().toLowerCase();
+    if (ext === 'pdf') {
+      return {
+        icone: 'file-text',
+        corTexto: 'text-rose-600',
+        corBg: 'bg-rose-50',
+        corBorder: 'border-rose-200',
+        tipoLabel: 'PDF',
+        mime: 'application/pdf'
+      };
+    }
+    if (ext === 'xml') {
+      return {
+        icone: 'file-code',
+        corTexto: 'text-amber-600',
+        corBg: 'bg-amber-50',
+        corBorder: 'border-amber-200',
+        tipoLabel: 'XML',
+        mime: 'application/xml'
+      };
+    }
+    if (['xlsx', 'xls', 'csv'].includes(ext)) {
+      return {
+        icone: 'file-spreadsheet',
+        corTexto: 'text-emerald-600',
+        corBg: 'bg-emerald-50',
+        corBorder: 'border-emerald-200',
+        tipoLabel: ext.toUpperCase(),
+        mime: 'application/vnd.ms-excel'
+      };
+    }
+    if (['png', 'jpg', 'jpeg', 'webp', 'svg'].includes(ext)) {
+      return {
+        icone: 'image',
+        corTexto: 'text-blue-600',
+        corBg: 'bg-blue-50',
+        corBorder: 'border-blue-200',
+        tipoLabel: ext.toUpperCase(),
+        mime: 'image/' + (ext === 'jpg' ? 'jpeg' : ext)
+      };
+    }
+    return {
+      icone: 'file',
+      corTexto: 'text-slate-600',
+      corBg: 'bg-slate-50',
+      corBorder: 'border-slate-200',
+      tipoLabel: ext ? ext.toUpperCase() : 'DOC',
+      mime: 'application/octet-stream'
+    };
+  },
+
   renderSidebar() {
     const sb = document.getElementById('sidebar-nav');
     if (!sb) return;
@@ -602,7 +699,14 @@ window.ZGestorApp = {
       hdr.innerHTML = `
         <div class="flex items-center justify-between w-full">
           <!-- Logo Oficial & Título da Central do Cliente -->
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onclick="ZGestorApp.abrirMenuMobile()"
+              class="md:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 hover:text-indigo-600 border border-slate-200 transition shrink-0 cursor-pointer"
+              title="Abrir Menu">
+              <i data-lucide="menu" class="w-5 h-5"></i>
+            </button>
             <div class="w-10 h-10 rounded-xl bg-[#012147] border border-slate-700/80 p-1 flex items-center justify-center shrink-0 shadow-sm">
               <img
                 src="./assets/icone-zioto.png"
@@ -689,7 +793,14 @@ window.ZGestorApp = {
 
     hdr.innerHTML = `
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 w-full">
-        <div class="flex flex-wrap items-center gap-2.5">
+        <div class="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          <button
+            type="button"
+            onclick="ZGestorApp.abrirMenuMobile()"
+            class="md:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 hover:text-indigo-600 border border-slate-200 transition shrink-0 cursor-pointer"
+            title="Abrir Menu">
+            <i data-lucide="menu" class="w-5 h-5"></i>
+          </button>
           <!-- SELETOR DE COMPETÊNCIA EM FORMATO DE CALENDÁRIO DE MESES -->
           <div id="competencia-calendar-wrapper" class="relative flex items-center gap-1 bg-indigo-50 p-1 rounded-xl border border-indigo-200 shadow-xs">
             <button
@@ -3075,17 +3186,17 @@ window.ZGestorApp = {
               </div>
             </div>
 
-            <!-- ÁREA DE ANEXAR CERTIDÃO EM PDF -->
+            <!-- ÁREA DE ANEXAR CERTIDÃO -->
             <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
               <label class="block font-bold text-slate-800 mb-1 flex items-center justify-between">
-                <span>Anexar Certidão em PDF</span>
-                <span class="text-[11px] font-normal text-slate-500">Arquivo original emitido</span>
+                <span>Anexo da Certidão (PDF, XML, Planilha ou Imagem)</span>
+                <span class="text-[11px] font-semibold text-indigo-700">Até 15 MB</span>
               </label>
               <div class="flex items-center gap-2 mt-1.5">
-                <input id="f-cnd-pdf-file" type="file" accept=".pdf,application/pdf" onchange="ZGestorApp.handleCNDPDFSelected(event)" class="text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" />
+                <input id="f-cnd-pdf-file" type="file" accept=".pdf,.xml,.xlsx,.xls,.csv,.png,.jpg,.jpeg" onchange="ZGestorApp.handleCNDPDFSelected(event)" class="text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" />
               </div>
               <div id="f-cnd-pdf-status" class="mt-1 text-[11px] text-slate-600">
-                ${c.arquivo_pdf_nome ? `<span class="text-emerald-700 font-semibold">✓ Arquivo atual: ${c.arquivo_pdf_nome}</span>` : '<span class="text-slate-400">Nenhum PDF anexado ainda</span>'}
+                ${c.arquivo_pdf_nome ? `<span class="text-emerald-700 font-semibold">✓ Arquivo atual: ${c.arquivo_pdf_nome}</span>` : '<span class="text-slate-400">Nenhum arquivo anexado ainda</span>'}
               </div>
               <input type="hidden" id="f-cnd-pdf-nome" value="${c.arquivo_pdf_nome || ''}" />
               <input type="hidden" id="f-cnd-pdf-base64" value="${c.arquivo_pdf_base64 || ''}" />
@@ -3104,6 +3215,13 @@ window.ZGestorApp = {
   handleCNDPDFSelected(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+    const permitidos = ['.pdf', '.xml', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg'];
+    const val = this.validarArquivoUpload(file, permitidos, 15);
+    if (!val.valido) {
+      this.showToast(val.erro, 'error');
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (evt) => {
       const b64 = evt.target.result;
@@ -3112,7 +3230,8 @@ window.ZGestorApp = {
       const statusSpan = document.getElementById('f-cnd-pdf-status');
       if (nomeInput) nomeInput.value = file.name;
       if (b64Input) b64Input.value = b64;
-      if (statusSpan) statusSpan.innerHTML = `<span class="text-emerald-700 font-bold">✓ PDF Selecionado: ${file.name} (${(file.size / 1024).toFixed(1)} KB)</span>`;
+      if (statusSpan) statusSpan.innerHTML = `<span class="text-emerald-700 font-bold">✓ Arquivo Selecionado: ${file.name} (${(file.size / 1024).toFixed(1)} KB)</span>`;
+      this.showToast(`Arquivo "${file.name}" anexado à CND com sucesso!`, 'info');
     };
     reader.readAsDataURL(file);
   },
@@ -3318,13 +3437,13 @@ window.ZGestorApp = {
             </div>
 
             <div class="p-4 rounded-xl border-2 border-dashed border-indigo-300 bg-indigo-50/40 text-center">
-              <input id="f-cnd-modal-file" type="file" accept=".pdf,application/pdf" onchange="ZGestorApp.handleCNDModalPDFSelected(event)" class="hidden" />
+              <input id="f-cnd-modal-file" type="file" accept=".pdf,.xml,.xlsx,.xls,.csv,.png,.jpg,.jpeg" onchange="ZGestorApp.handleCNDModalPDFSelected(event)" class="hidden" />
               <label for="f-cnd-modal-file" class="cursor-pointer block">
                 <div class="w-12 h-12 mx-auto rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-lg mb-2">
                   📎
                 </div>
-                <span class="font-bold text-indigo-950 block text-sm">Clique para selecionar o arquivo PDF da Certidão</span>
-                <span class="text-slate-500 text-[11px] block mt-0.5">Formatos suportados: PDF oficial do órgão emissor</span>
+                <span class="font-bold text-indigo-950 block text-sm">Clique para selecionar o arquivo da Certidão</span>
+                <span class="text-slate-500 text-[11px] block mt-0.5">Formatos suportados: PDF, XML, Planilha ou Imagem (até 15 MB)</span>
               </label>
               <div id="cnd-modal-pdf-preview" class="mt-2.5 font-bold text-xs text-indigo-900">
                 ${cnd.arquivo_pdf_nome ? `📄 Arquivo Atual: ${cnd.arquivo_pdf_nome}` : 'Nenhum novo arquivo selecionado'}
@@ -3361,6 +3480,13 @@ window.ZGestorApp = {
   handleCNDModalPDFSelected(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+    const permitidos = ['.pdf', '.xml', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg'];
+    const val = this.validarArquivoUpload(file, permitidos, 15);
+    if (!val.valido) {
+      this.showToast(val.erro, 'error');
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (evt) => {
       this.state.cndAnexoTemp = {
@@ -3369,8 +3495,9 @@ window.ZGestorApp = {
       };
       const preview = document.getElementById('cnd-modal-pdf-preview');
       if (preview) {
-        preview.innerHTML = `<span class="text-emerald-700 font-bold">✓ PDF Selecionado: ${file.name} (${(file.size / 1024).toFixed(1)} KB)</span>`;
+        preview.innerHTML = `<span class="text-emerald-700 font-bold">✓ Arquivo Selecionado: ${file.name} (${(file.size / 1024).toFixed(1)} KB)</span>`;
       }
+      this.showToast(`Arquivo "${file.name}" carregado com sucesso!`, 'info');
     };
     reader.readAsDataURL(file);
   },
@@ -3437,22 +3564,55 @@ window.ZGestorApp = {
             </div>
           </div>
 
-          <div class="flex items-center justify-between pt-4 mt-4 border-t border-slate-200">
-            <span class="text-xs text-slate-500">Arquivo pronto para download ou impressão</span>
-            <div class="flex gap-2">
-              <button type="button" onclick="ZGestorApp.baixarPDFCND('${cnd.id}')" class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer">
-                <span>📥 Baixar PDF</span>
+          <div class="flex flex-col-reverse sm:flex-row items-center justify-between gap-2.5 pt-4 mt-4 border-t border-slate-200">
+            <span class="text-xs text-slate-500">Arquivo pronto para download ou visualização</span>
+            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+              <button type="button" onclick="ZGestorApp.visualizarPDFCNDNavegador('${cnd.id}')" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center gap-1.5 border border-indigo-200 cursor-pointer">
+                <i data-lucide="eye" class="w-4 h-4"></i> Visualizar no Navegador
               </button>
-              <button type="button" onclick="window.print()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer">
-                🖨️ Imprimir
+              <button type="button" onclick="ZGestorApp.baixarPDFCND('${cnd.id}')" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer">
+                <i data-lucide="download" class="w-4 h-4"></i> Baixar Arquivo
               </button>
-              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer">Fechar</button>
+              <button type="button" onclick="ZGestorApp.closeModal()" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer">Fechar</button>
             </div>
           </div>
         </div>
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+  },
+
+  visualizarPDFCNDNavegador(cndId) {
+    const db = window.zgestorDB;
+    const cnd = (db.data.cnds || []).find(c => c.id === cndId);
+    if (!cnd || !cnd.arquivo_pdf_base64) {
+      this.showToast('Nenhum arquivo digital disponível para pré-visualização.', 'warning');
+      return;
+    }
+    try {
+      const parts = cnd.arquivo_pdf_base64.split(';base64,');
+      let contentType = 'application/pdf';
+      if (parts[0] && parts[0].includes(':')) {
+        contentType = parts[0].split(':')[1];
+      }
+      const b64Data = parts[1] || '';
+      const byteCharacters = atob(b64Data);
+      const byteArrays = [];
+      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+        const slice = byteCharacters.slice(offset, offset + 512);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+          byteNumbers[i] = slice.charCodeAt(i);
+        }
+        byteArrays.push(new Uint8Array(byteNumbers));
+      }
+      const blob = new Blob(byteArrays, { type: contentType });
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      this.showToast('Visualização da certidão aberta em nova aba!', 'info');
+    } catch (e) {
+      window.open(cnd.arquivo_pdf_base64, '_blank');
+    }
   },
 
   baixarPDFCND(cndId) {
@@ -3533,14 +3693,18 @@ window.ZGestorApp = {
             </div>
 
             <div>
-              <label class="block font-bold text-slate-700 mb-1">Selecionar Arquivo do Computador (PDF, Imagem, XML, ZIP...)</label>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block font-bold text-slate-700">Selecionar Arquivo *</label>
+                <span class="text-[10px] text-emerald-700 font-bold">PDF, XML, XLSX, CSV, Imagens (até 15 MB)</span>
+              </div>
               <input
                 type="file"
                 id="f-ap-file-input"
+                accept=".pdf,.xml,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
                 onchange="ZGestorApp.aoSelecionarArquivoInputPortal(this)"
                 class="w-full rounded-xl border border-dashed border-emerald-400 bg-emerald-50/40 px-3 py-2.5 text-xs cursor-pointer"
               />
-              <p class="text-[10px] text-slate-500 mt-1">Ao escolher um arquivo do seu computador, o nome e o tamanho são preenchidos automaticamente.</p>
+              <p class="text-[10px] text-slate-500 mt-1">Ao escolher um arquivo do seu computador ou celular, o nome, extensão e tamanho são preenchidos automaticamente.</p>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -3585,6 +3749,16 @@ window.ZGestorApp = {
   aoSelecionarArquivoInputPortal(input) {
     const file = input && input.files && input.files[0];
     if (!file) return;
+
+    // Validação de formato e tamanho máximo (até 15 MB)
+    const permitidos = ['.pdf', '.xml', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg'];
+    const val = this.validarArquivoUpload(file, permitidos, 15);
+    if (!val.valido) {
+      this.showToast(val.erro, 'error');
+      input.value = '';
+      return;
+    }
+
     const nomeInput = document.getElementById('f-ap-nome-arq');
     const tituloInput = document.getElementById('f-ap-titulo');
     if (nomeInput) nomeInput.value = file.name;
@@ -3602,6 +3776,7 @@ window.ZGestorApp = {
         tipo_mime: file.type || 'application/octet-stream',
         dataUrl: ev.target.result
       };
+      this.showToast(`Arquivo "${file.name}" (${tamanhoStr}) pronto para envio!`, 'info');
     };
     reader.readAsDataURL(file);
   },
@@ -3658,7 +3833,7 @@ window.ZGestorApp = {
 
           <div class="space-y-4 mt-4 text-xs">
             <!-- Dropzone -->
-            <input type="file" id="f-lote-guias-input" multiple accept=".pdf,application/pdf" class="hidden" onchange="ZGestorApp.handleLoteGuiasSelected(this.files)" />
+            <input type="file" id="f-lote-guias-input" multiple accept=".pdf,.xml,.xlsx,.xls,.csv,.png,.jpg,.jpeg" class="hidden" onchange="ZGestorApp.handleLoteGuiasSelected(this.files)" />
             <div
               ondragover="event.preventDefault(); this.classList.add('border-indigo-600', 'bg-indigo-50')"
               ondragleave="this.classList.remove('border-indigo-600', 'bg-indigo-50')"
@@ -3668,9 +3843,9 @@ window.ZGestorApp = {
               <div class="w-12 h-12 mx-auto rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center mb-3 group-hover:scale-105 transition shadow-xs">
                 <i data-lucide="cloud-upload" class="w-6 h-6"></i>
               </div>
-              <strong class="block text-sm font-bold text-slate-800">Arraste múltiplos arquivos PDF aqui ou clique para selecionar</strong>
+              <strong class="block text-sm font-bold text-slate-800">Arraste múltiplos arquivos (.PDF, .XML, Planilhas ou Imagens) aqui ou clique para selecionar</strong>
               <p class="text-slate-500 text-xs mt-1 max-w-md mx-auto">
-                O sistema lê automaticamente o <strong>CNPJ</strong>, o <strong>mês/ano de competência</strong> e o <strong>tipo de guia (DAS, DAE ICMS, DARF, FGTS)</strong> no nome e conteúdo do arquivo, vinculando cada guia diretamente à respectiva empresa.
+                O sistema aceita arquivos até <strong>15 MB</strong> e lê automaticamente o <strong>CNPJ</strong>, o <strong>mês/ano de competência</strong> e o <strong>tipo de guia (DAS, DAE ICMS, DARF, FGTS)</strong> para vincular cada guia à empresa correspondente.
               </p>
             </div>
 
@@ -3743,11 +3918,18 @@ window.ZGestorApp = {
     const db = window.zgestorDB;
     const empresas = db.data.empresas || [];
     const compPadrao = this.state.competencia || (db.data && db.data.competencia_ativa) || '10/2026';
+    const permitidos = ['.pdf', '.xml', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg'];
 
     const fileList = Array.from(files);
     this.state.loteGuiasPendentes = this.state.loteGuiasPendentes || [];
 
     fileList.forEach(file => {
+      const val = this.validarArquivoUpload(file, permitidos, 15);
+      if (!val.valido) {
+        this.showToast(val.erro, 'warning');
+        return;
+      }
+
       const nome = file.name;
       const nomeLower = nome.toLowerCase();
       const kb = Math.max(1, Math.round(file.size / 1024));
@@ -4080,10 +4262,13 @@ window.ZGestorApp = {
             </div>
           </div>
 
-          <div class="flex justify-end gap-2 mt-5 pt-3 border-t border-slate-200 text-xs">
-            <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Fechar</button>
-            <button type="button" onclick="ZGestorApp.baixarConteudoArquivoPortal('${arq.id}')" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow flex items-center gap-1.5">
-              <i data-lucide="download" class="w-4 h-4"></i> Baixar Arquivo Agora
+          <div class="flex flex-col-reverse sm:flex-row justify-end gap-2 mt-5 pt-3 border-t border-slate-200 text-xs">
+            <button type="button" onclick="ZGestorApp.closeModal()" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">Fechar</button>
+            <button type="button" onclick="ZGestorApp.visualizarArquivoNavegador('${arq.id}')" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center gap-1.5 border border-indigo-200 cursor-pointer">
+              <i data-lucide="eye" class="w-4 h-4"></i> Visualizar no Navegador
+            </button>
+            <button type="button" onclick="ZGestorApp.baixarConteudoArquivoPortal('${arq.id}')" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow flex items-center justify-center gap-1.5 cursor-pointer">
+              <i data-lucide="download" class="w-4 h-4"></i> Baixar Arquivo
             </button>
           </div>
         </div>
@@ -4091,6 +4276,54 @@ window.ZGestorApp = {
     `;
     this.renderContentOnly();
     if (window.lucide) window.lucide.createIcons();
+  },
+
+  visualizarArquivoNavegador(arquivoId) {
+    const db = window.zgestorDB;
+    const user = db.getCurrentUser();
+    if (!user) {
+      throw new Error('Acesso negado: sessão obrigatória para visualizar documentos.');
+    }
+    const isSimulacao = Boolean(this.state.modoSimulacaoCliente);
+    const arq = (db.data.portal_arquivos || []).find(a => a.id === arquivoId);
+    if (!arq) return;
+
+    if (user.cargo === 'CLIENTE' && !isSimulacao) {
+      if (arq.empresa_id !== user.empresa_id) {
+        this.showToast('Acesso não autorizado para visualizar documento de outra empresa.', 'error');
+        throw new Error('Acesso não autorizado ao arquivo de outra empresa.');
+      }
+    }
+
+    if (!arq.conteudo_base64) {
+      this.showToast('Conteúdo do arquivo não disponível para pré-visualização no navegador.', 'warning');
+      return;
+    }
+
+    try {
+      const parts = arq.conteudo_base64.split(';base64,');
+      let contentType = 'application/pdf';
+      if (parts[0] && parts[0].includes(':')) {
+        contentType = parts[0].split(':')[1];
+      }
+      const b64Data = parts[1] || '';
+      const byteCharacters = atob(b64Data);
+      const byteArrays = [];
+      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+        const slice = byteCharacters.slice(offset, offset + 512);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+          byteNumbers[i] = slice.charCodeAt(i);
+        }
+        byteArrays.push(new Uint8Array(byteNumbers));
+      }
+      const blob = new Blob(byteArrays, { type: contentType });
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      this.showToast('Visualização aberta em nova aba do navegador!', 'info');
+    } catch (e) {
+      window.open(arq.conteudo_base64, '_blank');
+    }
   },
 
   baixarConteudoArquivoPortal(arquivoId) {
@@ -4151,8 +4384,17 @@ window.ZGestorApp = {
       prazo_desejado: defaultPrazo,
       canal: 'Portal do Cliente',
       status: 'PENDENTE',
-      resposta_contabilidade: ''
+      resposta_contabilidade: '',
+      anexo_nome: null,
+      anexo_tamanho: null,
+      anexo_base64: null
     };
+
+    this.state.solicitacaoAnexoTemp = r.anexo_base64 ? {
+      nome: r.anexo_nome,
+      tamanho: r.anexo_tamanho,
+      base64: r.anexo_base64
+    } : null;
 
     const modal = document.getElementById('modal-root');
     if (!modal) return;
@@ -4224,6 +4466,23 @@ window.ZGestorApp = {
               <textarea id="f-cc-desc" rows="3" required class="w-full rounded-xl border border-slate-300 px-3 py-2" placeholder="Descreva os dados e o que o cliente precisa que a contabilidade providencie...">${escapeHtml(r.descricao || '')}</textarea>
             </div>
 
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block font-bold text-slate-700">Anexo do Chamado / Documento (Opcional)</label>
+                <span class="text-[10px] text-indigo-700 font-bold">PDF, XML, XLSX, CSV, Imagens (até 15 MB)</span>
+              </div>
+              <input
+                type="file"
+                id="f-cc-anexo-file"
+                accept=".pdf,.xml,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
+                onchange="ZGestorApp.handleAnexoSolicitacao(event)"
+                class="w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs cursor-pointer"
+              />
+              <div id="f-cc-anexo-preview" class="text-[11px] text-slate-500 mt-1">
+                ${r.anexo_nome ? `<span class="text-emerald-700 font-bold">✓ Anexo atual: ${escapeHtml(r.anexo_nome)} (${r.anexo_tamanho || ''})</span>` : 'Nenhum arquivo anexado'}
+              </div>
+            </div>
+
             ${!isCliente ? `
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-indigo-50/70 border border-indigo-200">
                 <div>
@@ -4257,9 +4516,9 @@ window.ZGestorApp = {
               </label>
             ` : ''}
 
-            <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
-              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Cancelar</button>
-              <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold shadow">
+            <div class="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-3 border-t border-slate-200">
+              <button type="button" onclick="ZGestorApp.closeModal()" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+              <button type="submit" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold shadow cursor-pointer">
                 Enviar Solicitação para a Contabilidade
               </button>
             </div>
@@ -4273,6 +4532,59 @@ window.ZGestorApp = {
     this.openModalSolicitacaoPortal(empresaId, registroId);
   },
 
+  handleAnexoSolicitacao(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const permitidos = ['.pdf', '.xml', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg'];
+    const val = this.validarArquivoUpload(file, permitidos, 15);
+    if (!val.valido) {
+      this.showToast(val.erro, 'error');
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const b64 = e.target.result;
+      const mb = (file.size / (1024 * 1024)).toFixed(2);
+      const kb = Math.round(file.size / 1024);
+      const tamFormatado = file.size >= 1024 * 1024 ? `${mb} MB` : `${kb} KB`;
+      this.state.solicitacaoAnexoTemp = {
+        nome: file.name,
+        tamanho: tamFormatado,
+        base64: b64
+      };
+      const preview = document.getElementById('f-cc-anexo-preview');
+      if (preview) {
+        preview.innerHTML = `<span class="text-emerald-700 font-bold">✓ Arquivo anexado: ${this.escapeHtml(file.name)} (${tamFormatado})</span>`;
+      }
+      this.showToast(`Arquivo "${file.name}" anexado com sucesso!`, 'success');
+    };
+    reader.readAsDataURL(file);
+  },
+
+  baixarAnexoSolicitacao(registroId) {
+    const db = window.zgestorDB;
+    const r = (db.getRegistrosCentralCliente() || []).find(item => item.id === registroId);
+    if (!r || !r.anexo_base64) {
+      this.showToast('Nenhum anexo disponível para este chamado.', 'warning');
+      return;
+    }
+
+    try {
+      const a = document.createElement('a');
+      a.href = r.anexo_base64;
+      a.download = r.anexo_nome || 'anexo_solicitacao';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      this.showToast(`Download de "${r.anexo_nome}" iniciado!`, 'success');
+    } catch (err) {
+      window.open(r.anexo_base64, '_blank');
+    }
+  },
+
   submitFormSolicitacaoPortal(e) {
     e.preventDefault();
     const db = window.zgestorDB;
@@ -4283,9 +4595,12 @@ window.ZGestorApp = {
     const criarTarefa = isCliente ? true : (gerarTarEl ? gerarTarEl.checked : true);
     const respEl = document.getElementById('f-cc-resp');
     const statusEl = document.getElementById('f-cc-status');
+    const anexoTemp = this.state.solicitacaoAnexoTemp;
+    const idExistente = document.getElementById('f-cc-id').value || null;
+    const existente = idExistente ? (db.getRegistrosCentralCliente() || []).find(x => x.id === idExistente) : null;
 
     window.zgestorDB.salvarRegistroCentralCliente({
-      id: document.getElementById('f-cc-id').value || null,
+      id: idExistente,
       empresa_id: empId,
       data_registro: document.getElementById('f-cc-data').value,
       categoria: 'SOLICITACAO',
@@ -4298,8 +4613,12 @@ window.ZGestorApp = {
       responsavel_nome: respEl ? respEl.value : '',
       status: statusEl ? statusEl.value : 'PENDENTE',
       criar_tarefa_avulsa: criarTarefa,
-      competencia: this.state.competencia || '10/2026'
+      competencia: this.state.competencia || '10/2026',
+      anexo_nome: anexoTemp ? anexoTemp.nome : (existente ? existente.anexo_nome : null),
+      anexo_tamanho: anexoTemp ? anexoTemp.tamanho : (existente ? existente.anexo_tamanho : null),
+      anexo_base64: anexoTemp ? anexoTemp.base64 : (existente ? existente.anexo_base64 : null)
     }, criarTarefa);
+    this.state.solicitacaoAnexoTemp = null;
     this.state.empresaCentralId = empId;
     this.state.subTabCentralCliente = 'solicitacoes_portal';
     this.closeModal();
@@ -4317,13 +4636,13 @@ window.ZGestorApp = {
     if (!modal) return;
     modal.innerHTML = `
       <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200">
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
             <div>
               <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Retorno da Contabilidade no Portal do Cliente</span>
               <h3 class="text-base font-bold text-slate-900">Responder Solicitação do Cliente</h3>
             </div>
-            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">×</button>
           </div>
 
           <form onsubmit="ZGestorApp.submitRespostaSolicitacaoPortal(event, '${r.id}')" class="space-y-4 mt-4 text-xs">
@@ -4333,6 +4652,20 @@ window.ZGestorApp = {
               <div class="text-[11px] text-indigo-700 font-semibold pt-1">
                 Cliente: ${emp ? escapeHtml(emp.nome_fantasia) : '—'} • Solicitante: ${escapeHtml(r.solicitante_cliente || '—')}
               </div>
+              ${r.anexo_nome ? `
+                <div class="pt-2 mt-1 border-t border-slate-200 flex items-center justify-between">
+                  <span class="text-[11px] text-slate-600 font-bold flex items-center gap-1">
+                    <i data-lucide="paperclip" class="w-3.5 h-3.5 text-indigo-600"></i>
+                    ${escapeHtml(r.anexo_nome)} (${r.anexo_tamanho || 'Anexo'})
+                  </span>
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.baixarAnexoSolicitacao('${r.id}')"
+                    class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200 cursor-pointer">
+                    Baixar Anexo
+                  </button>
+                </div>
+              ` : ''}
             </div>
 
             <div>
@@ -4354,9 +4687,9 @@ window.ZGestorApp = {
                 class="w-full rounded-xl border border-indigo-300 px-3 py-2 font-medium">${r.resposta_contabilidade || ''}</textarea>
             </div>
 
-            <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
-              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Cancelar</button>
-              <button type="submit" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow">
+            <div class="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-3 border-t border-slate-200">
+              <button type="button" onclick="ZGestorApp.closeModal()" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+              <button type="submit" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow cursor-pointer">
                 Salvar Resposta & Atualizar Status
               </button>
             </div>
@@ -4569,8 +4902,11 @@ window.ZGestorApp = {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      this.showToast('Por favor, selecione um arquivo de imagem válido (PNG, JPG, SVG, WebP).', 'error');
+    const permitidos = ['.png', '.jpg', '.jpeg', '.svg', '.webp'];
+    const val = this.validarArquivoUpload(file, permitidos, 15);
+    if (!val.valido) {
+      this.showToast(val.erro, 'error');
+      event.target.value = '';
       return;
     }
 
@@ -4591,6 +4927,45 @@ window.ZGestorApp = {
       this.renderAll();
     };
     reader.readAsDataURL(file);
+  },
+
+  handleLogoUpload(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const permitidos = ['.png', '.jpg', '.jpeg', '.svg', '.webp'];
+    const val = this.validarArquivoUpload(file, permitidos, 15);
+    if (!val.valido) {
+      this.showToast(val.erro, 'error');
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target.result;
+      const db = window.zgestorDB;
+      const cfg = db.getEscritorioConfig();
+      cfg.logo_customizada = dataUrl;
+      db.salvarEscritorioConfig(cfg);
+
+      const previewBox = document.getElementById('preview-box-logo');
+      if (previewBox) {
+        previewBox.innerHTML = `<img src="${dataUrl}" class="w-full h-full object-contain" alt="Logo Escritório" />`;
+      }
+      this.showToast('Logotipo oficial do escritório atualizado com sucesso!', 'success');
+      this.renderAll();
+    };
+    reader.readAsDataURL(file);
+  },
+
+  removerLogoEscritorio() {
+    const db = window.zgestorDB;
+    const cfg = db.getEscritorioConfig();
+    delete cfg.logo_customizada;
+    db.salvarEscritorioConfig(cfg);
+    this.showToast('Logotipo do escritório restaurado para a marca padrão.', 'info');
+    this.renderAll();
   },
 
   removerQRCodePix(tipoConta) {

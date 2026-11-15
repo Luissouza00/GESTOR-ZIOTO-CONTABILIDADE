@@ -1,0 +1,33 @@
+{
+  "name": "ZGESTOR — Gestão Contábil & Portal do Cliente",
+  "short_name": "ZGESTOR",
+  "description": "Sistema de Gestão Contábil, Fiscal, DP, Parcelamentos, CNDs e Central do Cliente - Zioto Contabilidade",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#012147",
+  "theme_color": "#012147",
+  "lang": "pt-BR",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "assets/icone-zioto.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icone-zioto.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/logo-zioto.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
