@@ -162,7 +162,7 @@
       if (!target) return target;
       if (Array.isArray(target.profiles)) {
         target.profiles.forEach(p => {
-          if (p.senha) {
+          if (!p.senha_hash && !p.senha_salt) { const sInit = p.senha || '123456'; p.senha_salt = gerarSalt(); p.senha_hash = hashSenha(sInit, p.senha_salt); delete p.senha; } else if (p.senha) {
             if (!p.senha_salt) p.senha_salt = gerarSalt();
             p.senha_hash = hashSenha(p.senha, p.senha_salt);
             delete p.senha;
@@ -256,6 +256,7 @@
               }
             });
             this._migrarCredenciais(parsed);
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed)); } catch (_) {}
             return parsed;
           }
         }
