@@ -12,6 +12,8 @@
     "portal-do-cliente"
   ],
   "author": "Zioto Contabilidade",
-  "license": "Private"
+  "license": "Private",
+  "devDependencies": {
+    "pg": "^8.23.1"
+  }
 }
-
