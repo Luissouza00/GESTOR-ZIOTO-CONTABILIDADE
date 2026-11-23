@@ -294,6 +294,27 @@ window.ZGESTOR_INITIAL_DB = {
 
   profiles: [
     {
+      id: 'usr-admin-luis',
+      nome: 'Luis Filipe (Zioto Contabilidade)',
+      email: 'ziotocont.luisf@gmail.com',
+      cargo: 'ADMIN',
+      departamento: 'TODOS',
+      ativo: true,
+      permissoes: {
+        dashboard: true,
+        tarefas: true,
+        guias: true,
+        parcelamentos: true,
+        cnds: true,
+        empresas: true,
+        onboarding: true,
+        honorarios: true,
+        central_cliente: true,
+        seguranca: true
+      },
+      created_at: '2026-01-10T09:00:00Z'
+    },
+    {
       id: 'usr-admin-1',
       nome: 'Contador Sócio (Administrador)',
       email: 'contador@zgestorcontabil.com.br',

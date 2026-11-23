@@ -4067,6 +4067,13 @@ window.ZGestorViews = {
               Ativar conta e cadastrar senha
             </button>
           </div>
+
+          <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+            <span>ZGestor Enterprise PWA</span>
+            <span class="inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> v1.2.0
+            </span>
+          </div>
         </div>
       </div>
     `;
@@ -4553,6 +4560,489 @@ window.ZGestorViews = {
             </button>
           </div>
         </form>
+      </div>
+    `;
+  }
+,
+
+  // ===========================================================================
+  // 10. MÓDULO DE INTELIGÊNCIA ARTIFICIAL & ASSISTENTE CONTÁBIL (Z-IA)
+  // ===========================================================================
+  renderInteligenciaIA(appState) {
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    const iaConfig = esc.ia_config || {
+      api_key: '',
+      provedor: 'gemini',
+      modelo: 'gemini-1.5-flash',
+      ativo: false
+    };
+    const hasKey = Boolean(iaConfig.api_key && iaConfig.api_key.trim());
+    const subTab = appState.subTabIA || 'diagnostico';
+    const comp = appState.competencia || '10/2026';
+    const sub = db.obterMesSubsequente(comp);
+
+    const empresas = db.data.empresas || [];
+    const tarefasComp = (db.data.tarefas || []).filter(t => t.competencia === comp);
+    const tarefasConcluidas = tarefasComp.filter(t => t.status === 'CONCLUIDA' || t.data_entrega);
+    const tarefasPendentes = tarefasComp.filter(t => t.status !== 'CONCLUIDA' && !t.data_entrega);
+    const cnds = db.getCNDs ? db.getCNDs() : [];
+    const cndsAlertas = cnds.filter(c => {
+      const st = db.calcularStatusValidadeCND(c).codigo;
+      return st === 'VENCIDA' || st === 'PENDENCIA' || st === 'VENCENDO';
+    });
+    const honorariosAbertos = (db.data.honorarios || []).filter(h => Number(h.saldo_aberto) > 0);
+    const totalAberto = honorariosAbertos.reduce((sum, h) => sum + Number(h.saldo_aberto || 0), 0);
+    const solicitacoes = db.getRegistrosCentralCliente ? db.getRegistrosCentralCliente() : (db.data.central_cliente_registros || []);
+    const chamadosAbertos = solicitacoes.filter(s => s.status === 'PENDENTE' || s.status === 'EM_ANDAMENTO');
+
+    // Taxa de conformidade
+    const taxaObrigacoes = tarefasComp.length > 0 ? Math.round((tarefasConcluidas.length / tarefasComp.length) * 100) : 100;
+
+    return `
+      <div class="space-y-5">
+        <!-- Topo: Identidade do Assistente IA & Status de Conexão -->
+        <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl shadow-xl border border-indigo-900/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 flex items-center gap-1.5">
+                <i data-lucide="sparkles" class="w-3 h-3 text-indigo-300"></i>
+                Z-IA Contábil • v1.2.0
+              </span>
+              <span class="text-xs text-slate-400">|</span>
+              <span class="text-xs text-indigo-200 font-medium">Competência de Análise: <strong>${comp} (${sub.label})</strong></span>
+            </div>
+            <h1 class="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
+              Assistente IA & Inteligência Contábil
+            </h1>
+            <p class="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+              Auditoria preventiva da competência, consultor tributário especializado (Simples Nacional, DCTFWeb, EFD-Reinf) e automação de comunicados e cobranças em 1 clique.
+            </p>
+          </div>
+
+          <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 shrink-0">
+            ${hasKey ? `
+              <div class="px-3.5 py-2 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-2 shadow-sm">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Google Gemini Ativo (${iaConfig.modelo || 'gemini-1.5-flash'})</span>
+              </div>
+            ` : `
+              <div class="px-3.5 py-2 rounded-2xl bg-amber-950/70 border border-amber-500/50 text-amber-200 text-xs font-medium flex items-center gap-2 shadow-sm">
+                <i data-lucide="info" class="w-4 h-4 text-amber-400 shrink-0"></i>
+                <span>Modo Local Ativo (Vincule sua chave)</span>
+              </div>
+            `}
+            <button
+              onclick="ZGestorApp.toggleCardConfigIA()"
+              class="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm cursor-pointer">
+              <i data-lucide="key" class="w-3.5 h-3.5"></i>
+              <span>${hasKey ? 'Gerenciar Chave' : 'Vincular Chave de IA'}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- CARD RETRÁTIL DE CONFIGURAÇÃO DE CHAVE DE IA (GOOGLE GEMINI) -->
+        <div id="card-config-ia" class="${hasKey ? 'hidden' : 'block'} bg-white p-5 rounded-2xl border border-indigo-200 shadow-sm space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
+            <div class="flex items-center gap-2.5">
+              <div class="p-2 rounded-xl bg-indigo-50 text-indigo-700">
+                <i data-lucide="key-round" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h2 class="text-sm font-bold text-slate-900">Vincular Chave de API de Inteligência Artificial</h2>
+                <p class="text-[11px] text-slate-500">Conecte o Google Gemini para habilitar respostas profundas, personalizadas e em tempo real</p>
+              </div>
+            </div>
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              class="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200 transition">
+              <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              <span>Obter Chave Gratuita no Google AI Studio</span>
+            </a>
+          </div>
+
+          <form onsubmit="ZGestorApp.salvarChaveIA(event)" class="space-y-3.5 text-xs">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div class="md:col-span-2">
+                <label class="block font-bold text-slate-700 mb-1">Chave de API do Google Gemini (API Key) *</label>
+                <div class="relative">
+                  <input
+                    id="f-ia-apikey"
+                    type="password"
+                    required
+                    value="${iaConfig.api_key || ''}"
+                    placeholder="Cole sua chave aqui (ex: AIzaSy...)"
+                    class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 pr-10 font-mono text-xs focus:bg-white focus:border-indigo-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.toggleVerChaveIA()"
+                    class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer">
+                    <i id="icon-ver-chave-ia" data-lucide="eye" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Modelo de IA Recomendado</label>
+                <select id="f-ia-modelo" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-bold text-slate-800">
+                  <option value="gemini-1.5-flash" ${(iaConfig.modelo || 'gemini-1.5-flash') === 'gemini-1.5-flash' ? 'selected' : ''}>gemini-1.5-flash (Ultra Rápido & Grátis)</option>
+                  <option value="gemini-2.0-flash" ${iaConfig.modelo === 'gemini-2.0-flash' ? 'selected' : ''}>gemini-2.0-flash (Nova Geração)</option>
+                  <option value="gemini-1.5-pro" ${iaConfig.modelo === 'gemini-1.5-pro' ? 'selected' : ''}>gemini-1.5-pro (Raciocínio Tributário Avançado)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-600 space-y-1 text-[11px]">
+              <div class="font-bold text-slate-800 flex items-center gap-1.5">
+                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                Como obter sua chave em 1 minuto sem custos:
+              </div>
+              <p>
+                1. Entre em <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-indigo-600 font-bold underline">aistudio.google.com</a> com sua conta Google. 2. Clique em <strong>"Create API Key"</strong>. 3. Cole o código gerado no campo acima e clique em <strong>Salvar Chave & Ativar IA</strong>.
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
+              <div class="flex items-center gap-2">
+                ${hasKey ? `
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.removerChaveIA()"
+                    class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs border border-rose-200 transition cursor-pointer">
+                    Desvincular Chave
+                  </button>
+                ` : ''}
+                <button
+                  type="button"
+                  onclick="ZGestorApp.testarConexaoIA()"
+                  class="px-4 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-300 transition flex items-center gap-1.5 cursor-pointer">
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-teal-600"></i>
+                  <span>Testar Conexão</span>
+                </button>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  onclick="ZGestorApp.toggleCardConfigIA()"
+                  class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition cursor-pointer">
+                  Recolher
+                </button>
+                <button
+                  type="submit"
+                  class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer">
+                  <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                  <span>Salvar Chave & Ativar IA</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- NAVEGAÇÃO DE SUB-ABAS DE IA (4 FERRAMENTAS) -->
+        <div class="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button
+              onclick="ZGestorApp.setSubTabIA('diagnostico')"
+              class="px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition ${subTab === 'diagnostico' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}">
+              <i data-lucide="activity" class="w-4 h-4"></i>
+              <span>1. Diagnóstico da Competência (${comp})</span>
+            </button>
+            <button
+              onclick="ZGestorApp.setSubTabIA('chat')"
+              class="px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition ${subTab === 'chat' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}">
+              <i data-lucide="messages-square" class="w-4 h-4"></i>
+              <span>2. Consultor Tributário (Chat IA)</span>
+            </button>
+            <button
+              onclick="ZGestorApp.setSubTabIA('comunicados')"
+              class="px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition ${subTab === 'comunicados' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}">
+              <i data-lucide="send" class="w-4 h-4"></i>
+              <span>3. Redator de Cobrança & Mensagens</span>
+            </button>
+            <button
+              onclick="ZGestorApp.setSubTabIA('chamados')"
+              class="px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition ${subTab === 'chamados' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}">
+              <i data-lucide="life-buoy" class="w-4 h-4"></i>
+              <span>4. Respostas de Chamados (${chamadosAbertos.length})</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- CONTEÚDO DA SUB-ABA SELECIONADA -->
+        ${subTab === 'diagnostico' ? `
+          <!-- ABA 1: DIAGNÓSTICO E AUDITORIA PREVENTIVA -->
+          <div class="space-y-4">
+            <!-- KPIs da Competência Atual -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <span class="text-[11px] font-bold uppercase text-slate-500">Empresas Monitoradas</span>
+                <div class="text-2xl font-black text-slate-900 mt-1">${empresas.length}</div>
+                <span class="text-[11px] text-slate-500">Cadastradas no escritório</span>
+              </div>
+              <div class="bg-white p-4 rounded-2xl border border-indigo-200 shadow-sm">
+                <span class="text-[11px] font-bold uppercase text-indigo-700">Conformidade das Obrigações</span>
+                <div class="text-2xl font-black text-indigo-600 mt-1">${taxaObrigacoes}%</div>
+                <span class="text-[11px] text-slate-500">${tarefasConcluidas.length} entregues de ${tarefasComp.length}</span>
+              </div>
+              <div class="bg-white p-4 rounded-2xl border border-amber-200 shadow-sm">
+                <span class="text-[11px] font-bold uppercase text-amber-700">CNDs em Risco / Atenção</span>
+                <div class="text-2xl font-black text-amber-600 mt-1">${cndsAlertas.length}</div>
+                <span class="text-[11px] text-slate-500">Vencendo ou com pendência</span>
+              </div>
+              <div class="bg-white p-4 rounded-2xl border border-rose-200 shadow-sm">
+                <span class="text-[11px] font-bold uppercase text-rose-700">Honorários em Aberto</span>
+                <div class="text-2xl font-black text-rose-600 mt-1">${this.formatCurrency(totalAberto)}</div>
+                <span class="text-[11px] text-slate-500">${honorariosAbertos.length} cliente(s) pendente(s)</span>
+              </div>
+            </div>
+
+            <!-- Painel de Execução do Diagnóstico -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">Relatório Executivo de Auditoria & Riscos Fiscais</h3>
+                  <p class="text-xs text-slate-500">A IA analisa o banco de dados do escritório e cruza prazos, certidões e pagamentos</p>
+                </div>
+                <button
+                  onclick="ZGestorApp.gerarDiagnosticoIA()"
+                  id="btn-executar-diagnostico"
+                  class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer shrink-0">
+                  <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
+                  <span>Executar Diagnóstico com IA</span>
+                </button>
+              </div>
+
+              <div id="diagnostico-ia-conteudo" class="space-y-4 text-xs">
+                ${appState.iaDiagnosticoResultado || `
+                  <div class="p-6 rounded-2xl bg-indigo-50/50 border border-indigo-100 text-center space-y-2">
+                    <div class="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center mx-auto">
+                      <i data-lucide="cpu" class="w-6 h-6"></i>
+                    </div>
+                    <h4 class="font-bold text-indigo-950 text-sm">Auditoria Pronta para Execução</h4>
+                    <p class="text-slate-600 max-w-md mx-auto text-xs">
+                      Clique no botão acima para a IA auditar todas as empresas, apontar os riscos de multas tributárias e sugerir o plano de ação da semana.
+                    </p>
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>
+        ` : subTab === 'chat' ? `
+          <!-- ABA 2: CONSULTOR TRIBUTÁRIO & FISCAL (CHAT IA) -->
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[650px] overflow-hidden">
+            <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                  <i data-lucide="bot" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <h3 class="text-xs font-bold text-slate-900">Consultor Tributário & Legislação Brasileira</h3>
+                  <p class="text-[10px] text-slate-500">Tira-dúvidas sobre Simples Nacional, Lucro Presumido, DCTFWeb, EFD-Reinf e FGTS Digital</p>
+                </div>
+              </div>
+              <button
+                onclick="ZGestorApp.limparChatIA()"
+                class="px-2.5 py-1 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-slate-100 text-[11px] font-semibold transition cursor-pointer">
+                Limpar Conversa
+              </button>
+            </div>
+
+            <!-- Sugestões de Dúvidas Rápidas -->
+            <div class="p-3 bg-indigo-50/50 border-b border-indigo-100 flex items-center gap-2 overflow-x-auto text-xs">
+              <span class="text-[11px] font-bold text-indigo-900 shrink-0">Dúvidas Frequentes:</span>
+              <button onclick="ZGestorApp.enviarPerguntaSugeridaIA('Quais são os prazos de entrega e vencimento da DCTFWeb e EFD-Reinf na competência atual?')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-semibold shrink-0 cursor-pointer transition">
+                📅 Prazos DCTFWeb & Reinf
+              </button>
+              <button onclick="ZGestorApp.enviarPerguntaSugeridaIA('Como calcular e comprovar o Fator R no Simples Nacional para tributar no Anexo III em vez do Anexo V?')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-semibold shrink-0 cursor-pointer transition">
+                📊 Regras do Fator R (Simples)
+              </button>
+              <button onclick="ZGestorApp.enviarPerguntaSugeridaIA('Quais certidões negativas (CNDs) são estritamente obrigatórias para homologação em licitações públicas federais?')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-semibold shrink-0 cursor-pointer transition">
+                🏛️ CNDs para Licitações
+              </button>
+              <button onclick="ZGestorApp.enviarPerguntaSugeridaIA('Qual o procedimento correto para emitir a guia DARF de parcelamento rescindido ou em atraso na PGFN/Regularize?')" class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-semibold shrink-0 cursor-pointer transition">
+                📑 Parcelamento PGFN Atrasado
+              </button>
+            </div>
+
+            <!-- Mensagens do Chat -->
+            <div id="chat-ia-mensagens" class="flex-1 p-4 overflow-y-auto space-y-3.5 bg-slate-50/50 text-xs">
+              ${(appState.iaChatHistorico && appState.iaChatHistorico.length > 0) ? appState.iaChatHistorico.map(m => `
+                <div class="flex items-start gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}">
+                  ${m.role === 'assistant' ? `
+                    <div class="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                      <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+                    </div>
+                  ` : ''}
+                  <div class="max-w-[85%] sm:max-w-[75%] p-3.5 rounded-2xl ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-xs shadow-xs' : 'bg-white text-slate-800 rounded-tl-xs border border-slate-200 shadow-xs'} space-y-1">
+                    <div class="font-bold text-[10px] uppercase tracking-wider ${m.role === 'user' ? 'text-indigo-200' : 'text-indigo-600'}">
+                      ${m.role === 'user' ? 'Você (Contador)' : 'Assistente Z-IA'}
+                    </div>
+                    <div class="whitespace-pre-line leading-relaxed text-xs">
+                      ${m.content}
+                    </div>
+                  </div>
+                  ${m.role === 'user' ? `
+                    <div class="w-7 h-7 rounded-lg bg-slate-800 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                      <i data-lucide="user" class="w-3.5 h-3.5"></i>
+                    </div>
+                  ` : ''}
+                </div>
+              `).join('') : `
+                <div class="text-center py-12 space-y-2 text-slate-400">
+                  <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                    <i data-lucide="messages-square" class="w-6 h-6"></i>
+                  </div>
+                  <h4 class="font-bold text-slate-700 text-sm">Olá! Sou o Assistente IA do ZGESTOR</h4>
+                  <p class="text-xs max-w-md mx-auto text-slate-500">
+                    Faça qualquer pergunta técnica sobre obrigações acessórias, regimes tributários, prazos de guias ou parcelamentos fiscais.
+                  </p>
+                </div>
+              `}
+            </div>
+
+            <!-- Caixa de Envio -->
+            <form onsubmit="ZGestorApp.enviarMensagemChatIA(event)" class="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+              <input
+                id="f-chat-ia-input"
+                type="text"
+                required
+                placeholder="Digite sua dúvida contábil ou fiscal (ex: Prazo de entrega da EFD-Reinf sem movimento)..."
+                class="flex-1 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-slate-900 focus:bg-white focus:border-indigo-600 focus:outline-none font-medium"
+              />
+              <button
+                type="submit"
+                id="btn-enviar-chat-ia"
+                class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer shrink-0">
+                <span>Enviar</span>
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+              </button>
+            </form>
+          </div>
+        ` : subTab === 'comunicados' ? `
+          <!-- ABA 3: GERADOR DE COMUNICADOS & COBRANÇA -->
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div class="pb-3 border-b border-slate-100">
+              <h3 class="text-sm font-bold text-slate-900">Gerador Inteligente de Comunicados & Cobranças</h3>
+              <p class="text-xs text-slate-500">Crie mensagens personalizadas com 1 clique para WhatsApp e E-mail com dados reais do cliente</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Finalidade da Mensagem *</label>
+                <select id="f-comunicado-tipo" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold text-slate-800 bg-white">
+                  <option value="COBRANCA">Lembrete Amigável de Honorários (PIX)</option>
+                  <option value="GUIAS">Aviso de Disponibilização de Guias do Mês</option>
+                  <option value="DOCUMENTOS">Solicitação de Documentos Mensais (Extratos/Notas)</option>
+                  <option value="CND">Comunicado de Regularidade & Certidão Negativa</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Empresa Destinatária *</label>
+                <select id="f-comunicado-empresa" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-semibold text-slate-800 bg-white">
+                  ${empresas.map(e => `
+                    <option value="${e.id}">#${e.codigo_interno} — ${e.nome_fantasia} (${e.regime_tributario})</option>
+                  `).join('')}
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Canal de Envio</label>
+                <select id="f-comunicado-canal" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-semibold text-slate-800 bg-white">
+                  <option value="WHATSAPP">WhatsApp (Formatação com negrito)</option>
+                  <option value="EMAIL">E-mail Formal do Escritório</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex justify-end pt-1">
+              <button
+                type="button"
+                onclick="ZGestorApp.gerarComunicadoIA()"
+                class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer">
+                <i data-lucide="sparkles" class="w-4 h-4 text-amber-300"></i>
+                <span>Redigir Mensagem com IA</span>
+              </button>
+            </div>
+
+            <!-- Caixa com o Texto Gerado -->
+            <div class="space-y-2 pt-2 border-t border-slate-100 text-xs">
+              <div class="flex items-center justify-between">
+                <label class="font-bold text-slate-700">Texto Gerado (Editável):</label>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.copiarTextoComunicadoIA()"
+                    class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200 flex items-center gap-1 transition cursor-pointer">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    <span>Copiar Mensagem</span>
+                  </button>
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.abrirWhatsAppComunicadoIA()"
+                    class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 transition cursor-pointer shadow-xs">
+                    <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>
+                    <span>Enviar no WhatsApp</span>
+                  </button>
+                </div>
+              </div>
+              <textarea
+                id="f-comunicado-resultado"
+                rows="8"
+                placeholder="Selecione os parâmetros e clique em 'Redigir Mensagem com IA' para gerar o texto automaticamente..."
+                class="w-full rounded-2xl border border-slate-300 p-3.5 font-mono text-xs text-slate-800 bg-slate-50 focus:bg-white focus:border-indigo-600 focus:outline-none"></textarea>
+            </div>
+          </div>
+        ` : `
+          <!-- ABA 4: RESPOSTAS INTELIGENTES PARA CHAMADOS DO PORTAL -->
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div class="pb-3 border-b border-slate-100">
+              <h3 class="text-sm font-bold text-slate-900">Assistente de Respostas para Chamados do Portal</h3>
+              <p class="text-xs text-slate-500">A IA elabora respostas técnicas, cordiais e fundamentadas para os pedidos abertos pelos clientes</p>
+            </div>
+
+            ${chamadosAbertos.length === 0 ? `
+              <div class="p-8 text-center text-slate-400 text-xs">
+                <i data-lucide="check-circle" class="w-8 h-8 text-emerald-500 mx-auto mb-2"></i>
+                Nenhum chamado pendente no momento. Todos os atendimentos do Portal estão em dia!
+              </div>
+            ` : `
+              <div class="space-y-3 text-xs">
+                ${chamadosAbertos.map(ch => {
+                  const emp = empresas.find(e => e.id === ch.empresa_id);
+                  return `
+                    <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2.5">
+                      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <span class="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">${ch.departamento} • ${this.formatDate(ch.data_registro)}</span>
+                          <h4 class="font-bold text-slate-900 text-sm mt-0.5">${this.escapeHtml(ch.titulo)}</h4>
+                          <span class="text-[11px] text-slate-500">Cliente: <strong>${emp ? emp.nome_fantasia : '—'}</strong> • Solicitante: ${this.escapeHtml(ch.solicitante_cliente || '—')}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onclick="ZGestorApp.gerarRespostaChamadoIA('${ch.id}')"
+                          class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0">
+                          <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-300"></i>
+                          <span>Gerar Minuta de Resposta</span>
+                        </button>
+                      </div>
+                      <div class="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs">
+                        ${this.escapeHtml(ch.descricao || 'Sem descrição')}
+                      </div>
+                      ${ch.resposta_contabilidade ? `
+                        <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs">
+                          <strong>Resposta Atual da Contabilidade:</strong> ${this.escapeHtml(ch.resposta_contabilidade)}
+                        </div>
+                      ` : ''}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        `}
       </div>
     `;
   }

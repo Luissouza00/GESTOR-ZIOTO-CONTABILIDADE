@@ -1,6 +1,7 @@
 {
   "name": "ZGESTOR — Gestão Contábil & Portal do Cliente",
   "short_name": "ZGESTOR",
+  "version": "1.2.0",
   "description": "Sistema de Gestão Contábil, Fiscal, DP, Parcelamentos, CNDs e Central do Cliente - Zioto Contabilidade",
   "start_url": "./index.html",
   "scope": "./",
@@ -31,3 +32,4 @@
     }
   ]
 }
+

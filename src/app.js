@@ -58,7 +58,12 @@ window.ZGestorApp = {
     notionGruposColapsados: {}, // { 'NAO_INICIADA': false, 'PENDENTE': false, ... }
     notionSidePeekTarefaId: null,
     // Modo de Simulação do Portal do Cliente para Administradores
-    modoSimulacaoCliente: null
+    modoSimulacaoCliente: null,
+    // Inteligência Artificial & Z-IA
+    subTabIA: 'diagnostico',
+    chatIAHistorico: [],
+    comunicadoIAGerado: null,
+    diagnosticoIAResultado: null
   },
 
   init() {
@@ -588,6 +593,7 @@ window.ZGestorApp = {
         titulo: 'PRINCIPAL',
         itens: [
           { id: 'dashboard', label: 'Visão Geral', icon: 'layout-dashboard', badge: null },
+          { id: 'inteligencia_ia', label: 'Assistente IA & Análises', icon: 'sparkles', badge: 'Novo' },
           { id: 'tarefas', label: 'Tarefas & Fechamentos', icon: 'check-square', badge: null }
         ]
       },
@@ -965,6 +971,7 @@ window.ZGestorApp = {
     else if (t === 'honorarios') main.innerHTML = V.renderHonorarios(this.state);
     else if (t === 'escritorio') main.innerHTML = V.renderEscritorio(this.state);
     else if (t === 'seguranca') main.innerHTML = V.renderSeguranca(this.state);
+    else if (t === 'inteligencia_ia') main.innerHTML = V.renderInteligenciaIA(this.state);
 
     if (window.lucide) window.lucide.createIcons();
 
@@ -2589,6 +2596,14 @@ window.ZGestorApp = {
       possui_funcionarios: document.getElementById('f-emp-func').checked,
       observacoes: document.getElementById('f-emp-obs').value.trim()
     };
+    if (dados.email) {
+      const chk = window.zgestorDB.validarEmailReal(dados.email);
+      if (!chk.valido) {
+        this.showToast(chk.erro, 'error');
+        return;
+      }
+      dados.email = chk.email;
+    }
     const salva = window.zgestorDB.salvarEmpresa(dados, true);
     this.state.empresaOnboardingId = salva.id;
     this.state.empresaCentralId = salva.id;
@@ -6073,6 +6088,293 @@ window.ZGestorApp = {
     window.zgestorDB.excluirModeloTarefa(modId);
     this.showToast('Modelo recorrente removido.', 'info');
     this.openModalModelosTarefas();
+  },
+
+  // ===========================================================================
+  // MÓDULO INTELIGÊNCIA ARTIFICIAL & ASSISTENTE CONTÁBIL (Z-IA)
+  // ===========================================================================
+  setSubTabIA(tab) {
+    this.state.subTabIA = tab;
+    this.renderContentOnly();
+  },
+
+  salvarChaveIA(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const input = document.getElementById('input-gemini-key');
+    const chave = input ? input.value.trim() : '';
+    if (!chave) {
+      this.showToast('Informe uma chave de API válida para salvar.', 'error');
+      return;
+    }
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    db.salvarEscritorioConfig({
+      ia_config: {
+        ...(esc.ia_config || {}),
+        api_key: chave,
+        ativo: true,
+        provedor: 'gemini',
+        modelo: 'gemini-1.5-flash',
+        atualizado_em: new Date().toISOString()
+      }
+    });
+    this.showToast('Chave da API Google Gemini salva com sucesso!', 'success');
+    this.renderContentOnly();
+  },
+
+  removerChaveIA() {
+    if (!confirm('Deseja realmente remover a Chave de API da IA deste dispositivo?')) return;
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    db.salvarEscritorioConfig({
+      ia_config: {
+        ...(esc.ia_config || {}),
+        api_key: '',
+        ativo: false,
+        atualizado_em: new Date().toISOString()
+      }
+    });
+    this.showToast('Chave da IA desvinculada com sucesso.', 'info');
+    this.renderContentOnly();
+  },
+
+  toggleVerChaveIA() {
+    const input = document.getElementById('input-gemini-key');
+    if (input) {
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+  },
+
+  async testarConexaoIA() {
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    const apiKey = (esc.ia_config && esc.ia_config.api_key) ? esc.ia_config.api_key.trim() : '';
+    if (!apiKey) {
+      this.showToast('Cadastre uma chave de API antes de testar a conexão.', 'error');
+      return;
+    }
+    this.showToast('Testando conexão com a Google Gemini API...', 'info');
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Responda apenas: OK' }] }]
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `Erro HTTP ${res.status}`);
+      }
+      this.showToast('Conexão com Google Gemini API realizada com sucesso! Z-IA 100% operacional.', 'success');
+    } catch (err) {
+      this.showToast(`Falha ao conectar com a API: ${err.message}`, 'error');
+    }
+  },
+
+  async chamarGeminiAPI(prompt, systemInstruction = '') {
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    const apiKey = (esc.ia_config && esc.ia_config.api_key) ? esc.ia_config.api_key.trim() : '';
+    if (!apiKey) return null;
+
+    try {
+      const body = {
+        contents: [{ parts: [{ text: prompt }] }]
+      };
+      if (systemInstruction) {
+        body.systemInstruction = { parts: [{ text: systemInstruction }] };
+      }
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    } catch (e) {
+      console.warn('Erro ao chamar Gemini API via rede:', e);
+      return null;
+    }
+  },
+
+  async gerarDiagnosticoIA() {
+    const db = window.zgestorDB;
+    const comp = this.state.competencia || '10/2026';
+    const sub = db.obterMesSubsequente(comp);
+
+    const tarefasComp = (db.data.tarefas || []).filter(t => t.competencia === comp);
+    const pendentes = tarefasComp.filter(t => t.status !== 'CONCLUIDA' && !t.data_entrega);
+    const cnds = db.getCNDs ? db.getCNDs() : [];
+    const cndsAlertas = cnds.filter(c => {
+      const st = db.calcularStatusValidadeCND(c).codigo;
+      return st === 'VENCIDA' || st === 'PENDENCIA' || st === 'VENCENDO';
+    });
+    const honorariosAbertos = (db.data.honorarios || []).filter(h => Number(h.saldo_aberto) > 0);
+    const totalAberto = honorariosAbertos.reduce((sum, h) => sum + Number(h.saldo_aberto || 0), 0);
+
+    this.showToast('Gerando diagnóstico executivo com Inteligência Artificial...', 'info');
+
+    let recomendacaoIA = '';
+    const promptDiag = `Atue como Auditor Contábil e Financeiro Sênior da Zioto Contabilidade. Analise o seguinte panorama da carteira do escritório na competência ${comp} (${sub.label}):
+- Tarefas Pendentes no Mês: ${pendentes.length} de ${tarefasComp.length} obrigações totais.
+- CNDs com Alertas ou Vencidas: ${cndsAlertas.length} certidões.
+- Honorários em Aberto: R$ ${totalAberto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em ${honorariosAbertos.length} faturas.
+Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 2 recomendações tributárias/financeiras para a liderança. Seja direto, prático e profissional.`;
+
+    const respostaGemini = await this.chamarGeminiAPI(promptDiag);
+    if (respostaGemini) {
+      recomendacaoIA = respostaGemini;
+    } else {
+      recomendacaoIA = `**PLANO DE AÇÃO EXECUTIVO DA CARTEIRA (${comp} - Vencimentos ${sub.label}):**\n\n` +
+        `1. **Prioridade Fiscal Imediata**: Focar na transmissão das declarações de apuração do Simples Nacional (PGDAS-D) e emissão das guias DAS até o dia 20 para evitar multas de mora aos clientes.\n` +
+        `2. **Regularidade de Certidões (CNDs)**: Foram identificadas ${cndsAlertas.length} certidões com inconformidade ou vencimento iminente. Realizar protocolo de regularização prioritariamente na Receita Federal e Caixa (FGTS) para evitar travamento de faturamento dos clientes.\n` +
+        `3. **Gestão do Contas a Receber**: Existem R$ ${totalAberto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em honorários com saldo em aberto. Recomendamos disparo preventivo dos recibos com Chave PIX e notificação cordial aos clientes com mais de 10 dias de atraso.\n` +
+        `4. **Conformidade de Folha de Pagamento**: Garantir o fechamento do eSocial e DCTFWeb antes do dia 15 para emissão tempestiva do DAE/DARF Previdenciário.`;
+    }
+
+    this.state.diagnosticoIAResultado = {
+      data_geracao: new Date().toISOString(),
+      competencia: comp,
+      conteudo: recomendacaoIA
+    };
+
+    this.showToast('Diagnóstico executivo gerado com sucesso!', 'success');
+    this.renderContentOnly();
+  },
+
+  async enviarMensagemChatIA(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const input = document.getElementById('chat-ia-input');
+    const texto = input ? input.value.trim() : '';
+    if (!texto) return;
+
+    if (!Array.isArray(this.state.chatIAHistorico)) {
+      this.state.chatIAHistorico = [];
+    }
+
+    this.state.chatIAHistorico.push({
+      autor: 'usuario',
+      texto,
+      hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    });
+    if (input) input.value = '';
+    this.renderContentOnly();
+
+    let resposta = '';
+    const respostaGemini = await this.chamarGeminiAPI(texto, 'Você é o Assistente Virtual Contábil e Tributário da Zioto Contabilidade (Z-IA). Responda com clareza, embasamento na legislação brasileira (Simples Nacional, Lucro Presumido, CLT, IRPJ/CSLL, DCTFWeb, eSocial, PGDAS) e tom prestativo e profissional.');
+
+    if (respostaGemini) {
+      resposta = respostaGemini;
+    } else {
+      const t = texto.toLowerCase();
+      if (t.includes('fator r')) {
+        resposta = `**Fator R no Simples Nacional (Art. 18 da LC 123/2006):**\nO Fator R é a razão entre a folha de pagamento (incluindo pró-labore e encargos) dos últimos 12 meses e a receita bruta acumulada no mesmo período (Folha ÷ Receita Bruta).\n- **Se Fator R ≥ 28%**: A atividade tributa pelo **Anexo III** (alíquota inicial de 6%), resultando em grande economia tributária.\n- **Se Fator R < 28%**: A atividade tributa pelo **Anexo V** (alíquota inicial de 15,5%).\n*Dica ZGESTOR*: Recomendamos simular o aumento do Pró-Labore do sócio para atingir o índice de 28% quando a margem for próxima.`;
+      } else if (t.includes('mei') || t.includes('desenquadramento')) {
+        resposta = `**Desenquadramento de MEI para ME (Microempresa):**\nOcorre quando o faturamento anual ultrapassa R$ 81.000,00 ou quando a empresa contrata mais de 1 funcionário ou inclui sócio.\n- **Até 20% de excesso (até R$ 97.200,00)**: O desenquadramento tem efeitos a partir de 1º de janeiro do ano seguinte.\n- **Acima de 20% (mais de R$ 97.200,00)**: O desenquadramento é retroativo a 1º de janeiro do ano do excesso, exigindo recalcular os tributos no Simples Nacional.\n*Passo a Passo*: Solicitar desenquadramento no Portal do Simples Nacional, registrar alteração na Junta Comercial e atualizar os cadastros municipais/estaduais.`;
+      } else if (t.includes('inadimplente') || t.includes('cobrança') || t.includes('honorário')) {
+        resposta = `**Modelo de Notificação Cordial de Honorários:**\n"Prezado(a) [Nome do Cliente], esperamos que esteja bem!\nIdentificamos em nosso financeiro que a fatura de honorários contábeis ref. à competência [Mês/Ano] com vencimento em [Data] consta em aberto no valor de R$ [Valor].\nPara sua comodidade, você pode efetuar o pagamento diretamente via Chave PIX: [Chave PIX]. Caso já tenha realizado o pagamento, por favor desconsidere este aviso ou nos envie o comprovante. Permanecemos à disposição!\nAtenciosamente, Equipe Zioto Contabilidade."`;
+      } else if (t.includes('distribuição de lucros') || t.includes('lucros')) {
+        resposta = `**Distribuição de Lucros Isenta no Simples Nacional e Lucro Presumido:**\nA distribuição de lucros aos sócios é 100% isenta de IRRF e IRPF, desde que a empresa mantenha **Escrituração Contábil Regular** comprovando a existência de lucros (saldo positivo em Lucros Acumulados no Balanço) e esteja com todos os tributos federais e previdenciários em dia (sem CNDs de débitos impeditivas nos termos do art. 32 da Lei 4.357/64).`;
+      } else {
+        resposta = `**Orientação Z-IA Contábil:**\nRecebemos sua consulta: "*${texto}*".\nPara esta operação, recomendamos verificar a regularidade fiscal da empresa no e-CAC e confrontar com o regime tributário cadastrado (Simples Nacional ou Lucro Presumido).\n*Para obter respostas personalizadas mais profundas em tempo real, certifique-se de configurar a Chave de API Google Gemini na aba de Configurações.*`;
+      }
+    }
+
+    this.state.chatIAHistorico.push({
+      autor: 'ia',
+      texto: resposta,
+      hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    });
+    this.renderContentOnly();
+  },
+
+  enviarPerguntaSugeridaIA(texto) {
+    const input = document.getElementById('chat-ia-input');
+    if (input) input.value = texto;
+    this.enviarMensagemChatIA();
+  },
+
+  limparChatIA() {
+    this.state.chatIAHistorico = [];
+    this.renderContentOnly();
+  },
+
+  gerarComunicadoIA() {
+    const tipo = document.getElementById('comunicado-tipo')?.value || 'COBRANCA';
+    const tom = document.getElementById('comunicado-tom')?.value || 'CORDIAL';
+    const empId = document.getElementById('comunicado-empresa')?.value || '';
+    const canal = document.getElementById('comunicado-canal')?.value || 'WHATSAPP';
+    const db = window.zgestorDB;
+    const emp = db.data.empresas.find(e => e.id === empId) || db.data.empresas[0];
+    const esc = db.getEscritorioConfig();
+    const chavePix = esc.chave_pix_padrao || esc.email_financeiro || 'financeiro@ziotocontabilidade.com.br';
+
+    let msg = '';
+    const clienteNome = emp ? (emp.responsavel_legal || emp.nome_fantasia) : 'Cliente';
+    const empresaNome = emp ? emp.nome_fantasia : 'Sua Empresa';
+
+    if (tipo === 'COBRANCA') {
+      const valorHon = emp ? Number(emp.valor_honorario_padrao || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00';
+      msg = `Olá, ${clienteNome}! Tudo bem?\n\nPassando para lembrar que a fatura de honorários contábeis da *${empresaNome}* ref. a este mês já está disponível para pagamento no valor de *R$ ${valorHon}*.\n\nPara facilitar, você pode pagar direto via Chave PIX:\n🔑 *${chavePix}*\n\nQualquer dúvida estamos à disposição!\nEquipe ${esc.nome_escritorio}.`;
+    } else if (tipo === 'GUIAS') {
+      msg = `Prezado(a) ${clienteNome},\n\nInformamos que as guias de impostos (DAS / DARF / FGTS) da empresa *${empresaNome}* relativas à competência atual já foram apuradas e estão disponíveis no seu Portal do Cliente.\n\nLembramos que o vencimento ocorre nos próximos dias. Evite juros e multas efetuando o pagamento até a data limite.\n\nAtenciosamente,\n${esc.nome_escritorio}`;
+    } else {
+      msg = `Olá, ${clienteNome}!\n\nEstamos realizando o fechamento contábil e fiscal do mês da *${empresaNome}*.\n\nPedimos a gentileza de nos enviar através do Portal do Cliente ou por aqui os extratos bancários (em formato .OFX ou .PDF) e os comprovantes de pagamento do período.\n\nMuito obrigado pela colaboração!\nEquipe ${esc.nome_escritorio}`;
+    }
+
+    this.state.comunicadoIAGerado = {
+      tipo,
+      tom,
+      canal,
+      telefone: emp ? emp.telefone : '',
+      texto: msg
+    };
+    this.renderContentOnly();
+  },
+
+  copiarTextoComunicadoIA() {
+    if (!this.state.comunicadoIAGerado || !this.state.comunicadoIAGerado.texto) {
+      this.showToast('Nenhum comunicado gerado para copiar.', 'error');
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(this.state.comunicadoIAGerado.texto);
+    }
+    this.showToast('Texto do comunicado copiado para a área de transferência!', 'success');
+  },
+
+  abrirWhatsAppComunicadoIA() {
+    if (!this.state.comunicadoIAGerado || !this.state.comunicadoIAGerado.texto) {
+      this.showToast('Gere o comunicado antes de abrir no WhatsApp.', 'error');
+      return;
+    }
+    const tel = (this.state.comunicadoIAGerado.telefone || '').replace(/\D/g, '');
+    const url = tel ? `https://wa.me/55${tel}?text=${encodeURIComponent(this.state.comunicadoIAGerado.texto)}` : `https://wa.me/?text=${encodeURIComponent(this.state.comunicadoIAGerado.texto)}`;
+    window.open(url, '_blank');
+  },
+
+  gerarRespostaChamadoIA(registroId) {
+    const db = window.zgestorDB;
+    const r = (db.data.central_cliente_registros || []).find(x => x.id === registroId);
+    if (!r) return;
+
+    let sugestao = '';
+    const desc = (r.descricao || '').toLowerCase();
+    if (desc.includes('guia') || desc.includes('imposto') || desc.includes('das')) {
+      sugestao = `Olá! A guia solicitada já foi verificada e disponibilizada na aba 'Guias de Impostos' do seu Portal com todos os códigos de barras e QR Code PIX para pagamento tempestivo.`;
+    } else if (desc.includes('cnd') || desc.includes('certidão')) {
+      sugestao = `Olá! Realizamos a emissão e validação da certidão negativa solicitada. O arquivo PDF oficial já se encontra anexado na aba 'Controle de CNDs' do seu Portal.`;
+    } else {
+      sugestao = `Prezado(a) cliente, confirmamos o recebimento de sua solicitação referente a "${r.titulo}". Nossa equipe técnica contábil já realizou a análise necessária e o procedimento foi concluído com sucesso.`;
+    }
+
+    r.resposta_contabilidade = sugestao;
+    r.status = 'CONCLUIDO';
+    db.saveLocalData();
+    this.showToast('Resposta gerada pela IA aplicada com sucesso!', 'success');
+    this.renderContentOnly();
   }
 };
 
