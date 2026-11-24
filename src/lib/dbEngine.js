@@ -231,6 +231,25 @@
             if (!Array.isArray(parsed.alvaras)) {
               parsed.alvaras = [];
             }
+            // Saneamento de empresas fictícias de demonstração antigas (emp-1, emp-2, emp-3, emp-4)
+            const demoEmpIds = ['emp-1', 'emp-2', 'emp-3', 'emp-4'];
+            const tinhaDemoEmp = (parsed.empresas || []).some(e => demoEmpIds.includes(e.id));
+            if (tinhaDemoEmp) {
+              parsed.empresas = (parsed.empresas || []).filter(e => !demoEmpIds.includes(e.id));
+              const keepNonDemo = (arr) => (arr || []).filter(item => !demoEmpIds.includes(item.empresa_id));
+              parsed.onboarding_itens = keepNonDemo(parsed.onboarding_itens);
+              parsed.tarefas = keepNonDemo(parsed.tarefas);
+              parsed.guias_impostos = keepNonDemo(parsed.guias_impostos);
+              parsed.parcelamentos = keepNonDemo(parsed.parcelamentos);
+              parsed.parcelamento_guias = keepNonDemo(parsed.parcelamento_guias);
+              parsed.alvaras = keepNonDemo(parsed.alvaras);
+              parsed.cnds = keepNonDemo(parsed.cnds);
+              parsed.portal_arquivos = keepNonDemo(parsed.portal_arquivos);
+              parsed.central_cliente_registros = keepNonDemo(parsed.central_cliente_registros);
+              parsed.honorarios = keepNonDemo(parsed.honorarios);
+              parsed.honorario_pagamentos = keepNonDemo(parsed.honorario_pagamentos);
+              parsed.convites = (parsed.convites || []).filter(c => !demoEmpIds.includes(c.empresa_id) && c.id !== 'conv-101' && c.id !== 'conv-102');
+            }
             this.garantirAlvarasPadrao(parsed);
             parsed.profiles.forEach(p => {
               if (!p.permissoes) {
