@@ -1065,29 +1065,56 @@ window.ZGestorReports = {
     if (!prot) return;
 
     const itens = prot.itens || [];
-    const linhas = itens.map((it, idx) => `
-      <tr class="border-b border-slate-300">
-        <td class="py-3 px-2 text-center font-mono text-xs text-slate-500">${idx + 1}</td>
-        <td class="py-3 px-2">
-          <div class="font-bold text-slate-900 text-xs">${it.razao_social || it.empresa_nome}</div>
-          <div class="text-[11px] text-slate-600 font-mono">CNPJ: ${it.cnpj || '—'}</div>
-        </td>
-        <td class="py-3 px-2 text-xs font-semibold text-slate-800">
-          ${it.tipo_guia}
-          ${it.segundo_mes_subsequente ? '<div class="text-[10px] font-bold text-amber-700">⚠ Venc. 2º Mês Subseq.</div>' : ''}
-        </td>
-        <td class="py-3 px-2 text-center font-bold text-xs text-slate-900">${V.formatDate(it.data_vencimento)}</td>
-        <td class="py-3 px-2 text-center text-xs text-slate-400">____/____/____</td>
-        <td class="py-3 px-2">
-          <div class="border-b border-slate-400 h-6"></div>
-          <div class="text-[9px] text-slate-400 mt-0.5">Nome legível e assinatura do recebedor</div>
-        </td>
-      </tr>
-    `).join('');
 
+    // Aglutina todas as guias por empresa para o cliente assinar apenas UMA VEZ!
+    const porEmpresaMap = new Map();
+    itens.forEach(it => {
+      const key = it.empresa_id || it.cnpj || it.empresa_nome;
+      if (!porEmpresaMap.has(key)) {
+        porEmpresaMap.set(key, {
+          empresa_nome: it.empresa_nome,
+          razao_social: it.razao_social || it.empresa_nome,
+          cnpj: it.cnpj || '—',
+          guias: []
+        });
+      }
+      porEmpresaMap.get(key).guias.push(it);
+    });
+
+    const gruposEmpresas = Array.from(porEmpresaMap.values());
+    const linhas = gruposEmpresas.map((grupo, idx) => {
+      const guiasListaHtml = grupo.guias.map(it => `
+        <div class="py-1 border-b last:border-b-0 border-slate-200/80 flex items-center justify-between gap-2">
+          <div>
+            <span class="font-bold text-slate-900">• ${it.tipo_guia}</span>
+            ${it.competencia_guia ? `<span class="text-[10px] text-slate-500 ml-1">(Comp. ${it.competencia_guia})</span>` : ''}
+            ${it.segundo_mes_subsequente ? '<span class="ml-1 text-[10px] font-bold text-amber-700">[2º Mês Subseq.]</span>' : ''}
+          </div>
+          <span class="font-bold text-slate-800 whitespace-nowrap">Venc: ${V.formatDate(it.data_vencimento)}</span>
+        </div>
+      `).join('');
+
+      return `
+        <tr class="border-b border-slate-300">
+          <td class="py-3 px-2 text-center font-mono text-xs text-slate-500 align-top">${idx + 1}</td>
+          <td class="py-3 px-2 align-top">
+            <div class="font-bold text-slate-900 text-xs">${grupo.razao_social}</div>
+            <div class="text-[11px] text-slate-600 font-mono">CNPJ: ${grupo.cnpj}</div>
+          </td>
+          <td class="py-2 px-2 text-xs align-top">${guiasListaHtml}</td>
+          <td class="py-3 px-2 text-center text-xs text-slate-500 align-bottom">____/____/____</td>
+          <td class="py-3 px-2 align-bottom">
+            <div class="border-b border-slate-400 h-7"></div>
+            <div class="text-[9px] text-slate-400 mt-0.5">Nome legível e assinatura única do recebedor</div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    const subEntrega = db.obterMesSubsequente(prot.competencia);
     const html = `
       <div class="space-y-4">
-        ${this.cabecalhoPadraoRelatorio(`Protocolo de Entrega de Guias — ${prot.codigo}`, `Competência ${prot.competencia} • Entrega Física (Office Boy) • ${itens.length} guia(s)`)}
+        ${this.cabecalhoPadraoRelatorio(`Protocolo de Entrega de Guias — ${prot.codigo}`, `Entrega em ${subEntrega.label} • ${gruposEmpresas.length} empresa(s) • ${itens.length} guia(s) aglutinadas`)}
 
         <div class="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
           <div><span class="text-slate-500">Nº Protocolo:</span> <strong class="font-mono text-indigo-800">${prot.codigo}</strong></div>
@@ -1099,11 +1126,10 @@ window.ZGestorReports = {
           <thead>
             <tr class="bg-slate-100 border-b-2 border-slate-400 text-[10px] font-bold uppercase text-slate-700">
               <th class="py-2 px-2 w-[5%] text-center">#</th>
-              <th class="py-2 px-2 w-[30%]">Empresa / CNPJ</th>
-              <th class="py-2 px-2 w-[23%]">Guia / Tributo</th>
-              <th class="py-2 px-2 w-[11%] text-center">Vencimento</th>
+              <th class="py-2 px-2 w-[26%]">Empresa / CNPJ</th>
+              <th class="py-2 px-2 w-[37%]">Guias Entregues (Aglutinadas por Empresa)</th>
               <th class="py-2 px-2 w-[11%] text-center">Data Entrega</th>
-              <th class="py-2 px-2 w-[20%]">Assinatura / Carimbo Cliente</th>
+              <th class="py-2 px-2 w-[21%]">Assinatura Única do Cliente</th>
             </tr>
           </thead>
           <tbody>

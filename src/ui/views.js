@@ -579,7 +579,7 @@ window.ZGestorViews = {
     const qtdEntreguesComp = todasComp.filter(t => db.obterStatusSimplesTarefa(t) === 'ENTREGUE').length;
 
     // 2. Filtra Guias de Impostos
-    const todasGuiasComp = db.getGuiasImpostos(comp) || [];
+    const todasGuiasComp = db.getGuiasParaEntregaNaCompetencia(comp) || [];
     let listaGuiasImpostos = [...todasGuiasComp];
     if (fCliente !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.empresa_id === fCliente);
     if (fGuiaTipo !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.tipo_guia === fGuiaTipo);
@@ -906,11 +906,6 @@ window.ZGestorViews = {
               <button onclick="ZGestorApp.gerarTarefasMesAtual()" class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold text-xs flex items-center gap-1.5">
                 <i data-lucide="calendar-plus" class="w-3.5 h-3.5 text-indigo-600"></i>
                 Gerar Tarefas Recorrentes (${comp})
-              </button>
-            ` : subTab === 'guias_impostos' ? `
-              <button onclick="ZGestorApp.gerarGuiasImpostosMesAtual()" class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs flex items-center gap-1.5">
-                <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-emerald-600"></i>
-                Gerar Guias Padrão (${comp})
               </button>
             ` : ''}
           </div>
@@ -2055,14 +2050,14 @@ window.ZGestorViews = {
                     </button>
                     <button
                       type="button"
-                      onclick="ZGestorApp.registrarEnvioDigitalSelecionadas('WHATSAPP')"
+                      onclick="ZGestorApp.openModalEnvioDigitalGuias('WHATSAPP')"
                       class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
                       <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>
                       <span>Enviada WhatsApp (${selecionadas.length})</span>
                     </button>
                     <button
                       type="button"
-                      onclick="ZGestorApp.registrarEnvioDigitalSelecionadas('EMAIL')"
+                      onclick="ZGestorApp.openModalEnvioDigitalGuias('EMAIL')"
                       class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
                       <i data-lucide="mail" class="w-3.5 h-3.5"></i>
                       <span>Enviada E-mail (${selecionadas.length})</span>
@@ -2111,7 +2106,10 @@ window.ZGestorViews = {
                                 <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : ''}</div>
                               </td>
                               <td class="py-3 px-3">
-                                <div class="font-bold text-slate-900">${this.escapeHtml(g.tipo_guia || 'Guia')}</div>
+                                <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                                  <span>${this.escapeHtml(g.tipo_guia || 'Guia')}</span>
+                                  <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-mono">Comp. ${g.competencia}</span>
+                                </div>
                                 ${g.observacoes ? `<div class="text-[11px] text-slate-500 mt-0.5">${this.escapeHtml(g.observacoes)}</div>` : ''}
                               </td>
                               <td class="py-3 px-3 whitespace-nowrap">
@@ -2127,15 +2125,18 @@ window.ZGestorViews = {
                                 ${g.protocolo_codigo ? `
                                   <div class="text-[11px] font-mono font-bold text-blue-700 mt-1">${g.protocolo_codigo}</div>
                                 ` : g.data_envio ? `
-                                  <div class="text-[11px] text-slate-500 mt-1">${this.formatDate(g.data_envio)} • ${g.canal_envio || ''}</div>
+                                  <div class="text-[11px] text-slate-600 mt-1">
+                                    <strong>${this.formatDate(g.data_envio)}</strong> • ${g.canal_envio || ''}
+                                    ${(g.enviado_por || g.responsavel_nome) ? `<div>Por: <strong>${this.escapeHtml(g.enviado_por || g.responsavel_nome)}</strong></div>` : ''}
+                                  </div>
                                 ` : ''}
                               </td>
                               <td class="py-3 px-3 text-right whitespace-nowrap">
                                 <div class="inline-flex items-center justify-end gap-1">
                                   ${pend ? `
                                     <button type="button" onclick="ZGestorApp.gerarProtocoloOfficeBoySelecionadas('${g.id}')" class="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-[10px] font-bold cursor-pointer" title="Imprimir e Gerar Protocolo Office Boy">Office Boy</button>
-                                    <button type="button" onclick="ZGestorApp.registrarEnvioDigitalSelecionadas('WHATSAPP', '${g.id}')" class="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold cursor-pointer" title="Marcar Enviada via WhatsApp">WhatsApp</button>
-                                    <button type="button" onclick="ZGestorApp.registrarEnvioDigitalSelecionadas('EMAIL', '${g.id}')" class="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-bold cursor-pointer" title="Marcar Enviada via E-mail">E-mail</button>
+                                    <button type="button" onclick="ZGestorApp.openModalEnvioDigitalGuias('WHATSAPP', '${g.id}')" class="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold cursor-pointer" title="Marcar Enviada via WhatsApp">WhatsApp</button>
+                                    <button type="button" onclick="ZGestorApp.openModalEnvioDigitalGuias('EMAIL', '${g.id}')" class="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-bold cursor-pointer" title="Marcar Enviada via E-mail">E-mail</button>
                                   ` : ''}
                                   <button onclick="ZGestorApp.openModalGuiaImposto('${g.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer" title="Editar"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
                                   <button onclick="ZGestorApp.excluirGuiaImposto('${g.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer" title="Excluir"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>

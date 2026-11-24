@@ -1065,6 +1065,14 @@ window.ZGestorApp = {
 
   marcarEtapaRapida(tarefaId, acao) {
     try {
+      const tarefaAlvo = (window.zgestorDB.data.tarefas || []).find(item => item.id === tarefaId);
+      if (tarefaAlvo && acao === 'ENTREGUE_NORMAL') {
+        const tit = (tarefaAlvo.titulo || '').toLowerCase();
+        if (tit.includes('destda') || (tit.includes('icms') && !tit.includes('simples'))) {
+          this.openModalApuracaoICMS(tarefaId);
+          return;
+        }
+      }
       const t = window.zgestorDB.marcarEtapaTarefa(tarefaId, acao);
       const msgs = {
         COBRAR_DOCS: 'Marcado como Aguardando Documentos do cliente.',
@@ -6234,14 +6242,182 @@ window.ZGestorApp = {
     }
   },
 
-  registrarEnvioDigitalSelecionadas(canal = 'WHATSAPP', guiaIdUnico = null) {
+  openModalApuracaoICMS(tarefaId) {
+    const db = window.zgestorDB;
+    const t = (db.data.tarefas || []).find(item => item.id === tarefaId);
+    if (!t) return;
+    const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+    const vencPadrao = db.calcularDataSegundoMesSubsequente(t.competencia, 18);
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <h3 class="text-base font-bold text-slate-900">Apuração DeSTDA / ICMS</h3>
+              <p class="text-xs text-slate-500">${emp ? emp.nome_fantasia : 'Empresa'} • Comp. ${t.competencia}</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitApuracaoICMS(event, '${t.id}')" class="space-y-4 mt-4 text-xs">
+            <div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+              Selecione abaixo quais tipos de ICMS tiveram movimento nesta competência (pode marcar 1, 2 ou os 3 juntos). As guias selecionadas serão geradas com vencimento no <strong>2º mês subsequente</strong> para entrar no próximo protocolo junto ao Simples.
+            </div>
+
+            <div class="space-y-2">
+              <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
+                <input type="checkbox" name="f-icms-tipo" value="ICMS DIFAL" class="w-4 h-4 rounded text-indigo-600" />
+                <div>
+                  <div class="font-bold text-slate-900">ICMS DIFAL</div>
+                  <div class="text-[10px] text-slate-500">Diferencial de Alíquota interestadual</div>
+                </div>
+              </label>
+              <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
+                <input type="checkbox" name="f-icms-tipo" value="ICMS Antecipação" class="w-4 h-4 rounded text-indigo-600" />
+                <div>
+                  <div class="font-bold text-slate-900">ICMS Antecipação</div>
+                  <div class="text-[10px] text-slate-500">Recolhimento antecipado de entrada</div>
+                </div>
+              </label>
+              <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
+                <input type="checkbox" name="f-icms-tipo" value="ICMS Antecipação ST" class="w-4 h-4 rounded text-indigo-600" />
+                <div>
+                  <div class="font-bold text-slate-900">ICMS Antecipação ST</div>
+                  <div class="text-[10px] text-slate-500">Substituição Tributária nas entradas</div>
+                </div>
+              </label>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Data de Vencimento das Guias (2º Mês Subsequente)</label>
+              <input id="f-icms-venc" type="date" value="${vencPadrao}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onclick="ZGestorApp.concluirICMSSemMovimento('${t.id}')"
+                class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
+                Transmitida Sem Movimento
+              </button>
+              <button
+                type="submit"
+                class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm transition cursor-pointer">
+                Confirmar e Gerar Guias
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  concluirICMSSemMovimento(tarefaId) {
+    try {
+      window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, []);
+      this.closeModal();
+      this.showToast('DeSTDA / ICMS concluída Sem Movimento (nenhuma guia gerada).', 'info');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  submitApuracaoICMS(e, tarefaId) {
+    e.preventDefault();
+    try {
+      const selecionados = Array.from(document.querySelectorAll('input[name="f-icms-tipo"]:checked')).map(cb => cb.value);
+      const venc = document.getElementById('f-icms-venc')?.value || null;
+      if (selecionados.length === 0) {
+        this.showToast('Marque ao menos um tipo de ICMS ou clique em "Transmitida Sem Movimento".', 'error');
+        return;
+      }
+      const res = window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, selecionados, venc);
+      this.closeModal();
+      this.showToast(`Apuração concluída! ${res.guiasCriadas} guia(s) gerada(s) para vencimento em ${venc}.`, 'success');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  openModalEnvioDigitalGuias(canal = 'WHATSAPP', guiaIdUnico = null) {
+    const ids = guiaIdUnico ? [guiaIdUnico] : (this.state.guiasSelecionadas || []);
+    if (ids.length === 0) {
+      this.showToast('Marque ao menos uma guia para registrar o envio.', 'error');
+      return;
+    }
+    const db = window.zgestorDB;
+    const user = db.getCurrentUser();
+    const hoje = new Date().toISOString().slice(0, 10);
+    const profiles = (db.data.profiles || []).filter(p => p.ativo);
+    const nomeCanal = canal === 'EMAIL' ? 'E-mail' : 'WhatsApp';
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <h3 class="text-base font-bold text-slate-900">Registrar Envio via ${nomeCanal}</h3>
+              <p class="text-xs text-slate-500">${ids.length} guia(s) selecionada(s)</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitEnvioDigitalGuias(event, '${canal}', '${guiaIdUnico || ''}')" class="space-y-3.5 mt-4 text-xs">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Quem enviou? *</label>
+              <input
+                id="f-env-dig-resp"
+                type="text"
+                required
+                list="lista-usuarios-envio"
+                value="${escapeHtml(user ? user.nome : '')}"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 font-semibold"
+              />
+              <datalist id="lista-usuarios-envio">
+                ${profiles.map(p => `<option value="${escapeHtml(p.nome)}">`).join('')}
+              </datalist>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Data do Envio *</label>
+              <input id="f-env-dig-data" type="date" required value="${hoje}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+            </div>
+
+            <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+              <button type="submit" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm cursor-pointer">
+                Confirmar e Salvar Envio
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  submitEnvioDigitalGuias(e, canal, guiaIdUnico) {
+    e.preventDefault();
+    const resp = document.getElementById('f-env-dig-resp')?.value.trim();
+    const dt = document.getElementById('f-env-dig-data')?.value;
+    this.registrarEnvioDigitalSelecionadas(canal, guiaIdUnico || null, dt, resp);
+    this.closeModal();
+  },
+
+  registrarEnvioDigitalSelecionadas(canal = 'WHATSAPP', guiaIdUnico = null, dataEnvio = null, responsavelNome = null) {
     try {
       const ids = guiaIdUnico ? [guiaIdUnico] : (this.state.guiasSelecionadas || []);
       if (ids.length === 0) {
         this.showToast('Marque ao menos uma guia para registrar o envio.', 'error');
         return;
       }
-      const qtd = window.zgestorDB.registrarEnvioDigitalGuia(ids, canal);
+      const qtd = window.zgestorDB.registrarEnvioDigitalGuia(ids, canal, dataEnvio, responsavelNome);
       this.state.guiasSelecionadas = [];
       this.showToast(`${qtd} guia(s) registrada(s) como enviada(s) via ${canal === 'EMAIL' ? 'E-mail' : 'WhatsApp'}!`, 'success');
       this.renderContentOnly();

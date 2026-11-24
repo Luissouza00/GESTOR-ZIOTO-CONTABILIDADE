@@ -234,6 +234,14 @@
             if (!Array.isArray(parsed.protocolos_guias)) {
               parsed.protocolos_guias = [];
             }
+            if (!parsed._guias_v2_cleaned) {
+              parsed.guias_impostos = (parsed.guias_impostos || []).filter(g => {
+                const ehAntigaAuto = (g.id || '').startsWith('gimp-gen-');
+                const pendente = !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio);
+                return !(ehAntigaAuto && pendente && !g.protocolo_id);
+              });
+              parsed._guias_v2_cleaned = true;
+            }
             // Saneamento de empresas fictícias de demonstração antigas (emp-1, emp-2, emp-3, emp-4)
             const demoEmpIds = ['emp-1', 'emp-2', 'emp-3', 'emp-4'];
             const tinhaDemoEmp = (parsed.empresas || []).some(e => demoEmpIds.includes(e.id));
@@ -776,8 +784,7 @@
           if (dadosEmpresa.status === 'ATIVA' && oldStatus !== 'ATIVA') {
             const compGera = this.data.empresas[idx].competencia_inicial || this.data.competencia_ativa || '10/2026';
             this.gerarTarefasCompetencia(compGera, this.data.empresas[idx].id);
-            this.gerarGuiasImpostosCompetencia(compGera);
-            if (this.canAccessModule('honorarios')) {
+                if (this.canAccessModule('honorarios')) {
               this.gerarHonorariosCompetencia(compGera);
             }
           }
@@ -827,7 +834,6 @@
       if (novaEmpresa.status === 'ATIVA') {
         const compGera = novaEmpresa.competencia_inicial || this.data.competencia_ativa || '10/2026';
         this.gerarTarefasCompetencia(compGera, novaEmpresa.id);
-        this.gerarGuiasImpostosCompetencia(compGera);
         if (this.canAccessModule('honorarios')) {
           this.gerarHonorariosCompetencia(compGera);
         }
@@ -1449,7 +1455,6 @@
         });
       });
 
-      this.gerarGuiasImpostosCompetencia(competencia);
 
       if (criadas > 0) {
         this.saveLocalData();
@@ -1467,6 +1472,98 @@
       }
       if (!competencia) return this.data.guias_impostos;
       return this.data.guias_impostos.filter(g => g.competencia === competencia);
+    }
+
+    getGuiasParaEntregaNaCompetencia(competencia) {
+      if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
+      if (!competencia) return this.data.guias_impostos;
+      const sub = this.obterMesSubsequente(competencia);
+      const prefixoEntrega = `${sub.ano}-${sub.mesFormatado}`;
+      const compEntrega = `${sub.mesFormatado}/${sub.ano}`;
+
+      return this.data.guias_impostos.filter(g => {
+        if (g.data_vencimento && g.data_vencimento.startsWith(prefixoEntrega)) return true;
+        if (g.competencia_entrega === compEntrega) return true;
+        if (!g.data_vencimento && g.competencia === competencia) return true;
+        return false;
+      });
+    }
+
+    registrarConclusaoApuracaoICMS(tarefaId, tiposSelecionados = [], dataVencimentoCustom = null) {
+      const idx = (this.data.tarefas || []).findIndex(t => t.id === tarefaId);
+      if (idx === -1) throw new Error('Tarefa não encontrada.');
+      const t = this.data.tarefas[idx];
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment(t.departamento, user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
+      }
+
+      const tipos = Array.isArray(tiposSelecionados) ? tiposSelecionados.filter(Boolean) : [];
+      const hoje = new Date().toISOString().slice(0, 10);
+
+      // Remove guias ICMS ainda pendentes desta tarefa/competência antes de recriar os tipos exatos
+      if (Array.isArray(this.data.guias_impostos)) {
+        this.data.guias_impostos = this.data.guias_impostos.filter(g => {
+          const ehIcmsEmpComp = g.empresa_id === t.empresa_id && g.competencia === t.competencia && (g.tipo_guia || '').toLowerCase().includes('icms');
+          const pendente = !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio);
+          return !(ehIcmsEmpComp && pendente);
+        });
+      } else {
+        this.data.guias_impostos = [];
+      }
+
+      if (tipos.length === 0) {
+        t.data_entrega = hoje;
+        t.modalidade_entrega = 'SEM_MOVIMENTO';
+        t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+        t.protocolo_observacao = 'DeSTDA / ICMS transmitida Sem Movimento.';
+        if (user) t.responsavel_nome = user.nome;
+        this.saveLocalData();
+        this.registrarLog('APURACAO_ICMS_SEM_MOV', 'Tarefas/Guias', `DeSTDA / ICMS concluída Sem Movimento (${t.competencia}).`);
+        return { tarefa: t, guiasCriadas: 0 };
+      }
+
+      t.data_entrega = hoje;
+      t.modalidade_entrega = 'NORMAL';
+      t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+      t.protocolo_observacao = `Com movimento: ${tipos.join(', ')}`;
+      if (user) t.responsavel_nome = user.nome;
+
+      const vencimentoFinal = dataVencimentoCustom || this.calcularDataSegundoMesSubsequente(t.competencia, 18);
+      const sub2 = this.obterMesSubsequente(`${this.obterMesSubsequente(t.competencia).mesFormatado}/${this.obterMesSubsequente(t.competencia).ano}`);
+      const compEntrega = `${sub2.mesFormatado}/${sub2.ano}`;
+
+      let criadas = 0;
+      tipos.forEach(tipoNome => {
+        const jaEnviada = this.data.guias_impostos.some(
+          g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && g.tipo_guia === tipoNome
+        );
+        if (!jaEnviada) {
+          this.data.guias_impostos.unshift({
+            id: `gimp-icms-${Date.now()}-${criadas}-${Math.random().toString(36).slice(2, 5)}`,
+            empresa_id: t.empresa_id,
+            competencia: t.competencia,
+            competencia_entrega: compEntrega,
+            tipo_guia: tipoNome,
+            departamento: 'FISCAL',
+            valor: 0.00,
+            data_vencimento: vencimentoFinal,
+            segundo_mes_subsequente: true,
+            status_envio: 'GERADA_AGUARDANDO_ENVIO',
+            data_envio: null,
+            canal_envio: '',
+            protocolo_id: null,
+            protocolo_codigo: null,
+            responsavel_nome: t.responsavel_nome || (user ? user.nome : 'Equipe Fiscal'),
+            observacoes: `Ref. apuração ${t.competencia} (vencimento no 2º mês subsequente).`
+          });
+          criadas++;
+        }
+      });
+
+      this.saveLocalData();
+      this.registrarLog('APURACAO_ICMS_COM_MOV', 'Tarefas/Guias', `ICMS/DeSTDA concluído com movimento (${tipos.join(', ')}) para comp. ${t.competencia}, vencimento ${vencimentoFinal}.`);
+      return { tarefa: t, guiasCriadas: criadas };
     }
 
     salvarGuiaImposto(dados) {
@@ -1557,81 +1654,17 @@
     gerarGuiasImpostosCompetencia(competencia) {
       if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
       let criadas = 0;
-      const empresasAtivas = this.data.empresas.filter(e => e.status === 'ATIVA' || e.status === 'EM_ONBOARDING');
-      const dpAtivo = this.getModelosTarefas().some(m => m.departamento === 'PESSOAL' && m.ativo);
-
-      empresasAtivas.forEach(emp => {
-        const guiasPadraoEmpresa = [];
-        const temProLabore = emp.possui_pro_labore !== false;
-        const temFuncionarios = Boolean(emp.possui_funcionarios);
-        const temIE = this.empresaPossuiIE(emp);
-
-        if (emp.regime_tributario === 'Simples Nacional') {
-          guiasPadraoEmpresa.push({ tipo: 'DAS - Simples Nacional', dept: 'FISCAL', dia: 20, segundoMes: false });
-          if (temIE) {
-            guiasPadraoEmpresa.push({ tipo: 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)', dept: 'FISCAL', dia: 20, segundoMes: true });
-          }
-        } else if (emp.regime_tributario === 'Lucro Presumido' || emp.regime_tributario === 'Lucro Real') {
-          guiasPadraoEmpresa.push({ tipo: 'DARF - PIS / COFINS', dept: 'FISCAL', dia: 25, segundoMes: false });
-          if (temIE) {
-            guiasPadraoEmpresa.push({ tipo: 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)', dept: 'FISCAL', dia: 20, segundoMes: true });
-          }
-        } else if (emp.regime_tributario === 'MEI') {
-          guiasPadraoEmpresa.push({ tipo: 'DAS - SIMEI (MEI)', dept: 'FISCAL', dia: 20, segundoMes: false });
+      const tarefasComMov = (this.data.tarefas || []).filter(
+        t => t.competencia === competencia && t.data_entrega && t.modalidade_entrega !== 'SEM_MOVIMENTO'
+      );
+      tarefasComMov.forEach(t => {
+        const tit = (t.titulo || '').toLowerCase();
+        if (tit.includes('pgdas') || tit.includes('guia das')) {
+          const antes = this.data.guias_impostos.length;
+          this._garantirGuiaPorConclusaoTarefa(t, 'DAS - Simples Nacional', 20, false);
+          if (this.data.guias_impostos.length > antes) criadas++;
         }
-
-        if (dpAtivo && (temProLabore || temFuncionarios)) {
-          guiasPadraoEmpresa.push({
-            tipo: 'DARF - DCTFWeb / INSS / IRRF (Pró-Labore / Folha)',
-            dept: 'PESSOAL',
-            dia: 20,
-            segundoMes: false
-          });
-        }
-
-        if (dpAtivo && temFuncionarios) {
-          guiasPadraoEmpresa.push({
-            tipo: 'FGTS Digital - Guia Mensal (Funcionários CLT)',
-            dept: 'PESSOAL',
-            dia: 20,
-            segundoMes: false
-          });
-        }
-
-        guiasPadraoEmpresa.forEach(gp => {
-          const jaExiste = this.data.guias_impostos.some(
-            g => g.empresa_id === emp.id && g.competencia === competencia &&
-            (g.tipo_guia === gp.tipo ||
-             (gp.tipo.includes('MEI') && (g.tipo_guia.includes('MEI') || g.tipo_guia.includes('SIMEI'))) ||
-             (gp.tipo.includes('DAS') && g.tipo_guia.includes('DAS') && !gp.tipo.includes('MEI') && !g.tipo_guia.includes('MEI')))
-          );
-          if (!jaExiste) {
-            const colab = this.data.profiles.find(p => p.departamento === gp.dept && p.ativo);
-            const dtVenc = gp.segundoMes
-              ? this.calcularDataSegundoMesSubsequente(competencia, gp.dia)
-              : this.calcularDataMesSubsequente(competencia, gp.dia);
-            this.data.guias_impostos.push({
-              id: `gimp-gen-${Date.now()}-${criadas}-${Math.random().toString(36).slice(2, 5)}`,
-              empresa_id: emp.id,
-              competencia,
-              tipo_guia: gp.tipo,
-              departamento: gp.dept,
-              valor: 0.00,
-              data_vencimento: dtVenc,
-              segundo_mes_subsequente: Boolean(gp.segundoMes),
-              status_envio: 'GERADA_AGUARDANDO_ENVIO',
-              data_envio: null,
-              canal_envio: '',
-              protocolo_id: null,
-              protocolo_codigo: null,
-              responsavel_nome: colab ? colab.nome : (this.getCurrentUser()?.nome || 'Equipe Fiscal'),
-              observacoes: gp.segundoMes ? 'ICMS com vencimento no 2º mês subsequente.' : ''
-            });
-            criadas++;
-          }
-        });
       });
-
       if (criadas > 0) this.saveLocalData();
       return criadas;
     }
@@ -1670,6 +1703,7 @@
             razao_social: emp ? emp.razao_social : 'Empresa',
             cnpj: emp ? emp.cnpj : '—',
             tipo_guia: g.tipo_guia,
+            competencia_guia: g.competencia,
             data_vencimento: g.data_vencimento,
             segundo_mes_subsequente: Boolean(g.segundo_mes_subsequente)
           });
@@ -1702,11 +1736,12 @@
       return novoProt;
     }
 
-    registrarEnvioDigitalGuia(guiaIds, canal = 'WHATSAPP') {
+    registrarEnvioDigitalGuia(guiaIds, canal = 'WHATSAPP', dataEnvio = null, responsavelNome = null) {
       const ids = Array.isArray(guiaIds) ? guiaIds : [guiaIds];
       if (ids.length === 0) throw new Error('Nenhuma guia selecionada.');
       const user = this.getCurrentUser();
-      const hoje = new Date().toISOString().slice(0, 10);
+      const dtFinal = (dataEnvio || '').trim() || new Date().toISOString().slice(0, 10);
+      const respFinal = (responsavelNome || '').trim() || (user ? user.nome : 'Escritório');
       const isEmail = canal === 'EMAIL';
       const statusNovo = isEmail ? 'ENVIADA_EMAIL' : 'ENVIADA_WHATSAPP';
       const nomeCanal = isEmail ? 'E-mail' : 'WhatsApp';
@@ -1717,8 +1752,9 @@
         if (g) {
           g.status_envio = statusNovo;
           g.canal_envio = nomeCanal;
-          g.data_envio = hoje;
-          g.responsavel_nome = user ? user.nome : g.responsavel_nome;
+          g.data_envio = dtFinal;
+          g.enviado_por = respFinal;
+          g.responsavel_nome = respFinal;
           atualizadas++;
         }
       });
