@@ -4589,7 +4589,7 @@ window.ZGestorApp = {
       };
       const preview = document.getElementById('f-cc-anexo-preview');
       if (preview) {
-        preview.innerHTML = `<span class="text-emerald-700 font-bold">✓ Arquivo anexado: ${this.escapeHtml(file.name)} (${tamFormatado})</span>`;
+        preview.innerHTML = `<span class="text-emerald-700 font-bold">✓ Arquivo anexado: ${escapeHtml(file.name)} (${tamFormatado})</span>`;
       }
       this.showToast(`Arquivo "${file.name}" anexado com sucesso!`, 'success');
     };
@@ -6628,7 +6628,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
                   id="f-alv-nome"
                   type="text"
                   required
-                  value="${this.escapeHtml(alv ? alv.nome : 'Alvará de Licença e Funcionamento')}"
+                  value="${escapeHtml(alv ? alv.nome : 'Alvará de Licença e Funcionamento')}"
                   placeholder="Ex: Certificado de Petrecho de Pesca nº 402"
                   class="w-full rounded-xl border border-slate-300 px-3 py-2 font-semibold"
                 />
@@ -6642,7 +6642,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
                   id="f-alv-orgao"
                   type="text"
                   required
-                  value="${this.escapeHtml(alv ? alv.orgao_emissor : 'Prefeitura Municipal')}"
+                  value="${escapeHtml(alv ? alv.orgao_emissor : 'Prefeitura Municipal')}"
                   placeholder="Ex: Ministério da Pesca / IBAMA ou Vigilância Sanitária"
                   class="w-full rounded-xl border border-slate-300 px-3 py-2"
                 />
@@ -6653,7 +6653,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
                 <input
                   id="f-alv-numero"
                   type="text"
-                  value="${this.escapeHtml(alv?.numero_documento || '')}"
+                  value="${escapeHtml(alv?.numero_documento || '')}"
                   placeholder="Ex: 2026-ALV-9842"
                   class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono"
                 />
@@ -6710,7 +6710,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
                 <input
                   id="f-alv-protocolo"
                   type="text"
-                  value="${this.escapeHtml(alv?.protocolo_renovacao || '')}"
+                  value="${escapeHtml(alv?.protocolo_renovacao || '')}"
                   placeholder="Ex: PROT-2026/89412"
                   class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-blue-700 font-bold"
                 />
@@ -6728,7 +6728,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
               ${alv?.anexo_nome ? `
                 <div class="mt-1 text-[11px] text-emerald-700 flex items-center gap-1 font-semibold">
                   <i data-lucide="check" class="w-3.5 h-3.5"></i>
-                  Arquivo atual anexado: ${this.escapeHtml(alv.anexo_nome)}
+                  Arquivo atual anexado: ${escapeHtml(alv.anexo_nome)}
                 </div>
               ` : ''}
             </div>
@@ -6740,7 +6740,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
                 rows="2"
                 placeholder="Ex: Vistoria anual agendada para novembro. Apresentar laudo técnico e taxa paga."
                 class="w-full rounded-xl border border-slate-300 px-3 py-2"
-              >${this.escapeHtml(alv?.observacoes || '')}</textarea>
+              >${escapeHtml(alv?.observacoes || '')}</textarea>
             </div>
 
             <div class="flex justify-end gap-2.5 pt-3 border-t border-slate-200">
@@ -6874,7 +6874,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
             <div>
               <h3 class="text-base font-bold text-slate-900">Registrar Protocolo de Renovação</h3>
-              <p class="text-xs text-slate-500">${this.escapeHtml(alv.nome)}</p>
+              <p class="text-xs text-slate-500">${escapeHtml(alv.nome)}</p>
             </div>
             <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
           </div>
@@ -6886,7 +6886,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
                 id="f-prot-num"
                 type="text"
                 required
-                value="${this.escapeHtml(alv.protocolo_renovacao || '')}"
+                value="${escapeHtml(alv.protocolo_renovacao || '')}"
                 placeholder="Ex: 2026-PROT-109283"
                 class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono font-bold text-blue-700"
               />
