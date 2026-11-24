@@ -61,6 +61,8 @@ window.ZGestorApp = {
     notionFiltroView: 'TODOS', // 'TODOS' | 'SIMPLES' | 'PRESUMIDO' | 'FISCAL' | 'CONTABIL' | 'PESSOAL'
     notionGruposColapsados: {}, // { 'NAO_INICIADA': false, 'PENDENTE': false, ... }
     notionSidePeekTarefaId: null,
+    modoVisualizacaoTarefas: 'kanban', // 'lista' | 'kanban' | 'calendario'
+    draggedTarefaId: null,
     // Modo de Simulação do Portal do Cliente para Administradores
     modoSimulacaoCliente: null,
     // Inteligência Artificial & Z-IA
@@ -1021,6 +1023,42 @@ window.ZGestorApp = {
       this.renderAll();
     } catch (e) {
       this.showToast(e.message, 'error');
+    }
+  },
+
+  setModoVisualizacaoTarefas(modo) {
+    this.state.modoVisualizacaoTarefas = modo;
+    this.renderContentOnly();
+  },
+
+  onDragStartTarefa(event, tarefaId) {
+    this.state.draggedTarefaId = tarefaId;
+    if (event && event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', tarefaId);
+    }
+  },
+
+  onDragOverColunaKanban(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (event && event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  },
+
+  onDropColunaKanban(event, colunaKey) {
+    if (event && event.preventDefault) event.preventDefault();
+    const tarefaId = (event && event.dataTransfer && event.dataTransfer.getData('text/plain')) || this.state.draggedTarefaId;
+    this.state.draggedTarefaId = null;
+    if (!tarefaId) return;
+
+    const mapAcao = {
+      NAO_INICIADA: 'REABRIR',
+      PENDENTE: 'COBRAR_DOCS',
+      EM_ANDAMENTO: 'EM_ANDAMENTO',
+      ENTREGUE: 'ENTREGUE_NORMAL'
+    };
+    const acao = mapAcao[colunaKey];
+    if (acao) {
+      this.marcarEtapaRapida(tarefaId, acao);
     }
   },
 

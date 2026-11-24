@@ -1064,236 +1064,310 @@ window.ZGestorViews = {
               </select>
             </div>
 
-            <!-- Resumo Rápido dos 4 Status em Pills Claras -->
-            <div class="flex flex-wrap items-center gap-1.5 shrink-0 select-none">
-              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Não iniciada: ${qtdNaoIniciadasComp}
-              </span>
-              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Pendentes: ${qtdPendentesComp}
-              </span>
-              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span> Em Andamento: ${qtdAndamentoComp}
-              </span>
-              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Concluídas: ${qtdEntreguesComp}
-              </span>
+            <!-- SELETOR DE VISUALIZAÇÃO MODERNO: LISTA | KANBAN | CALENDÁRIO -->
+            <div class="inline-flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200 gap-1 shrink-0">
+              <button
+                type="button"
+                onclick="ZGestorApp.setModoVisualizacaoTarefas('kanban')"
+                class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${(appState.modoVisualizacaoTarefas || 'kanban') === 'kanban' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                <i data-lucide="kanban" class="w-3.5 h-3.5"></i>
+                <span>Kanban</span>
+              </button>
+              <button
+                type="button"
+                onclick="ZGestorApp.setModoVisualizacaoTarefas('lista')"
+                class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${appState.modoVisualizacaoTarefas === 'lista' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                <i data-lucide="list" class="w-3.5 h-3.5"></i>
+                <span>Lista</span>
+              </button>
+              <button
+                type="button"
+                onclick="ZGestorApp.setModoVisualizacaoTarefas('calendario')"
+                class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${appState.modoVisualizacaoTarefas === 'calendario' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
+                <span>Calendário</span>
+              </button>
             </div>
           </div>
 
-          <!-- ÁREA PRINCIPAL: TABELAS AGRUPADAS POR STATUS + NOTION SIDE PEEK -->
+          <!-- ÁREA PRINCIPAL MODERNA: KANBAN | LISTA | CALENDÁRIO + SIDE PEEK -->
           <div class="flex flex-col lg:flex-row gap-4 items-start">
-            <!-- TABELA DE TAREFAS AGRUPADAS POR STATUS (Expandidas por padrão) -->
-            <div class="flex-1 w-full min-w-0 space-y-4">
-              ${[
-          { key: 'NAO_INICIADA', label: 'Não iniciada', dot: 'bg-slate-400', pill: 'bg-slate-100 text-slate-700 border-slate-300' },
-          { key: 'PENDENTE', label: 'Pendente', dot: 'bg-amber-500', pill: 'bg-amber-50 text-amber-800 border-amber-300' },
-          { key: 'EM_ANDAMENTO', label: 'Em Andamento', dot: 'bg-sky-500', pill: 'bg-sky-50 text-sky-800 border-sky-300' },
-          { key: 'ENTREGUE', label: 'Concluído / Transmitida', dot: 'bg-emerald-500', pill: 'bg-emerald-50 text-emerald-800 border-emerald-300' }
-        ].map(grupo => {
-          const itensGrupo = lista.filter(t => db.obterStatusSimplesTarefa(t) === grupo.key);
-          const isColapsado = colapsados[grupo.key] === true; // Expandido por padrão!
+            <div class="flex-1 w-full min-w-0">
+              ${(() => {
+                const modo = appState.modoVisualizacaoTarefas || 'kanban';
+                const colunas = [
+                  { key: 'NAO_INICIADA', label: 'A Fazer', dot: 'bg-slate-400', headerBg: 'bg-slate-50 border-slate-200', badge: 'bg-slate-200 text-slate-800' },
+                  { key: 'PENDENTE', label: 'Aguardando Docs', dot: 'bg-amber-500', headerBg: 'bg-amber-50/80 border-amber-200', badge: 'bg-amber-200 text-amber-900' },
+                  { key: 'EM_ANDAMENTO', label: 'Em Andamento', dot: 'bg-sky-500', headerBg: 'bg-sky-50/80 border-sky-200', badge: 'bg-sky-200 text-sky-900' },
+                  { key: 'ENTREGUE', label: 'Concluídas', dot: 'bg-emerald-500', headerBg: 'bg-emerald-50/80 border-emerald-200', badge: 'bg-emerald-200 text-emerald-900' }
+                ];
 
-          return `
-                  <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                    <!-- Toggle do Grupo Notion -->
-                    <div
-                      onclick="ZGestorApp.toggleNotionGrupo('${grupo.key}')"
-                      class="flex items-center justify-between p-3.5 cursor-pointer hover:bg-slate-50 transition select-none border-b border-slate-200">
-                      <div class="flex items-center gap-2.5">
-                        <span class="text-xs text-slate-500 font-mono transition transform">
-                          ${isColapsado ? '▶' : '▼'}
-                        </span>
-                        <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold border ${grupo.pill}">
-                          <span class="w-2 h-2 rounded-full ${grupo.dot}"></span>
-                          <span>${grupo.label}</span>
-                        </span>
-                        <span class="text-xs font-bold text-slate-500 font-mono">(${itensGrupo.length})</span>
-                      </div>
-                      <span class="text-[11px] text-slate-400 font-medium">
-                        ${isColapsado ? 'Clique para expandir' : 'Clique para recolher'}
-                      </span>
-                    </div>
+                const badgeSetor = (dept) => {
+                  if (dept === 'FISCAL') return '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800">Fiscal</span>';
+                  if (dept === 'CONTABIL') return '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">Contábil</span>';
+                  if (dept === 'PESSOAL') return '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">DP</span>';
+                  return '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">' + dept + '</span>';
+                };
 
-                    ${!isColapsado ? `
-                      <div class="overflow-x-auto w-full">
-                        <table class="w-full min-w-[880px] text-left border-collapse text-xs">
-                          <thead>
-                            <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 select-none">
-                              <th class="py-2.5 px-3 w-[150px]">Status</th>
-                              <th class="py-2.5 px-2 w-[70px]">Aa Nº</th>
-                              <th class="py-2.5 px-3 w-[220px]">Empresas</th>
-                              <th class="py-2.5 px-3 w-[220px]">Obrigação</th>
-                              <th class="py-2.5 px-2.5 w-[140px]">Setor / Regime</th>
-                              <th class="py-2.5 px-2.5 w-[140px]">CNPJ</th>
-                              <th class="py-2.5 px-2.5 w-[100px]">Prazo</th>
-                              <th class="py-2.5 px-3">Observações</th>
-                              <th class="py-2.5 px-3 w-[90px] text-right">Ações</th>
-                            </tr>
-                          </thead>
-                          <tbody class="divide-y divide-slate-100 text-slate-700">
-                            ${itensGrupo.map(t => {
-            const emp = db.data.empresas.find(e => e.id === t.empresa_id);
-            const isSidePeekAtivo = sidePeekTarefa && sidePeekTarefa.id === t.id;
+                const badgeRegime = (emp) => {
+                  if (!emp) return '';
+                  if (emp.regime_tributario === 'Simples Nacional') return '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">Simples</span>';
+                  if (emp.regime_tributario === 'Lucro Presumido') return '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">Presumido</span>';
+                  if (emp.regime_tributario === 'Lucro Real') return '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">Real</span>';
+                  return '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">' + emp.regime_tributario + '</span>';
+                };
 
-            return `
-                                <tr
-                                  class="hover:bg-slate-50/90 transition ${isSidePeekAtivo ? 'bg-indigo-50/60 ring-1 ring-indigo-400' : ''}">
-                                  <!-- Status Pill -->
-                                  <td class="py-2.5 px-3">
-                                    ${renderNotionStatusPill(t)}
-                                  </td>
+                // =============================================================
+                // MODO 1: QUADRO KANBAN MODERNO (COM DRAG & DROP + AÇÕES RÁPIDAS)
+                // =============================================================
+                if (modo === 'kanban') {
+                  return `
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 items-start">
+                      ${colunas.map(col => {
+                        const cards = lista.filter(t => db.obterStatusSimplesTarefa(t) === col.key);
+                        return `
+                          <div
+                            ondragover="ZGestorApp.onDragOverColunaKanban(event)"
+                            ondrop="ZGestorApp.onDropColunaKanban(event, '${col.key}')"
+                            class="bg-slate-50/90 rounded-2xl border border-slate-200 flex flex-col max-h-[72vh]">
+                            <div class="p-3 rounded-t-2xl border-b ${col.headerBg} flex items-center justify-between shrink-0">
+                              <div class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full ${col.dot}"></span>
+                                <h3 class="text-xs font-extrabold text-slate-800">${col.label}</h3>
+                              </div>
+                              <span class="px-2 py-0.5 rounded-full text-[11px] font-black ${col.badge}">${cards.length}</span>
+                            </div>
 
-                                  <!-- Código da Empresa Aa Nº -->
-                                  <td class="py-2.5 px-2 text-slate-500 font-mono text-[11px]">
-                                    <div class="flex items-center gap-1">
-                                      <span>📄</span>
-                                      <span class="font-bold text-slate-700">${emp ? emp.codigo_interno : '—'}</span>
+                            <div class="p-2.5 space-y-2.5 overflow-y-auto flex-1 min-h-[140px]">
+                              ${cards.length === 0 ? `
+                                <div class="py-8 px-3 text-center text-[11px] text-slate-400 border border-dashed border-slate-200 rounded-xl bg-white/50">
+                                  Arraste cards para cá ou use os botões rápidos
+                                </div>
+                              ` : cards.map(t => {
+                                const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+                                const atrasada = !t.data_entrega && t.prazo_entrega && t.prazo_entrega < hoje;
+                                const isAtivo = sidePeekTarefa && sidePeekTarefa.id === t.id;
+                                return `
+                                  <div
+                                    draggable="true"
+                                    ondragstart="ZGestorApp.onDragStartTarefa(event, '${t.id}')"
+                                    onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')"
+                                    class="bg-white p-3 rounded-xl border transition shadow-2xs hover:shadow-md cursor-pointer space-y-2 ${isAtivo ? 'border-indigo-500 ring-2 ring-indigo-200' : atrasada ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200 hover:border-indigo-300'}">
+                                    <div class="flex items-center justify-between gap-1.5">
+                                      <div class="flex items-center gap-1 flex-wrap">
+                                        ${badgeSetor(t.departamento)}
+                                        ${badgeRegime(emp)}
+                                        ${t.modalidade_entrega === 'SEM_MOVIMENTO' ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800">Sem Mov.</span>' : ''}
+                                      </div>
+                                      <span class="text-[10px] font-bold whitespace-nowrap ${atrasada ? 'text-rose-600' : 'text-slate-400'}">
+                                        ${atrasada ? '⚠ ' : ''}${this.formatDate(t.prazo_entrega)}
+                                      </span>
                                     </div>
-                                  </td>
 
-                                  <!-- Nome da Empresa (clique abre o Side Peek!) -->
-                                  <td class="py-2.5 px-3">
-                                    <div
-                                      onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')"
-                                      title="Clique para abrir painel lateral (Side Peek)"
-                                      class="cursor-pointer font-bold text-slate-900 hover:text-indigo-600 transition">
-                                      <span>${emp ? emp.nome_fantasia : 'Empresa não encontrada'}</span>
-                                    </div>
-                                  </td>
-
-                                  <!-- Obrigação / Título da Tarefa -->
-                                  <td class="py-2.5 px-3">
-                                    <div class="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
-                                      <span>${this.escapeHtml(t.titulo)}</span>
-                                      ${(t.origem === 'PORTAL_CLIENTE' || (t.titulo && t.titulo.startsWith('[Portal do Cliente]'))) ? `
-                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                                          <i data-lucide="globe" class="w-3 h-3"></i> Origem: Portal do Cliente
-                                        </span>
+                                    <div>
+                                      <div class="text-[11px] font-bold text-indigo-700 truncate" title="${emp ? emp.razao_social : ''}">
+                                        #${emp ? emp.codigo_interno : '—'} • ${emp ? emp.nome_fantasia : 'Empresa'}
+                                      </div>
+                                      <div class="text-xs font-extrabold text-slate-900 leading-snug mt-0.5">
+                                        ${this.escapeHtml(t.titulo)}
+                                      </div>
+                                      ${t.protocolo_observacao ? `
+                                        <div class="text-[10px] text-slate-500 truncate mt-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                                          ${this.escapeHtml(t.protocolo_observacao)}
+                                        </div>
                                       ` : ''}
                                     </div>
-                                    <div class="text-[10px] text-slate-500">Resp: <strong>${t.responsavel_nome || '—'}</strong></div>
-                                  </td>
 
-                                  <!-- Tags de Setor e Regime -->
-                                  <td class="py-2.5 px-2.5">
-                                    <div class="flex flex-wrap gap-1">
-                                      ${(t.origem === 'PORTAL_CLIENTE' || (t.titulo && t.titulo.startsWith('[Portal do Cliente]')))
-                ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">Portal do Cliente</span>`
-                : ''
-              }
-                                      ${t.departamento === 'FISCAL'
-                ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">Fiscal</span>`
-                : t.departamento === 'CONTABIL'
-                  ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Contábil</span>`
-                  : t.departamento === 'PESSOAL'
-                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">DP</span>`
-                    : `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">${t.departamento}</span>`
-              }
-                                      ${emp && emp.regime_tributario === 'Simples Nacional'
-                ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Simples</span>`
-                : emp && emp.regime_tributario === 'Lucro Presumido'
-                  ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Presumido</span>`
-                  : emp && emp.regime_tributario === 'Lucro Real'
-                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">Real</span>`
-                    : ''
-              }
-                                    </div>
-                                  </td>
-
-                                  <!-- CNPJ -->
-                                  <td class="py-2.5 px-2.5 text-slate-500 font-mono text-[11px]">
-                                    ${emp ? emp.cnpj : '—'}
-                                  </td>
-
-                                  <!-- Prazo -->
-                                  <td class="py-2.5 px-2.5 text-slate-700 font-bold text-[11px]">
-                                    ${this.formatDate(t.prazo_entrega)}
-                                  </td>
-
-                                  <!-- Observações -->
-                                  <td class="py-2.5 px-3">
-                                    <div class="flex items-center justify-between gap-1.5">
-                                      <span class="text-[11px] text-slate-600 truncate max-w-[200px]" title="${t.protocolo_observacao || 'Sem observações'}">
-                                        ${t.protocolo_observacao || '<span class="italic text-slate-400">—</span>'}
-                                      </span>
-                                      <button
-                                        onclick="event.stopPropagation(); ZGestorApp.openModalStatusTarefa('${t.id}', '${grupo.key}')"
-                                        class="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-[10px] shrink-0 font-bold transition"
-                                        title="Editar observação">
-                                        Obs.
+                                    <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-1" onclick="event.stopPropagation()">
+                                      <div class="flex items-center gap-1 flex-wrap">
+                                        ${col.key !== 'PENDENTE' && col.key !== 'ENTREGUE' ? `
+                                          <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'COBRAR_DOCS')" class="px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold cursor-pointer">Docs</button>
+                                        ` : ''}
+                                        ${col.key !== 'EM_ANDAMENTO' && col.key !== 'ENTREGUE' ? `
+                                          <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'EM_ANDAMENTO')" class="px-1.5 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 text-[10px] font-bold cursor-pointer">Fazendo</button>
+                                        ` : ''}
+                                        ${col.key !== 'ENTREGUE' ? `
+                                          <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'ENTREGUE_NORMAL')" class="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold cursor-pointer">✓ Normal</button>
+                                          <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'SEM_MOVIMENTO')" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-[10px] font-bold cursor-pointer">S/ Mov.</button>
+                                        ` : `
+                                          <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'REABRIR')" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-semibold cursor-pointer">Reabrir</button>
+                                        `}
+                                      </div>
+                                      <button type="button" onclick="ZGestorApp.openModalEditarTarefa('${t.id}')" class="p-1 rounded text-slate-400 hover:text-indigo-600 cursor-pointer" title="Editar">
+                                        <i data-lucide="pencil" class="w-3 h-3"></i>
                                       </button>
                                     </div>
-                                  </td>
+                                  </div>
+                                `;
+                              }).join('')}
+                            </div>
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>
+                  `;
+                }
 
-                                  <!-- Ações Rápidas & Painel -->
-                                  <td class="py-2.5 px-3 text-right">
-                                    <div class="inline-flex items-center justify-end gap-1 flex-wrap">
-                                      <button
-                                        type="button"
-                                        onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'COBRAR_DOCS')"
-                                        title="Marcar etapa: Cobrar Documentos / Arquivos do Cliente"
-                                        class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'PENDENTE' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'}">
-                                        Docs
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'EM_ANDAMENTO')"
-                                        title="Marcar etapa: Em Andamento"
-                                        class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'EM_ANDAMENTO' ? 'bg-sky-600 text-white border-sky-700' : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'}">
-                                        Fazendo
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'ENTREGUE_NORMAL')"
-                                        title="Concluir normalmente (Com Movimento)"
-                                        class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'ENTREGUE' && t.modalidade_entrega !== 'SEM_MOVIMENTO' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'}">
-                                        ✓ Normal
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'SEM_MOVIMENTO')"
-                                        title="Concluir Sem Movimento"
-                                        class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${t.modalidade_entrega === 'SEM_MOVIMENTO' ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'}">
-                                        S/ Mov.
-                                      </button>
-                                      <button
-                                        onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')"
-                                        class="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition"
-                                        title="Abrir Painel Lateral (Side Peek)">
-                                        <i data-lucide="panel-right-open" class="w-3.5 h-3.5"></i>
-                                      </button>
-                                      <button
-                                        onclick="ZGestorApp.openModalEditarTarefa('${t.id}')"
-                                        class="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition"
-                                        title="Editar Tarefa Completa">
-                                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
-                                      </button>
-                                      <button
-                                        onclick="ZGestorApp.excluirTarefa('${t.id}')"
-                                        class="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
-                                        title="Excluir Tarefa">
-                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              `;
-          }).join('')}
-                            ${itensGrupo.length === 0 ? `
-                              <tr>
-                                <td colspan="9" class="py-6 text-center text-slate-400 text-xs italic">
-                                  Nenhuma tarefa com status "${grupo.label}" encontrada para este departamento/regime.
-                                </td>
-                              </tr>
-                            ` : ''}
-                          </tbody>
-                        </table>
+                // =============================================================
+                // MODO 2: CALENDÁRIO MENSAL DE VENCIMENTOS E ENTREGAS
+                // =============================================================
+                if (modo === 'calendario') {
+                  const anoCal = Number(sub.ano || 2026);
+                  const mesCal = Number(sub.mes || 11);
+                  const primeiroDia = new Date(anoCal, mesCal - 1, 1);
+                  const ultimoDia = new Date(anoCal, mesCal, 0);
+                  const totalDias = ultimoDia.getDate();
+                  const offsetInicio = primeiroDia.getDay(); // 0 = Dom
+                  const prefixoMes = `${anoCal}-${String(mesCal).padStart(2, '0')}`;
+
+                  const tarefasForaMes = lista.filter(t => !t.prazo_entrega || !t.prazo_entrega.startsWith(prefixoMes));
+                  const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                  const celulas = [];
+                  for (let i = 0; i < offsetInicio; i++) celulas.push(null);
+                  for (let d = 1; d <= totalDias; d++) celulas.push(d);
+
+                  return `
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                          <i data-lucide="calendar-days" class="w-4 h-4 text-indigo-600"></i>
+                          <span class="text-xs font-extrabold text-slate-900">Calendário de Vencimentos — ${sub.label}</span>
+                          <span class="text-[11px] text-slate-500">(${lista.length} obrigações no filtro)</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+                          <span class="inline-flex items-center gap-1 text-emerald-700"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Concluída</span>
+                          <span class="inline-flex items-center gap-1 text-sky-700"><span class="w-2 h-2 rounded-full bg-sky-500"></span>Sem Mov.</span>
+                          <span class="inline-flex items-center gap-1 text-amber-700"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Docs/Andamento</span>
+                          <span class="inline-flex items-center gap-1 text-rose-700"><span class="w-2 h-2 rounded-full bg-rose-500"></span>Atrasada</span>
+                        </div>
                       </div>
-                    ` : ''}
+
+                      <div class="grid grid-cols-7 border-b border-slate-200 bg-slate-50/60 text-center text-[11px] font-extrabold text-slate-600">
+                        ${diasSemana.map(ds => `<div class="py-2 border-r last:border-r-0 border-slate-200">${ds}</div>`).join('')}
+                      </div>
+
+                      <div class="grid grid-cols-7 divide-x divide-y divide-slate-200">
+                        ${celulas.map(dia => {
+                          if (!dia) return '<div class="min-h-[105px] bg-slate-50/50"></div>';
+                          const dataStr = `${prefixoMes}-${String(dia).padStart(2, '0')}`;
+                          const doDia = lista.filter(t => t.prazo_entrega === dataStr);
+                          const ehHoje = dataStr === hoje;
+                          return `
+                            <div class="min-h-[105px] p-1.5 flex flex-col gap-1 ${ehHoje ? 'bg-indigo-50/40' : 'bg-white'}">
+                              <div class="flex items-center justify-between px-1">
+                                <span class="text-[11px] font-extrabold ${ehHoje ? 'bg-indigo-600 text-white px-1.5 py-0.5 rounded-full' : 'text-slate-700'}">${dia}</span>
+                                ${doDia.length > 0 ? `<span class="text-[10px] font-bold text-slate-400">${doDia.length}</span>` : ''}
+                              </div>
+                              <div class="space-y-1 max-h-[120px] overflow-y-auto">
+                                ${doDia.map(t => {
+                                  const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+                                  const st = db.obterStatusSimplesTarefa(t);
+                                  const atrasada = !t.data_entrega && t.prazo_entrega < hoje;
+                                  let chipCls = 'bg-slate-100 text-slate-700 border-slate-200';
+                                  if (st === 'ENTREGUE' && t.modalidade_entrega === 'SEM_MOVIMENTO') chipCls = 'bg-sky-50 text-sky-800 border-sky-200';
+                                  else if (st === 'ENTREGUE' || st === 'CONFERIDO') chipCls = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                                  else if (atrasada) chipCls = 'bg-rose-50 text-rose-800 border-rose-300';
+                                  else if (st === 'PENDENTE' || st === 'EM_ANDAMENTO') chipCls = 'bg-amber-50 text-amber-800 border-amber-200';
+
+                                  return `
+                                    <button
+                                      type="button"
+                                      onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')"
+                                      title="${emp ? emp.nome_fantasia : ''} — ${this.escapeHtml(t.titulo)}"
+                                      class="w-full text-left px-1.5 py-1 rounded-md border text-[10px] leading-tight truncate hover:ring-1 hover:ring-indigo-400 transition cursor-pointer ${chipCls}">
+                                      <strong class="font-bold">${emp ? emp.nome_fantasia : 'Emp'}</strong>: ${this.escapeHtml(t.titulo)}
+                                    </button>
+                                  `;
+                                }).join('')}
+                              </div>
+                            </div>
+                          `;
+                        }).join('')}
+                      </div>
+
+                      ${tarefasForaMes.length > 0 ? `
+                        <div class="p-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600">
+                          <strong>Outras datas (${tarefasForaMes.length}):</strong>
+                          <div class="flex flex-wrap gap-1.5 mt-1.5">
+                            ${tarefasForaMes.slice(0, 12).map(t => {
+                              const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+                              return `<button type="button" onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')" class="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[11px] hover:border-indigo-400 cursor-pointer">${this.formatDate(t.prazo_entrega)} • ${emp ? emp.nome_fantasia : ''} — ${this.escapeHtml(t.titulo)}</button>`;
+                            }).join('')}
+                          </div>
+                        </div>
+                      ` : ''}
+                    </div>
+                  `;
+                }
+
+                // =============================================================
+                // MODO 3: LISTA PRÁTICA E MODERNA (LIMPA E COMPACTA)
+                // =============================================================
+                return `
+                  <div class="space-y-4">
+                    ${colunas.map(grupo => {
+                      const itensGrupo = lista.filter(t => db.obterStatusSimplesTarefa(t) === grupo.key);
+                      const isColapsado = colapsados[grupo.key] === true;
+                      return `
+                        <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                          <div
+                            onclick="ZGestorApp.toggleNotionGrupo('${grupo.key}')"
+                            class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-50 transition select-none border-b border-slate-100">
+                            <div class="flex items-center gap-2.5">
+                              <span class="text-xs text-slate-400 font-mono">${isColapsado ? '▶' : '▼'}</span>
+                              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${grupo.badge}">
+                                <span class="w-2 h-2 rounded-full ${grupo.dot}"></span>
+                                <span>${grupo.label}</span>
+                              </span>
+                              <span class="text-xs font-bold text-slate-500">(${itensGrupo.length})</span>
+                            </div>
+                          </div>
+
+                          ${!isColapsado ? `
+                            <div class="divide-y divide-slate-100">
+                              ${itensGrupo.length === 0 ? `
+                                <div class="py-5 text-center text-slate-400 text-xs italic">
+                                  Nenhuma tarefa em "${grupo.label}".
+                                </div>
+                              ` : itensGrupo.map(t => {
+                                const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+                                const atrasada = !t.data_entrega && t.prazo_entrega && t.prazo_entrega < hoje;
+                                const isAtivo = sidePeekTarefa && sidePeekTarefa.id === t.id;
+                                return `
+                                  <div class="px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-slate-50/90 transition ${isAtivo ? 'bg-indigo-50/60' : ''}">
+                                    <div class="flex items-start gap-3 min-w-0 flex-1 cursor-pointer" onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')">
+                                      <div class="pt-0.5 shrink-0">${renderNotionStatusPill(t)}</div>
+                                      <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                          <span class="text-xs font-extrabold text-slate-900">${emp ? `#${emp.codigo_interno} — ${emp.nome_fantasia}` : 'Empresa'}</span>
+                                          ${badgeSetor(t.departamento)}
+                                          ${badgeRegime(emp)}
+                                          <span class="text-[11px] font-bold ${atrasada ? 'text-rose-600' : 'text-slate-400'}">• Prazo: ${this.formatDate(t.prazo_entrega)}</span>
+                                        </div>
+                                        <div class="text-xs font-semibold text-slate-700 mt-0.5">${this.escapeHtml(t.titulo)}</div>
+                                        ${t.protocolo_observacao ? `<div class="text-[11px] text-slate-500 mt-0.5 truncate">Obs: ${this.escapeHtml(t.protocolo_observacao)}</div>` : ''}
+                                      </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'COBRAR_DOCS')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'PENDENTE' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'}">Docs</button>
+                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'EM_ANDAMENTO')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'EM_ANDAMENTO' ? 'bg-sky-600 text-white border-sky-700' : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'}">Fazendo</button>
+                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'ENTREGUE_NORMAL')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'ENTREGUE' && t.modalidade_entrega !== 'SEM_MOVIMENTO' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'}">✓ Normal</button>
+                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'SEM_MOVIMENTO')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${t.modalidade_entrega === 'SEM_MOVIMENTO' ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'}">S/ Mov.</button>
+                                      <button type="button" onclick="ZGestorApp.openModalEditarTarefa('${t.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition cursor-pointer" title="Editar"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                                      <button type="button" onclick="ZGestorApp.excluirTarefa('${t.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer" title="Excluir"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                    </div>
+                                  </div>
+                                `;
+                              }).join('')}
+                            </div>
+                          ` : ''}
+                        </div>
+                      `;
+                    }).join('')}
                   </div>
                 `;
-        }).join('')}
+              })()}
             </div>
 
             <!-- PAINEL LATERAL DIREITO "NOTION SIDE PEEK" (Tema Claro) -->
