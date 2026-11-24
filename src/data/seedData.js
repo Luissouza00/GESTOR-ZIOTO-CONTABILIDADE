@@ -198,93 +198,222 @@ window.ZGESTOR_MODELS = {
   ],
 
   modelosTarefasMensais: [
+    // ==================== FISCAL — SIMPLES NACIONAL ====================
+    {
+      id: 'mod-fis-sn-docs',
+      titulo: '1. Cobrança de Documentos e Arquivos Fiscais (XMLs / Notas)',
+      descricao: 'Cobrar do cliente notas fiscais emitidas/tomadas, XMLs e documentos fiscais da competência.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Simples Nacional'],
+      dia_prazo_padrao: 5,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-fis-sn-pgdas',
+      titulo: '2. Apuração e Transmissão PGDAS-D / Guia DAS (Simples Nacional)',
+      descricao: 'Apurar receitas da competência, validar Fator R, transmitir PGDAS-D (Normal ou Sem Movimento) e enviar guia DAS até dia 20.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Simples Nacional'],
+      dia_prazo_padrao: 18,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-fis-sn-icms',
+      titulo: '3. Apuração de ICMS (DIFAL / ST / Antecipação / DAE)',
+      descricao: 'Conferir entradas interestaduais e apurar ICMS DIFAL, ST ou Antecipação. Gerada apenas para empresas com Inscrição Estadual.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Simples Nacional'],
+      dia_prazo_padrao: 15,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: true,
+      ativo: true
+    },
+    {
+      id: 'mod-fis-sn-destda',
+      titulo: '4. Transmissão DeSTDA / SEDIF-SN',
+      descricao: 'Gerar e transmitir DeSTDA (Normal ou Sem Movimento). Obrigatória apenas para empresas do Simples Nacional com Inscrição Estadual.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Simples Nacional'],
+      dia_prazo_padrao: 25,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: true,
+      ativo: true
+    },
+
+    // ==================== FISCAL — LUCRO PRESUMIDO & LUCRO REAL ====================
+    {
+      id: 'mod-fis-pr-docs',
+      titulo: '1. Cobrança de Documentos, XMLs e Retenções na Fonte',
+      descricao: 'Cobrar notas fiscais de entrada/saída/serviços e comprovantes de retenções (IRRF, CSRF, ISS) da competência.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real'],
+      dia_prazo_padrao: 5,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-fis-pr-sped-icms',
+      titulo: '2. Apuração ICMS / IPI e Transmissão EFD-ICMS/IPI (SPED Fiscal)',
+      descricao: 'Apurar ICMS/IPI e transmitir SPED Fiscal. Gerada apenas para empresas com Inscrição Estadual.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real'],
+      dia_prazo_padrao: 15,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: true,
+      ativo: true
+    },
+    {
+      id: 'mod-fis-pr-efd-contrib',
+      titulo: '3. Apuração PIS / COFINS e Transmissão EFD-Contribuições',
+      descricao: 'Apurar PIS e COFINS, emitir DARFs e transmitir EFD-Contribuições.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real'],
+      dia_prazo_padrao: 15,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-fis-pr-reinf',
+      titulo: '4. Transmissão EFD-Reinf e Fechamento DCTFWeb / MIT',
+      descricao: 'Transmitir eventos periódicos da EFD-Reinf (retenções/distribuição de lucros) e fechar DCTFWeb / MIT.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real'],
+      dia_prazo_padrao: 15,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-fis-pr-irpj',
+      titulo: '5. Apuração IRPJ / CSLL (Presumido / Real)',
+      descricao: 'Calcular IRPJ e CSLL do período e emitir guias DARF correspondentes.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real'],
+      dia_prazo_padrao: 25,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+
+    // ==================== CONTÁBIL — ETAPAS MENSAIS & ANUAIS ====================
+    {
+      id: 'mod-ctb-docs',
+      titulo: '1. Cobrança de Extratos Bancários (OFX/PDF) e Movimentação',
+      descricao: 'Solicitar e conferir recebimento de extratos bancários, faturas de cartão e comprovantes de despesas do mês.',
+      departamento: 'CONTABIL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'Imune/Isenta'],
+      dia_prazo_padrao: 8,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-ctb-concil',
+      titulo: '2. Importação, Classificação e Conciliação Bancária',
+      descricao: 'Importar extratos, classificar lançamentos contábeis, conciliar bancos, clientes, fornecedores e tributos.',
+      departamento: 'CONTABIL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'Imune/Isenta'],
+      dia_prazo_padrao: 18,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-ctb-fechamento',
+      titulo: '3. Fechamento Contábil Mensal e Emissão do Balancete',
+      descricao: 'Conferir saldos, validar DRE/Balancete mensal e marcar o mês como fechado na Matriz Anual.',
+      departamento: 'CONTABIL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'Imune/Isenta'],
+      dia_prazo_padrao: 25,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-ctb-ecd-anual',
+      titulo: 'ECD Anual — Escrituração Contábil Digital (SPED Contábil)',
+      descricao: 'Gerar, validar e transmitir a ECD anual referente ao exercício anterior (entrega até final de Junho).',
+      departamento: 'CONTABIL',
+      periodicidade: 'ANUAL',
+      mes_entrega: '06',
+      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real', 'Imune/Isenta'],
+      dia_prazo_padrao: 30,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+    {
+      id: 'mod-ctb-ecf-anual',
+      titulo: 'ECF Anual — Escrituração Contábil Fiscal',
+      descricao: 'Gerar, validar e transmitir a ECF anual referente ao exercício anterior (entrega até final de Julho).',
+      departamento: 'CONTABIL',
+      periodicidade: 'ANUAL',
+      mes_entrega: '07',
+      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real', 'Imune/Isenta'],
+      dia_prazo_padrao: 31,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
+    },
+
+    // ==================== PESSOAL (DESATIVADO POR PADRÃO) ====================
     {
       id: 'mod-prolabore',
       titulo: 'Apuração de Pró-Labore, DCTFWeb e Emissão de DARF INSS / IRRF',
-      descricao: 'Processar retirada de pró-labore dos sócios, transmitir eSocial/DCTFWeb e emitir guia DARF de INSS/IRRF (vencimento dia 20 do mês seguinte).',
+      descricao: 'Processar retirada de pró-labore dos sócios, transmitir eSocial/DCTFWeb e emitir guia DARF de INSS/IRRF.',
       departamento: 'PESSOAL',
+      periodicidade: 'MENSAL',
       regimes_aplicaveis: ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'Imune/Isenta'],
       dia_prazo_padrao: 15,
       requer_pro_labore: true,
       requer_funcionarios: false,
-      ativo: true
+      requer_ie: false,
+      ativo: false
     },
     {
       id: 'mod-folha-clt',
-      titulo: 'Fechamento de Folha de Funcionários (CLT) e Emissão da Guia FGTS Digital',
-      descricao: 'Processar folha mensal de empregados CLT, emitir holerites e gerar guia do FGTS Digital para pagamento até dia 20 do mês seguinte.',
+      titulo: 'Fechamento de Folha de Funcionários (CLT) e Guia FGTS Digital',
+      descricao: 'Processar folha mensal de empregados CLT, emitir holerites e gerar guia do FGTS Digital.',
       departamento: 'PESSOAL',
+      periodicidade: 'MENSAL',
       regimes_aplicaveis: ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI', 'Imune/Isenta'],
       dia_prazo_padrao: 15,
       requer_pro_labore: false,
       requer_funcionarios: true,
-      ativo: true
-    },
-    {
-      id: 'mod-4',
-      titulo: 'Importação de XMLs (NF-e / NFS-e / CT-e) e Escrita Fiscal',
-      descricao: 'Importar notas emitidas e tomadas na competência, validar CFOPs/NCMs e conferir retenções na fonte.',
-      departamento: 'FISCAL',
-      regimes_aplicaveis: ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'],
-      dia_prazo_padrao: 10,
-      requer_pro_labore: false,
-      requer_funcionarios: false,
-      ativo: true
-    },
-    {
-      id: 'mod-5',
-      titulo: 'Apuração PGDAS-D e Emissão da Guia DAS (Simples Nacional)',
-      descricao: 'Apurar receitas da competência, calcular Fator R, transmitir PGDAS-D e enviar guia DAS (vencimento dia 20 do mês seguinte).',
-      departamento: 'FISCAL',
-      regimes_aplicaveis: ['Simples Nacional'],
-      dia_prazo_padrao: 18,
-      requer_pro_labore: false,
-      requer_funcionarios: false,
-      ativo: true
-    },
-    {
-      id: 'mod-10',
-      titulo: 'DeSTDA / SEDIF-SN e Apuração de DAE ICMS (DIFAL / Antecipação / ST)',
-      descricao: 'Apurar ICMS DIFAL/ST/Antecipação de compras interestaduais, emitir guia DAE ICMS e transmitir DeSTDA (Exclusivo Simples Nacional).',
-      departamento: 'FISCAL',
-      regimes_aplicaveis: ['Simples Nacional'],
-      dia_prazo_padrao: 25,
-      requer_pro_labore: false,
-      requer_funcionarios: false,
-      ativo: true
-    },
-    {
-      id: 'mod-6',
-      titulo: 'Apuração de PIS, COFINS, ISS, ICMS e Entrega da EFD-Contribuições / SPED',
-      descricao: 'Apurar tributos da competência, transmitir obrigações acessórias e enviar DARFs/DARE no mês subsequente.',
-      departamento: 'FISCAL',
-      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real'],
-      dia_prazo_padrao: 18,
-      requer_pro_labore: false,
-      requer_funcionarios: false,
-      ativo: true
-    },
-    {
-      id: 'mod-7',
-      titulo: 'Conciliação Bancária, Classificação e Fechamento Contábil Mensal (Balancete)',
-      descricao: 'Importar extratos OFX/PDF da competência, conciliar bancos, folha, impostos e encerrar o balancete mensal para fechamento.',
-      departamento: 'CONTABIL',
-      regimes_aplicaveis: ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'Imune/Isenta'],
-      dia_prazo_padrao: 25,
-      requer_pro_labore: false,
-      requer_funcionarios: false,
-      ativo: true
-    },
-    {
-      id: 'mod-8',
-      titulo: 'Conferência de Certidões Negativas (CNDs Federal, Estadual, Municipal e FGTS)',
-      descricao: 'Monitorar regularidade fiscal e trabalhista do cliente e disponibilizar no Portal do Cliente.',
-      departamento: 'SOCIETARIO',
-      regimes_aplicaveis: ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'],
-      dia_prazo_padrao: 22,
-      requer_pro_labore: false,
-      requer_funcionarios: false,
-      ativo: true
+      requer_ie: false,
+      ativo: false
     }
   ]
 };

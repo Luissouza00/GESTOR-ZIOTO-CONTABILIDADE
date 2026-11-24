@@ -1024,6 +1024,50 @@ window.ZGestorApp = {
     }
   },
 
+  marcarEtapaRapida(tarefaId, acao) {
+    try {
+      const t = window.zgestorDB.marcarEtapaTarefa(tarefaId, acao);
+      const msgs = {
+        COBRAR_DOCS: 'Marcado como Aguardando Documentos do cliente.',
+        EM_ANDAMENTO: 'Etapa marcada como Em Andamento.',
+        ENTREGUE_NORMAL: 'Obrigação concluída normalmente!',
+        SEM_MOVIMENTO: 'Obrigação concluída como Sem Movimento!',
+        REABRIR: 'Tarefa reaberta.'
+      };
+      this.showToast(msgs[acao] || 'Status atualizado.', 'success');
+      this.renderAll();
+      return t;
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  alternarRotinaAtiva(modId) {
+    const mod = window.zgestorDB.alternarAtivoModeloTarefa(modId);
+    if (mod) {
+      this.showToast(`Rotina "${mod.titulo}" ${mod.ativo ? 'ATIVADA' : 'DESATIVADA'}.`, mod.ativo ? 'success' : 'info');
+      this.renderContentOnly();
+    }
+  },
+
+  alternarIEEmpresa(empresaId) {
+    const db = window.zgestorDB;
+    const emp = db.data.empresas.find(e => e.id === empresaId);
+    if (!emp) return;
+    const atualTem = db.empresaPossuiIE(emp);
+    if (!atualTem) {
+      const novoNum = prompt(`Informe o número da Inscrição Estadual de ${emp.nome_fantasia} (ou deixe "Ativa" para habilitar ICMS / DeSTDA / EFD-ICMS):`, 'Ativa');
+      if (novoNum === null) return;
+      db.toggleInscricaoEstadualEmpresa(empresaId, novoNum.trim() || 'Ativa');
+      this.showToast(`Inscrição Estadual habilitada para ${emp.nome_fantasia}. Agora gerará ICMS/DeSTDA.`, 'success');
+    } else {
+      if (!confirm(`Deseja marcar ${emp.nome_fantasia} como SEM Inscrição Estadual (Isento)? Assim não gerará ICMS, DeSTDA nem EFD-ICMS.`)) return;
+      db.toggleInscricaoEstadualEmpresa(empresaId, 'Isento');
+      this.showToast(`${emp.nome_fantasia} marcada como Sem Inscrição Estadual (Isento).`, 'info');
+    }
+    this.renderContentOnly();
+  },
+
   gerarTarefasMesAtual() {
     const comp = this.state.competencia;
     const sub = window.zgestorDB.obterMesSubsequente(comp);
@@ -6006,6 +6050,25 @@ window.ZGestorApp = {
                 <input id="f-mod-dia" type="number" min="1" max="31" required value="${formValues.dia_prazo_padrao}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
               </div>
             </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Periodicidade *</label>
+                <select id="f-mod-periodicidade" onchange="document.getElementById('wrap-mod-mes-entrega').classList.toggle('hidden', this.value !== 'ANUAL')" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
+                  <option value="MENSAL" ${(formValues.periodicidade || 'MENSAL') === 'MENSAL' ? 'selected' : ''}>Mensal (Todos os meses)</option>
+                  <option value="ANUAL" ${formValues.periodicidade === 'ANUAL' ? 'selected' : ''}>Anual (Ex: ECD / ECF)</option>
+                </select>
+              </div>
+              <div id="wrap-mod-mes-entrega" class="${formValues.periodicidade === 'ANUAL' ? '' : 'hidden'}">
+                <label class="block font-bold text-slate-700 mb-1">Mês de Entrega (Anual)</label>
+                <select id="f-mod-mes-entrega" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
+                  <option value="05" ${formValues.mes_entrega === '05' ? 'selected' : ''}>Maio (05)</option>
+                  <option value="06" ${(formValues.mes_entrega || '06') === '06' ? 'selected' : ''}>Junho (06 - ECD)</option>
+                  <option value="07" ${formValues.mes_entrega === '07' ? 'selected' : ''}>Julho (07 - ECF)</option>
+                  <option value="03" ${formValues.mes_entrega === '03' ? 'selected' : ''}>Março (03 - DEFIS)</option>
+                  <option value="12" ${formValues.mes_entrega === '12' ? 'selected' : ''}>Dezembro (12)</option>
+                </select>
+              </div>
+            </div>
 
             <div class="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-2">
               <div class="flex flex-wrap items-center justify-between gap-2">
@@ -6053,10 +6116,16 @@ window.ZGestorApp = {
             </div>
 
             <div class="flex items-center justify-between pt-2">
-              <label class="inline-flex items-center gap-2 cursor-pointer">
-                <input id="f-mod-func" type="checkbox" ${formValues.exige_funcionarios ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
-                <span class="font-semibold text-slate-700">Aplicar somente para empresas que possuem Folha/Funcionários</span>
-              </label>
+              <div class="flex flex-col gap-1.5">
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                  <input id="f-mod-ie" type="checkbox" ${formValues.requer_ie ? 'checked' : ''} class="w-4 h-4 rounded text-amber-600" />
+                  <span class="font-semibold text-slate-700">Gerar somente se a empresa possuir Inscrição Estadual (I.E.)</span>
+                </label>
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                  <input id="f-mod-func" type="checkbox" ${formValues.exige_funcionarios || formValues.requer_funcionarios ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
+                  <span class="font-semibold text-slate-700">Aplicar somente para empresas com Folha/Funcionários</span>
+                </label>
+              </div>
 
               <div class="flex gap-2">
                 <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Fechar</button>
@@ -6092,8 +6161,11 @@ window.ZGestorApp = {
       titulo: document.getElementById('f-mod-titulo').value.trim(),
       dia_prazo_padrao: Number(document.getElementById('f-mod-dia').value || 15),
       departamento: document.getElementById('f-mod-dept').value,
+      periodicidade: document.getElementById('f-mod-periodicidade')?.value || 'MENSAL',
+      mes_entrega: document.getElementById('f-mod-mes-entrega')?.value || '06',
       descricao: document.getElementById('f-mod-desc').value.trim(),
       regimes_aplicaveis: regimesSelecionados,
+      requer_ie: document.getElementById('f-mod-ie')?.checked || false,
       exige_funcionarios: document.getElementById('f-mod-func').checked
     });
     this.showToast(idMod ? 'Modelo recorrente atualizado com os regimes selecionados!' : 'Novo modelo recorrente adicionado!', 'success');

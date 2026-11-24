@@ -261,6 +261,10 @@
               });
               parsed._importacao_reais_v1 = true;
             }
+            if (!parsed._rotinas_v2_migrated && window.ZGESTOR_MODELS?.modelosTarefasMensais) {
+              parsed.modelos_tarefas = JSON.parse(JSON.stringify(window.ZGESTOR_MODELS.modelosTarefasMensais));
+              parsed._rotinas_v2_migrated = true;
+            }
             this.garantirAlvarasPadrao(parsed);
             parsed.profiles.forEach(p => {
               if (!p.permissoes) {
@@ -959,6 +963,89 @@
       return emp;
     }
 
+    empresaPossuiIE(empresa) {
+      if (!empresa) return false;
+      if (empresa.possui_ie === true) return true;
+      if (empresa.possui_ie === false) return false;
+      const ie = (empresa.inscricao_estadual || '').trim().toLowerCase();
+      if (!ie || ie === '-' || ie === 'isento' || ie === 'isenta' || ie === 'nao possui' || ie === 'não possui' || ie === 'n/a' || ie === 'sem ie') {
+        return false;
+      }
+      return true;
+    }
+
+    toggleInscricaoEstadualEmpresa(empresaId, inscricaoInformada = null) {
+      const idx = (this.data.empresas || []).findIndex(e => e.id === empresaId);
+      if (idx === -1) throw new Error('Empresa não encontrada.');
+      const emp = this.data.empresas[idx];
+      if (inscricaoInformada !== null) {
+        const limpo = String(inscricaoInformada).trim();
+        emp.inscricao_estadual = limpo;
+        emp.possui_ie = this.empresaPossuiIE({ ...emp, possui_ie: undefined, inscricao_estadual: limpo });
+      } else {
+        const atualTem = this.empresaPossuiIE(emp);
+        if (atualTem) {
+          emp.possui_ie = false;
+          emp.inscricao_estadual = 'Isento';
+        } else {
+          emp.possui_ie = true;
+          if (!emp.inscricao_estadual || emp.inscricao_estadual.toLowerCase() === 'isento') {
+            emp.inscricao_estadual = 'Ativa (I.E.)';
+          }
+        }
+      }
+      this.saveLocalData();
+      this.registrarLog('ATUALIZACAO_IE', 'Empresas', `Inscrição Estadual de ${emp.nome_fantasia} atualizada: ${emp.inscricao_estadual || 'Sem I.E.'}.`);
+      return emp;
+    }
+
+    marcarEtapaTarefa(tarefaId, acao, observacao = null) {
+      const idx = (this.data.tarefas || []).findIndex(t => t.id === tarefaId);
+      if (idx === -1) throw new Error('Tarefa não encontrada.');
+      const t = this.data.tarefas[idx];
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment(t.departamento, user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
+      }
+
+      const hoje = new Date().toISOString().slice(0, 10);
+      if (acao === 'COBRAR_DOCS') {
+        t.status = 'PENDENTE';
+        t.data_entrega = null;
+        t.modalidade_entrega = null;
+        if (!t.protocolo_observacao) t.protocolo_observacao = 'Documentos solicitados ao cliente.';
+      } else if (acao === 'EM_ANDAMENTO') {
+        t.status = 'EM_ANDAMENTO';
+        t.data_entrega = null;
+        t.modalidade_entrega = null;
+      } else if (acao === 'ENTREGUE_NORMAL') {
+        t.data_entrega = hoje;
+        t.modalidade_entrega = 'NORMAL';
+        t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+      } else if (acao === 'SEM_MOVIMENTO') {
+        t.data_entrega = hoje;
+        t.modalidade_entrega = 'SEM_MOVIMENTO';
+        t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+        if (!t.protocolo_observacao) t.protocolo_observacao = 'Concluída Sem Movimento.';
+      } else if (acao === 'REABRIR') {
+        t.data_entrega = null;
+        t.modalidade_entrega = null;
+        t.status = 'NAO_INICIADA';
+      }
+
+      if (observacao !== null && observacao !== undefined) {
+        t.protocolo_observacao = String(observacao).trim();
+      }
+      if (user) {
+        t.responsavel_nome = user.nome;
+      }
+
+      this.sincronizarSolicitacaoPortalComTarefa(t);
+      this.saveLocalData();
+      this.registrarLog('ETAPA_TAREFA', 'Tarefas', `Etapa "${t.titulo}" marcada como ${acao} (${t.competencia}).`);
+      return t;
+    }
+
     // =========================================================================
     // GESTÃO DE TAREFAS (STATUS: PENDENTE, EM_ANDAMENTO, ENTREGUE + OBSERVAÇÕES)
     // =========================================================================
@@ -1234,20 +1321,32 @@
       empresasAlvo.forEach(emp => {
         const temProLabore = emp.possui_pro_labore !== false;
         const temFuncionarios = Boolean(emp.possui_funcionarios);
+        const temIE = this.empresaPossuiIE(emp);
+        const compMes = (competencia || '').split('/')[0];
 
         modelos.forEach(mod => {
           const regimes = Array.isArray(mod.regimes_aplicaveis) ? mod.regimes_aplicaveis : ['Simples Nacional'];
           if (!regimes.includes(emp.regime_tributario)) return;
 
+          // Regra de Inscrição Estadual (ICMS, DeSTDA, EFD-ICMS/IPI)
+          if (mod.requer_ie && !temIE) return;
+
+          // Regra de Periodicidade Anual (ex: ECD Junho, ECF Julho)
+          if (mod.periodicidade === 'ANUAL') {
+            const mesAlvo = String(mod.mes_entrega || '06').padStart(2, '0');
+            if (compMes !== mesAlvo && sub.mes !== mesAlvo) return;
+          }
+
           // Regra de separação Pró-Labore vs Funcionários CLT:
           if ((mod.requer_funcionarios || mod.exige_funcionarios) && !temFuncionarios) return;
           if (mod.requer_pro_labore && !temProLabore && !temFuncionarios) return;
 
+          const tipoTarefa = mod.periodicidade === 'ANUAL' ? 'ANUAL' : 'MENSAL';
           const jaExiste = this.data.tarefas.some(
             t => t.empresa_id === emp.id &&
                  t.competencia === competencia &&
                  t.titulo === mod.titulo &&
-                 t.tipo === 'MENSAL'
+                 (t.tipo === tipoTarefa || t.tipo === 'MENSAL' || t.tipo === 'ANUAL')
           );
 
           if (!jaExiste) {
@@ -1259,14 +1358,15 @@
               empresa_id: emp.id,
               competencia,
               departamento: mod.departamento,
-              tipo: 'MENSAL',
+              tipo: tipoTarefa,
               titulo: mod.titulo,
               descricao: mod.descricao,
-              solicitante: 'Rotina Mensal Automática',
+              solicitante: mod.periodicidade === 'ANUAL' ? 'Rotina Anual Automática' : 'Rotina Mensal Automática',
               prazo_entrega: prazoData,
               data_entrega: null,
+              modalidade_entrega: null,
               status: 'NAO_INICIADA',
-              responsavel_nome: colabSetor ? colabSetor.nome : 'Contador Sócio (Administrador)',
+              responsavel_nome: colabSetor ? colabSetor.nome : 'Luis Filipe (Zioto Contabilidade)',
               protocolo_observacao: ''
             });
             criadas++;
@@ -2910,6 +3010,8 @@
       const lista = this.getModelosTarefas();
       const requerProLabore = Boolean(dadosMod.requer_pro_labore);
       const requerFunc = Boolean(dadosMod.requer_funcionarios !== undefined ? dadosMod.requer_funcionarios : dadosMod.exige_funcionarios);
+      const requerIE = Boolean(dadosMod.requer_ie);
+      const periodicidade = dadosMod.periodicidade === 'ANUAL' ? 'ANUAL' : 'MENSAL';
 
       if (dadosMod.id) {
         const idx = lista.findIndex(m => m.id === dadosMod.id);
@@ -2919,15 +3021,19 @@
             titulo: dadosMod.titulo,
             descricao: dadosMod.descricao || '',
             departamento: dadosMod.departamento || 'FISCAL',
+            periodicidade,
+            mes_entrega: periodicidade === 'ANUAL' ? String(dadosMod.mes_entrega || '06').padStart(2, '0') : null,
             regimes_aplicaveis: Array.isArray(dadosMod.regimes_aplicaveis) && dadosMod.regimes_aplicaveis.length > 0
               ? dadosMod.regimes_aplicaveis
               : ['Simples Nacional'],
             dia_prazo_padrao: Number(dadosMod.dia_prazo_padrao || 15),
             requer_pro_labore: requerProLabore,
-            requer_funcionarios: requerFunc
+            requer_funcionarios: requerFunc,
+            requer_ie: requerIE,
+            ativo: dadosMod.ativo !== undefined ? Boolean(dadosMod.ativo) : lista[idx].ativo
           };
           this.saveLocalData();
-          this.registrarLog('EDICAO_MODELO_TAREFA', 'Tarefas', `Modelo recorrente "${dadosMod.titulo}" atualizado (Regimes: ${lista[idx].regimes_aplicaveis.join(', ')}).`);
+          this.registrarLog('EDICAO_MODELO_TAREFA', 'Tarefas', `Rotina "${dadosMod.titulo}" atualizada (${periodicidade} | Regimes: ${lista[idx].regimes_aplicaveis.join(', ')}).`);
           return lista[idx];
         }
       }
@@ -2937,18 +3043,30 @@
         titulo: dadosMod.titulo,
         descricao: dadosMod.descricao || '',
         departamento: dadosMod.departamento || 'FISCAL',
+        periodicidade,
+        mes_entrega: periodicidade === 'ANUAL' ? String(dadosMod.mes_entrega || '06').padStart(2, '0') : null,
         regimes_aplicaveis: Array.isArray(dadosMod.regimes_aplicaveis) && dadosMod.regimes_aplicaveis.length > 0
           ? dadosMod.regimes_aplicaveis
           : ['Simples Nacional'],
         dia_prazo_padrao: Number(dadosMod.dia_prazo_padrao || 15),
         requer_pro_labore: requerProLabore,
         requer_funcionarios: requerFunc,
+        requer_ie: requerIE,
         ativo: dadosMod.ativo !== false
       };
       lista.push(novo);
       this.saveLocalData();
-      this.registrarLog('NOVO_MODELO_TAREFA', 'Tarefas', `Novo modelo recorrente "${novo.titulo}" adicionado para: ${novo.regimes_aplicaveis.join(', ')}.`);
+      this.registrarLog('NOVO_MODELO_TAREFA', 'Tarefas', `Nova rotina "${novo.titulo}" adicionada para: ${novo.regimes_aplicaveis.join(', ')}.`);
       return novo;
+    }
+
+    alternarAtivoModeloTarefa(modId) {
+      const lista = this.getModelosTarefas();
+      const idx = lista.findIndex(m => m.id === modId);
+      if (idx === -1) return null;
+      lista[idx].ativo = !lista[idx].ativo;
+      this.saveLocalData();
+      return lista[idx];
     }
 
     excluirModeloTarefa(modId) {

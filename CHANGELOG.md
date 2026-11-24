@@ -5,6 +5,21 @@ O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.
 
 ---
 
+## [1.4.0] - 2026-11-24
+
+### Adicionado & Melhorado
+- **Novo Módulo Prático de Tarefas, Rotinas e Fechamentos**:
+  - **Aba Separada "Definir Rotinas"**: painel dedicado por departamento (Fiscal, Contábil, Pessoal, Societário) com switch de 1 clique (Ativa/Desativada), periodicidade (**Mensal** ou **Anual**), exigência de Inscrição Estadual e criação/edição personalizada.
+  - **Barra de Progresso e Botões Rápidos de 1 Clique**: acompanhamento visual da porcentagem concluída na competência e botões diretos na linha (`Docs`, `Fazendo`, `✓ Normal`, `S/ Mov.`) para concluir normalmente ou **Sem Movimento** sem abrir modal.
+  - **Fiscal por Etapas + Regra de Inscrição Estadual (I.E.)**:
+    - Simples Nacional: Cobrança de Documentos → Apuração/Transmissão PGDAS-D (Normal/Sem Movimento) → Apuração ICMS (somente com I.E.) → DeSTDA (somente com I.E.).
+    - Lucro Presumido e Real: Cobrança de Documentos → EFD-ICMS/IPI (somente com I.E.) → EFD-Contribuições → EFD-Reinf/DCTFWeb → IRPJ/CSLL.
+  - **Contábil por Etapas + Matriz Anual + Anuais**: Cobrança de Extratos → Conciliação Bancária → Fechamento Mensal (integrado à Matriz Anual Jan–Dez) + obrigações anuais **ECD** (Junho) e **ECF** (Julho).
+  - **Pessoal (DP)**: rotinas mantidas desativadas por padrão, podendo ser ativadas a qualquer momento na aba *Definir Rotinas*.
+  - **Toggle Rápido de I.E. em Minhas Empresas**: botão clicável direto na tabela de empresas para marcar/informar Inscrição Estadual.
+
+---
+
 ## [1.3.0] - 2026-11-23
 
 ### Adicionado

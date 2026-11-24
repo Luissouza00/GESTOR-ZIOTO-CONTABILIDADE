@@ -709,10 +709,10 @@ window.ZGestorViews = {
       if (stAtual === 'PENDENTE') {
         return `
           <span
-            title="Status: Pendente"
+            title="Aguardando Documentos / Arquivos do Cliente"
             class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs select-none cursor-default">
             <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-            <span>Pendente</span>
+            <span>Aguardando Docs</span>
           </span>
         `;
       }
@@ -726,9 +726,19 @@ window.ZGestorViews = {
           </span>
         `;
       }
+      if (t && t.modalidade_entrega === 'SEM_MOVIMENTO') {
+        return `
+          <span
+            title="Concluído Sem Movimento"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-300 shadow-2xs select-none cursor-default">
+            <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+            <span>Sem Movimento</span>
+          </span>
+        `;
+      }
       return `
         <span
-          title="Status: Concluído / Entregue"
+          title="Status: Concluído Normalmente"
           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs select-none cursor-default">
           <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
           <span>Concluído</span>
@@ -780,10 +790,16 @@ window.ZGestorViews = {
               <span>Relatório</span>
             </button>
             <button
-              onclick="ZGestorApp.openModalModelosTarefas()"
-              class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-1.5 border border-slate-200 transition">
+              onclick="ZGestorApp.gerarTarefasMesAtual()"
+              class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs flex items-center gap-1.5 border border-indigo-300 transition cursor-pointer">
+              <i data-lucide="zap" class="w-3.5 h-3.5 text-indigo-600"></i>
+              <span>Gerar Rotinas (${comp})</span>
+            </button>
+            <button
+              onclick="ZGestorApp.setFiltro('subTabTarefas', 'rotinas_config')"
+              class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-1.5 border border-slate-200 transition cursor-pointer">
               <i data-lucide="settings-2" class="w-3.5 h-3.5 text-indigo-600"></i>
-              <span>Modelos Recorrentes</span>
+              <span>Definir Rotinas</span>
             </button>
             <button
               onclick="ZGestorApp.openModalGuiaImposto()"
@@ -859,6 +875,14 @@ window.ZGestorViews = {
               <span>Matriz Anual Jan–Dez</span>
             </button>
             <button
+              onclick="ZGestorApp.setFiltro('subTabTarefas', 'rotinas_config')"
+              class="px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition ${subTab === 'rotinas_config'
+        ? 'bg-slate-900 text-white shadow-xs'
+        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}">
+              <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
+              <span>Definir Rotinas</span>
+            </button>
+            <button
               onclick="ZGestorApp.setFiltro('subTabTarefas', 'guias_impostos')"
               class="px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 transition ${subTab === 'guias_impostos'
         ? 'bg-emerald-600 text-white shadow-xs'
@@ -884,6 +908,39 @@ window.ZGestorViews = {
         </div>
 
         ${subTab === 'obrigacoes' ? `
+          ${(() => {
+            const totalC = todasComp.length;
+            const pctC = totalC > 0 ? Math.round((qtdEntreguesComp / totalC) * 100) : 0;
+            const qtdSemMovC = todasComp.filter(t => t.modalidade_entrega === 'SEM_MOVIMENTO').length;
+            return `
+              <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div class="text-xs font-bold text-slate-800 flex items-center gap-2">
+                      <span>Andamento Geral da Competência ${comp}</span>
+                      <span class="px-2 py-0.5 rounded-full text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">${pctC}% Concluído</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">
+                      ${totalC === 0 ? 'Nenhuma rotina gerada ainda para este mês. Clique em "Gerar Rotinas" para criar automaticamente conforme regime e Inscrição Estadual.' : `${qtdEntreguesComp} de ${totalC} obrigações concluídas (${qtdEntreguesComp - qtdSemMovC} normais • ${qtdSemMovC} sem movimento) • ${qtdPendentesComp} aguardando docs • ${qtdAndamentoComp} em andamento`}
+                    </p>
+                  </div>
+                  ${totalC === 0 ? `
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.gerarTarefasMesAtual()"
+                      class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer shrink-0">
+                      <i data-lucide="zap" class="w-4 h-4"></i>
+                      <span>Gerar Rotinas (${comp})</span>
+                    </button>
+                  ` : ''}
+                </div>
+                <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div class="bg-emerald-500 h-full transition-all" style="width: ${pctC}%"></div>
+                </div>
+              </div>
+            `;
+          })()}
+
           <!-- SUB-ABAS DE REGIME TRIBUTÁRIO DENTRO DO DEPARTAMENTO -->
           <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2 text-xs">
             <div class="flex flex-wrap items-center gap-1.5">
@@ -1169,9 +1226,37 @@ window.ZGestorViews = {
                                     </div>
                                   </td>
 
-                                  <!-- Ações -->
+                                  <!-- Ações Rápidas & Painel -->
                                   <td class="py-2.5 px-3 text-right">
-                                    <div class="inline-flex items-center justify-end gap-1">
+                                    <div class="inline-flex items-center justify-end gap-1 flex-wrap">
+                                      <button
+                                        type="button"
+                                        onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'COBRAR_DOCS')"
+                                        title="Marcar etapa: Cobrar Documentos / Arquivos do Cliente"
+                                        class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'PENDENTE' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'}">
+                                        Docs
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'EM_ANDAMENTO')"
+                                        title="Marcar etapa: Em Andamento"
+                                        class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'EM_ANDAMENTO' ? 'bg-sky-600 text-white border-sky-700' : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'}">
+                                        Fazendo
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'ENTREGUE_NORMAL')"
+                                        title="Concluir normalmente (Com Movimento)"
+                                        class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'ENTREGUE' && t.modalidade_entrega !== 'SEM_MOVIMENTO' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'}">
+                                        ✓ Normal
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'SEM_MOVIMENTO')"
+                                        title="Concluir Sem Movimento"
+                                        class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${t.modalidade_entrega === 'SEM_MOVIMENTO' ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'}">
+                                        S/ Mov.
+                                      </button>
                                       <button
                                         onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')"
                                         class="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition"
@@ -1420,6 +1505,120 @@ window.ZGestorViews = {
                 </div>
               </div>
             ` : ''}
+          </div>
+        ` : subTab === 'rotinas_config' ? `
+          <!-- ABA SEPARADA: DEFINIR ROTINAS MENSAIS E ANUAIS -->
+          <div class="space-y-4">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <i data-lucide="sliders-horizontal" class="w-5 h-5 text-indigo-600"></i>
+                  <span>Configuração de Rotinas Automáticas (Mensais e Anuais)</span>
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">
+                  Defina exatamente quais obrigações e etapas serão geradas para cada regime tributário. Rotinas com <strong>Exige Inscrição Estadual</strong> só são criadas para empresas que possuem I.E. ativa.
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onclick="ZGestorApp.openModalModelosTarefas()"
+                  class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer">
+                  <i data-lucide="plus" class="w-4 h-4"></i>
+                  <span>+ Nova Rotina</span>
+                </button>
+                <button
+                  type="button"
+                  onclick="ZGestorApp.gerarTarefasMesAtual()"
+                  class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer">
+                  <i data-lucide="zap" class="w-4 h-4"></i>
+                  <span>Gerar Rotinas (${comp})</span>
+                </button>
+              </div>
+            </div>
+
+            ${(() => {
+              const modelos = db.getModelosTarefas();
+              const deptsCfg = [
+                { key: 'FISCAL', titulo: 'Departamento Fiscal (Simples, Presumido e Real)', cor: 'orange', desc: 'Etapas separadas de cobrança, apuração PGDAS/ICMS/DeSTDA e SPEDs (EFD-Contribuições, EFD-ICMS/IPI, EFD-Reinf, IRPJ/CSLL).' },
+                { key: 'CONTABIL', titulo: 'Departamento Contábil (Mensal e Anual)', cor: 'blue', desc: 'Etapas separadas de cobrança de extratos, conciliação bancária, fechamento mensal (Matriz Anual) e declarações anuais ECD/ECF.' },
+                { key: 'PESSOAL', titulo: 'Departamento Pessoal (DP)', cor: 'emerald', desc: 'Deixado desativado por padrão conforme preferência do escritório. Ative manualmente se desejar gerar rotinas de folha/pró-labore.' },
+                { key: 'SOCIETARIO', titulo: 'Societário / Legalização', cor: 'purple', desc: 'Rotinas de monitoramento societário e certidões.' }
+              ];
+
+              return deptsCfg.map(dep => {
+                const itens = modelos.filter(m => m.departamento === dep.key);
+                return `
+                  <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                    <div class="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h3 class="text-sm font-bold text-slate-900">${dep.titulo}</h3>
+                        <p class="text-[11px] text-slate-500">${dep.desc}</p>
+                      </div>
+                      <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white border border-slate-200 text-slate-700 shrink-0">
+                        ${itens.filter(i => i.ativo).length} ativa(s) de ${itens.length}
+                      </span>
+                    </div>
+
+                    ${itens.length === 0 ? `
+                      <div class="p-6 text-center text-xs text-slate-400 italic">
+                        Nenhuma rotina cadastrada para este departamento.
+                      </div>
+                    ` : `
+                      <div class="divide-y divide-slate-100">
+                        ${itens.map(m => `
+                          <div class="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-slate-50/70 transition ${!m.ativo ? 'opacity-60 bg-slate-50/40' : ''}">
+                            <div class="space-y-1">
+                              <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-bold text-slate-900 text-xs">${this.escapeHtml(m.titulo)}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${m.periodicidade === 'ANUAL' ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}">
+                                  ${m.periodicidade === 'ANUAL' ? `ANUAL (Mês ${m.mes_entrega || '06'})` : 'MENSAL'}
+                                </span>
+                                ${m.requer_ie ? `
+                                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                    Exige Inscrição Estadual (I.E.)
+                                  </span>
+                                ` : ''}
+                              </div>
+                              <p class="text-[11px] text-slate-500">${this.escapeHtml(m.descricao || '')}</p>
+                              <div class="flex flex-wrap items-center gap-1.5 pt-0.5 text-[10px]">
+                                <span class="text-slate-500 font-semibold">Prazo dia ${m.dia_prazo_padrao}</span>
+                                <span class="text-slate-300">•</span>
+                                ${(m.regimes_aplicaveis || []).map(r => `
+                                  <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">${r}</span>
+                                `).join('')}
+                              </div>
+                            </div>
+
+                            <div class="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onclick="ZGestorApp.alternarRotinaAtiva('${m.id}')"
+                                class="px-3 py-1.5 rounded-xl font-bold text-[11px] border transition cursor-pointer ${m.ativo ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'}">
+                                ${m.ativo ? '● Ativa (Gerando)' : '○ Desativada'}
+                              </button>
+                              <button
+                                type="button"
+                                onclick="ZGestorApp.openModalModelosTarefas('${m.id}')"
+                                class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition cursor-pointer">
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onclick="ZGestorApp.excluirModeloRecorrente('${m.id}')"
+                                class="p-1.5 rounded-xl text-rose-500 hover:bg-rose-50 transition cursor-pointer"
+                                title="Excluir rotina">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                              </button>
+                            </div>
+                          </div>
+                        `).join('')}
+                      </div>
+                    `}
+                  </div>
+                `;
+              }).join('');
+            })()}
           </div>
         ` : subTab === 'fechamentos_geral' ? `
           <!-- SUB-ABA 2: VISÃO GERAL & CONTROLE DE FECHAMENTOS CONTÁBEIS (MATRIZ ANUAL JAN–DEZ) -->
@@ -3043,7 +3242,16 @@ window.ZGestorViews = {
                         <i data-lucide="map-pin" class="w-3 h-3 text-slate-400"></i>
                         <span>${e.municipio_uf || '—'}</span>
                       </div>
-                      <div class="text-[10px] text-slate-400 mt-0.5">IE: ${e.inscricao_estadual || 'Isento'} | IM: ${e.inscricao_municipal || '—'}</div>
+                      <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onclick="ZGestorApp.alternarIEEmpresa('${e.id}')"
+                          title="Clique para marcar/desmarcar ou informar Inscrição Estadual (controla ICMS, DeSTDA e EFD-ICMS)"
+                          class="px-1.5 py-0.5 rounded font-bold border transition cursor-pointer ${db.empresaPossuiIE(e) ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}">
+                          IE: ${db.empresaPossuiIE(e) ? this.escapeHtml(e.inscricao_estadual || 'Ativa') : 'Sem I.E. (+ Ativar)'}
+                        </button>
+                        <span>IM: ${e.inscricao_municipal || '—'}</span>
+                      </div>
                     </td>
                     <td class="py-3 px-2.5">
                       <div>
@@ -4071,7 +4279,7 @@ window.ZGestorViews = {
           <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> v1.3.0
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> v1.4.0
             </span>
           </div>
         </div>
