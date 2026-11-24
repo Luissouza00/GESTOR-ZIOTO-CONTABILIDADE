@@ -1056,5 +1056,74 @@ window.ZGestorReports = {
     `;
 
     this.abrirJanelaImpressao(`Relatório para Emissão de NFS-e — Competência ${competencia}`, html);
+  },
+
+  imprimirProtocoloOfficeBoy(protocoloId) {
+    const db = window.zgestorDB;
+    const V = window.ZGestorViews;
+    const prot = (db.data.protocolos_guias || []).find(p => p.id === protocoloId);
+    if (!prot) return;
+
+    const itens = prot.itens || [];
+    const linhas = itens.map((it, idx) => `
+      <tr class="border-b border-slate-300">
+        <td class="py-3 px-2 text-center font-mono text-xs text-slate-500">${idx + 1}</td>
+        <td class="py-3 px-2">
+          <div class="font-bold text-slate-900 text-xs">${it.razao_social || it.empresa_nome}</div>
+          <div class="text-[11px] text-slate-600 font-mono">CNPJ: ${it.cnpj || '—'}</div>
+        </td>
+        <td class="py-3 px-2 text-xs font-semibold text-slate-800">
+          ${it.tipo_guia}
+          ${it.segundo_mes_subsequente ? '<div class="text-[10px] font-bold text-amber-700">⚠ Venc. 2º Mês Subseq.</div>' : ''}
+        </td>
+        <td class="py-3 px-2 text-center font-bold text-xs text-slate-900">${V.formatDate(it.data_vencimento)}</td>
+        <td class="py-3 px-2 text-center text-xs text-slate-400">____/____/____</td>
+        <td class="py-3 px-2">
+          <div class="border-b border-slate-400 h-6"></div>
+          <div class="text-[9px] text-slate-400 mt-0.5">Nome legível e assinatura do recebedor</div>
+        </td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <div class="space-y-4">
+        ${this.cabecalhoPadraoRelatorio(`Protocolo de Entrega de Guias — ${prot.codigo}`, `Competência ${prot.competencia} • Entrega Física (Office Boy) • ${itens.length} guia(s)`)}
+
+        <div class="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+          <div><span class="text-slate-500">Nº Protocolo:</span> <strong class="font-mono text-indigo-800">${prot.codigo}</strong></div>
+          <div><span class="text-slate-500">Data de Saída:</span> <strong>${V.formatDate(prot.data_saida)}</strong></div>
+          <div><span class="text-slate-500">Emitido por:</span> <strong>${prot.responsavel_emissao || 'Escritório'}</strong></div>
+        </div>
+
+        <table class="w-full text-left border-collapse border border-slate-300">
+          <thead>
+            <tr class="bg-slate-100 border-b-2 border-slate-400 text-[10px] font-bold uppercase text-slate-700">
+              <th class="py-2 px-2 w-[5%] text-center">#</th>
+              <th class="py-2 px-2 w-[30%]">Empresa / CNPJ</th>
+              <th class="py-2 px-2 w-[23%]">Guia / Tributo</th>
+              <th class="py-2 px-2 w-[11%] text-center">Vencimento</th>
+              <th class="py-2 px-2 w-[11%] text-center">Data Entrega</th>
+              <th class="py-2 px-2 w-[20%]">Assinatura / Carimbo Cliente</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhas}
+          </tbody>
+        </table>
+
+        <div class="mt-6 grid grid-cols-2 gap-8 pt-6 text-xs text-slate-700">
+          <div class="text-center">
+            <div class="border-t border-slate-400 pt-1.5 font-bold">Assinatura do Office Boy / Portador</div>
+            <div class="text-[10px] text-slate-400">Conferência de saída das guias impressas</div>
+          </div>
+          <div class="text-center">
+            <div class="border-t border-slate-400 pt-1.5 font-bold">Conferência / Arquivamento (Escritório)</div>
+            <div class="text-[10px] text-slate-400">Recebido e arquivado em ____/____/______</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    this.abrirJanelaImpressao(`Protocolo Office Boy ${prot.codigo}`, html);
   }
 };

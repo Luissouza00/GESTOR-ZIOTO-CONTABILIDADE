@@ -40,6 +40,7 @@ window.ZGestorApp = {
     filtroTarefaBusca: '',
     filtroGuiaImpostoTipo: 'TODOS',
     filtroGuiaImpostoStatus: 'TODOS',
+    guiasSelecionadas: [],
     filtroCNDCliente: 'TODOS',
     filtroCNDOrgao: 'TODOS',
     filtroCNDStatus: 'TODOS',
@@ -6036,36 +6037,7 @@ window.ZGestorApp = {
             <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
           </div>
 
-          <div class="mt-4 space-y-2 max-h-56 overflow-y-auto pr-1">
-            ${modelos.map(m => `
-              <div class="p-3 rounded-xl border ${modEdit && modEdit.id === m.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 bg-slate-50/70'} flex items-center justify-between gap-3 text-xs">
-                <div>
-                  <div class="flex flex-wrap items-center gap-2">
-                    ${V.deptBadge(m.departamento)}
-                    <span class="font-bold text-slate-900">${m.titulo}</span>
-                    <span class="text-indigo-700 font-semibold">(Prazo: Dia ${m.dia_prazo_padrao} do mês seguinte)</span>
-                  </div>
-                  <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    <span class="text-[11px] font-bold text-slate-500">Regimes:</span>
-                    ${(m.regimes_aplicaveis || []).map(reg => `
-                      <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white border border-slate-300 text-slate-800">${reg}</span>
-                    `).join('')}
-                    ${m.exige_funcionarios ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-800">Requer Folha/Funcionários</span>` : ''}
-                  </div>
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <button onclick="ZGestorApp.openModalModelosTarefas('${m.id}')" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold">
-                    Editar Regime/Modelo
-                  </button>
-                  <button onclick="ZGestorApp.excluirModeloRecorrente('${m.id}')" class="text-rose-500 hover:text-rose-700 font-semibold px-2 py-1">
-                    Remover
-                  </button>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-
-          <form onsubmit="ZGestorApp.submitNovoModeloTarefa(event)" class="mt-5 pt-4 border-t border-slate-200 space-y-3.5 text-xs">
+          <form onsubmit="ZGestorApp.submitNovoModeloTarefa(event)" class="mt-4 space-y-3.5 text-xs">
             <input type="hidden" id="f-mod-id" value="${formValues.id || ''}" />
             <div class="flex items-center justify-between">
               <h4 class="font-bold text-slate-900 text-sm">
@@ -6206,15 +6178,87 @@ window.ZGestorApp = {
       requer_ie: document.getElementById('f-mod-ie')?.checked || false,
       exige_funcionarios: document.getElementById('f-mod-func').checked
     });
-    this.showToast(idMod ? 'Modelo recorrente atualizado com os regimes selecionados!' : 'Novo modelo recorrente adicionado!', 'success');
-    this.openModalModelosTarefas();
+    this.showToast(idMod ? 'Rotina atualizada com sucesso!' : 'Nova rotina adicionada com sucesso!', 'success');
+    this.closeModal();
     this.renderContentOnly();
   },
 
   excluirModeloRecorrente(modId) {
+    if (!confirm('Deseja realmente remover esta rotina recorrente?')) return;
     window.zgestorDB.excluirModeloTarefa(modId);
-    this.showToast('Modelo recorrente removido.', 'info');
-    this.openModalModelosTarefas();
+    this.showToast('Rotina removida.', 'info');
+    this.closeModal();
+    this.renderContentOnly();
+  },
+
+  // ===========================================================================
+  // CONTROLE DE GUIAS EM LOTE, PROTOCOLO OFFICE BOY & ENVIO DIGITAL
+  // ===========================================================================
+  toggleSelecaoGuia(guiaId) {
+    if (!Array.isArray(this.state.guiasSelecionadas)) this.state.guiasSelecionadas = [];
+    const idx = this.state.guiasSelecionadas.indexOf(guiaId);
+    if (idx === -1) this.state.guiasSelecionadas.push(guiaId);
+    else this.state.guiasSelecionadas.splice(idx, 1);
+    this.renderContentOnly();
+  },
+
+  selecionarTodasGuiasPendentes(listaIds) {
+    if (!Array.isArray(listaIds)) return;
+    const atuais = this.state.guiasSelecionadas || [];
+    const todasMarcadas = listaIds.length > 0 && listaIds.every(id => atuais.includes(id));
+    if (todasMarcadas) {
+      this.state.guiasSelecionadas = [];
+    } else {
+      this.state.guiasSelecionadas = [...listaIds];
+    }
+    this.renderContentOnly();
+  },
+
+  gerarProtocoloOfficeBoySelecionadas(guiaIdUnico = null) {
+    try {
+      const ids = guiaIdUnico ? [guiaIdUnico] : (this.state.guiasSelecionadas || []);
+      if (ids.length === 0) {
+        this.showToast('Marque ao menos uma guia para gerar o protocolo do Office Boy.', 'error');
+        return;
+      }
+      const prot = window.zgestorDB.gerarProtocoloLoteOfficeBoy(ids, this.state.competencia);
+      this.state.guiasSelecionadas = [];
+      this.showToast(`Protocolo ${prot.codigo} gerado com ${prot.guia_ids.length} guia(s) para o Office Boy!`, 'success');
+      this.renderContentOnly();
+      if (window.ZGestorReports && typeof window.ZGestorReports.imprimirProtocoloOfficeBoy === 'function') {
+        window.ZGestorReports.imprimirProtocoloOfficeBoy(prot.id);
+      }
+      return prot;
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  registrarEnvioDigitalSelecionadas(canal = 'WHATSAPP', guiaIdUnico = null) {
+    try {
+      const ids = guiaIdUnico ? [guiaIdUnico] : (this.state.guiasSelecionadas || []);
+      if (ids.length === 0) {
+        this.showToast('Marque ao menos uma guia para registrar o envio.', 'error');
+        return;
+      }
+      const qtd = window.zgestorDB.registrarEnvioDigitalGuia(ids, canal);
+      this.state.guiasSelecionadas = [];
+      this.showToast(`${qtd} guia(s) registrada(s) como enviada(s) via ${canal === 'EMAIL' ? 'E-mail' : 'WhatsApp'}!`, 'success');
+      this.renderContentOnly();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  arquivarProtocoloAssinado(protocoloId) {
+    if (!confirm('Confirmar que o Office Boy retornou com este protocolo assinado e arquivar todas as guias do lote?')) return;
+    try {
+      const prot = window.zgestorDB.arquivarProtocoloAssinado(protocoloId);
+      this.showToast(`Protocolo ${prot.codigo} arquivado como assinado!`, 'success');
+      this.renderContentOnly();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
   },
 
   // ===========================================================================

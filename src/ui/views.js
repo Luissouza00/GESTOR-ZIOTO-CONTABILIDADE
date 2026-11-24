@@ -583,7 +583,15 @@ window.ZGestorViews = {
     let listaGuiasImpostos = [...todasGuiasComp];
     if (fCliente !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.empresa_id === fCliente);
     if (fGuiaTipo !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.tipo_guia === fGuiaTipo);
-    if (fGuiaStatus !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.status_envio === fGuiaStatus);
+    if (fGuiaStatus !== 'TODOS') {
+      if (fGuiaStatus === 'PENDENTES') {
+        listaGuiasImpostos = listaGuiasImpostos.filter(g => !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
+      } else if (fGuiaStatus === 'ENVIADAS_DIGITAIS') {
+        listaGuiasImpostos = listaGuiasImpostos.filter(g => ['ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
+      } else {
+        listaGuiasImpostos = listaGuiasImpostos.filter(g => g.status_envio === fGuiaStatus);
+      }
+    }
     if (fBusca) {
       listaGuiasImpostos = listaGuiasImpostos.filter(g => {
         const emp = db.data.empresas.find(e => e.id === g.empresa_id);
@@ -664,24 +672,25 @@ window.ZGestorViews = {
     ];
 
     const statusGuiaImpBadge = (st) => {
+      if (st === 'ARQUIVADA_ASSINADA') {
+        return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300"><i data-lucide="folder-check" class="w-3 h-3"></i> Assinada e Arquivada</span>`;
+      }
+      if (st === 'IMPRESSA_OFFICE_BOY') {
+        return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-300"><i data-lucide="printer" class="w-3 h-3"></i> Em Rota (Office Boy)</span>`;
+      }
+      if (st === 'ENVIADA_WHATSAPP') {
+        return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300"><i data-lucide="message-circle" class="w-3 h-3"></i> Enviada (WhatsApp)</span>`;
+      }
+      if (st === 'ENVIADA_EMAIL') {
+        return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300"><i data-lucide="mail" class="w-3 h-3"></i> Enviada (E-mail)</span>`;
+      }
       if (st === 'VISUALIZADA_CLIENTE' || st === 'BAIXADA_VISUALIZADA') {
-        return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300">
-          <i data-lucide="check-check" class="w-3 h-3 text-teal-700"></i> Guia Visualizada/Baixada
-        </span>`;
+        return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300"><i data-lucide="check-check" class="w-3 h-3"></i> Visualizada no Portal</span>`;
       }
       if (st === 'ENVIADA_CLIENTE') {
-        return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-          <i data-lucide="send" class="w-3 h-3"></i> Enviada ao Cliente
-        </span>`;
+        return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200"><i data-lucide="send" class="w-3 h-3"></i> Enviada ao Cliente</span>`;
       }
-      if (st === 'GERADA_AGUARDANDO_ENVIO') {
-        return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-          <i data-lucide="file-check" class="w-3 h-3"></i> Gerada (Falta Enviar)
-        </span>`;
-      }
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
-        <i data-lucide="clock" class="w-3 h-3"></i> Pendente Geração
-      </span>`;
+      return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300"><i data-lucide="clock" class="w-3 h-3"></i> Pendente de Envio</span>`;
     };
 
     const renderNotionStatusPill = (t) => {
@@ -1943,152 +1952,271 @@ window.ZGestorViews = {
             </div>
           </div>
         ` : `
-          <!-- SUB-ABA 3: CONTROLE DE ENVIO DE GUIAS DE IMPOSTOS (COM SEPARAÇÃO PRÓ-LABORE X FUNCIONÁRIOS FGTS) -->
-          <div class="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-            <div class="flex items-start gap-2.5">
-              <i data-lucide="info" class="w-4 h-4 text-indigo-600 shrink-0 mt-0.5"></i>
-              <div>
-                <strong class="text-indigo-950">Regra Automática de Geração de Guias por Cadastro da Empresa:</strong>
-                <span class="text-indigo-900 block sm:inline sm:ml-1">
-                  • Empresas com <strong>Pró-Labore (Padrão)</strong> geram automaticamente <strong>DARF Previdenciário / IRRF (INSS Pró-Labore)</strong>.
-                  • Somente empresas marcadas com <strong>Possui Funcionários CLT</strong> geram <strong>Guia de FGTS Digital</strong>.
-                </span>
-              </div>
-            </div>
-          </div>
+          <!-- SUB-ABA 3: CONTROLE DE GUIAS, PROTOCOLO OFFICE BOY & ENVIO DIGITAL -->
+          ${(() => {
+            const protocolosComp = db.getProtocolosGuias(comp);
+            const selecionadas = appState.guiasSelecionadas || [];
+            const ehPendente = (g) => !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio);
+            const pendentesLista = listaGuiasImpostos.filter(ehPendente);
+            const idsPendentes = pendentesLista.map(g => g.id);
+            const todasPendMarcadas = idsPendentes.length > 0 && idsPendentes.every(id => selecionadas.includes(id));
 
-          <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div>
-              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Filtrar por Empresa</label>
-              <select onchange="ZGestorApp.setFiltro('filtroTarefaCliente', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
-                <option value="TODOS" ${fCliente === 'TODOS' ? 'selected' : ''}>Todas as Empresas</option>
-                ${db.data.empresas.map(e => `
-                  <option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}>${e.codigo_interno} - ${e.nome_fantasia} (${e.regime_tributario})</option>
-                `).join('')}
-              </select>
-            </div>
-            <div>
-              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Tipo de Guia (Tributo)</label>
-              <select onchange="ZGestorApp.setFiltro('filtroGuiaImpostoTipo', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
-                <option value="TODOS" ${fGuiaTipo === 'TODOS' ? 'selected' : ''}>Todas as Guias (DAS, DAE ICMS, DARF, FGTS...)</option>
-                ${modelosTiposGuias.map(tg => `
-                  <option value="${tg.sigla}" ${fGuiaTipo === tg.sigla ? 'selected' : ''}>${tg.sigla}</option>
-                `).join('')}
-              </select>
-            </div>
-            <div>
-              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Status de Envio</label>
-              <select onchange="ZGestorApp.setFiltro('filtroGuiaImpostoStatus', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
-                <option value="TODOS" ${fGuiaStatus === 'TODOS' ? 'selected' : ''}>Todos os Status</option>
-                <option value="PENDENTE_GERACAO" ${fGuiaStatus === 'PENDENTE_GERACAO' ? 'selected' : ''}>Pendente de Geração</option>
-                <option value="GERADA_AGUARDANDO_ENVIO" ${fGuiaStatus === 'GERADA_AGUARDANDO_ENVIO' ? 'selected' : ''}>Gerada (Aguardando Envio)</option>
-                <option value="ENVIADA_CLIENTE" ${fGuiaStatus === 'ENVIADA_CLIENTE' ? 'selected' : ''}>Enviada ao Cliente</option>
-                <option value="VISUALIZADA_CLIENTE" ${fGuiaStatus === 'VISUALIZADA_CLIENTE' ? 'selected' : ''}>✓ Visualizada / Baixada pelo Cliente</option>
-              </select>
-            </div>
-            <div class="flex items-end gap-1.5">
-              <button onclick="ZGestorApp.openModalUploadLoteGuias()" class="flex-1 py-1.5 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm" title="Upload inteligente de múltiplos PDFs com leitura automática de CNPJ e competência">
-                <i data-lucide="layers" class="w-3.5 h-3.5"></i> ⚡ Upload em Lote
-              </button>
-              <button onclick="ZGestorApp.openModalGuiaImposto()" class="flex-1 py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm">
-                <i data-lucide="plus" class="w-3.5 h-3.5"></i> + Nova Guia
-              </button>
-            </div>
-          </div>
+            const qPendentes = todasGuiasComp.filter(ehPendente).length;
+            const qEmRota = todasGuiasComp.filter(g => g.status_envio === 'IMPRESSA_OFFICE_BOY').length;
+            const qDigitais = todasGuiasComp.filter(g => ['ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio)).length;
+            const qArquivadas = todasGuiasComp.filter(g => g.status_envio === 'ARQUIVADA_ASSINADA').length;
 
-          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div class="p-3.5 bg-emerald-50/60 border-b border-emerald-200 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 class="text-sm font-bold text-slate-900">Controle de Envio de Guias de Impostos — Competência ${comp} (Vencimento em ${sub.label})</h2>
-                <p class="text-xs text-slate-600">Controle rápido de geração e envio de guias como <strong>DAS - Simples Nacional</strong>, <strong>DAE / DARE - ICMS</strong>, <strong>DARF INSS/IRRF (Pró-Labore)</strong> e <strong>FGTS Digital (Funcionários)</strong>.</p>
-              </div>
-              <span class="px-3 py-1 rounded-full bg-white border border-emerald-300 text-emerald-800 text-xs font-bold">
-                ${listaGuiasImpostos.filter(g => g.status_envio === 'ENVIADA_CLIENTE' || g.status_envio === 'VISUALIZADA_CLIENTE').length} de ${listaGuiasImpostos.length} enviada(s)
-              </span>
-            </div>
+            return `
+              <div class="space-y-4">
+                <!-- 4 KPIs Limpos -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div class="bg-white p-3.5 rounded-2xl border border-amber-200 shadow-2xs">
+                    <div class="text-[11px] font-bold text-amber-700 uppercase">Pendentes de Envio</div>
+                    <div class="text-2xl font-black text-amber-600 mt-1">${qPendentes}</div>
+                    <div class="text-[10px] text-slate-500">Aguardando Office Boy ou envio digital</div>
+                  </div>
+                  <div class="bg-white p-3.5 rounded-2xl border border-blue-200 shadow-2xs">
+                    <div class="text-[11px] font-bold text-blue-700 uppercase">Em Rota (Office Boy)</div>
+                    <div class="text-2xl font-black text-blue-600 mt-1">${qEmRota}</div>
+                    <div class="text-[10px] text-slate-500">Impressas aguardando retorno assinado</div>
+                  </div>
+                  <div class="bg-white p-3.5 rounded-2xl border border-emerald-200 shadow-2xs">
+                    <div class="text-[11px] font-bold text-emerald-700 uppercase">Enviadas (WhatsApp/E-mail)</div>
+                    <div class="text-2xl font-black text-emerald-600 mt-1">${qDigitais}</div>
+                    <div class="text-[10px] text-slate-500">Envio digital registrado</div>
+                  </div>
+                  <div class="bg-white p-3.5 rounded-2xl border border-teal-200 shadow-2xs">
+                    <div class="text-[11px] font-bold text-teal-800 uppercase">Assinadas e Arquivadas</div>
+                    <div class="text-2xl font-black text-teal-700 mt-1">${qArquivadas}</div>
+                    <div class="text-[10px] text-slate-500">Protocolos arquivados no mês</div>
+                  </div>
+                </div>
 
-            <div class="overflow-x-auto w-full">
-              <table class="w-full min-w-[700px] text-left border-collapse">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
-                  <th class="py-3 px-3 w-[22%]">Cliente & Enquadramento DP</th>
-                  <th class="py-3 px-2.5 w-[24%]">Guia / Imposto & Setor</th>
-                  <th class="py-3 px-2.5 w-[14%]">Vencimento</th>
-                  <th class="py-3 px-2.5 w-[24%]">Status & Protocolo de Envio</th>
-                  <th class="py-3 px-3 w-[16%] text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 text-xs">
-                ${listaGuiasImpostos.map(g => {
-          const emp = db.data.empresas.find(e => e.id === g.empresa_id);
-          const enviada = g.status_envio === 'ENVIADA_CLIENTE' || g.status_envio === 'VISUALIZADA_CLIENTE';
-          return `
-                    <tr class="hover:bg-slate-50 ${g.status_envio === 'VISUALIZADA_CLIENTE' ? 'bg-teal-50/25' : (enviada ? 'bg-emerald-50/20' : '')}">
-                      <td class="py-3 px-3">
-                        <div class="font-bold text-slate-900">${emp ? emp.nome_fantasia : '—'}</div>
-                        <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : ''}</div>
-                        ${emp ? `
-                          <div class="flex flex-wrap gap-1 mt-1">
-                            <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold ${emp.possui_pro_labore !== false ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-500'}">
-                              Pró-Labore: ${emp.possui_pro_labore !== false ? 'Sim' : 'Não'}
-                            </span>
-                            <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold ${emp.possui_funcionarios ? 'bg-purple-50 text-purple-700' : 'bg-slate-100 text-slate-500'}">
-                              Funcionários: ${emp.possui_funcionarios ? 'Sim (FGTS)' : 'Não'}
-                            </span>
+                <!-- Filtros & Ações -->
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Empresa</label>
+                    <select onchange="ZGestorApp.setFiltro('filtroTarefaCliente', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
+                      <option value="TODOS" ${fCliente === 'TODOS' ? 'selected' : ''}>Todas as Empresas</option>
+                      ${db.data.empresas.map(e => `<option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}>#${e.codigo_interno} - ${e.nome_fantasia}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Tipo de Guia</label>
+                    <select onchange="ZGestorApp.setFiltro('filtroGuiaImpostoTipo', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
+                      <option value="TODOS" ${fGuiaTipo === 'TODOS' ? 'selected' : ''}>Todas (DAS, ICMS, DARF...)</option>
+                      ${modelosTiposGuias.map(tg => `<option value="${tg.sigla}" ${fGuiaTipo === tg.sigla ? 'selected' : ''}>${tg.sigla}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Status de Entrega</label>
+                    <select onchange="ZGestorApp.setFiltro('filtroGuiaImpostoStatus', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
+                      <option value="TODOS" ${fGuiaStatus === 'TODOS' ? 'selected' : ''}>Todos os Status</option>
+                      <option value="PENDENTES" ${fGuiaStatus === 'PENDENTES' ? 'selected' : ''}>⏳ Pendentes de Envio</option>
+                      <option value="IMPRESSA_OFFICE_BOY" ${fGuiaStatus === 'IMPRESSA_OFFICE_BOY' ? 'selected' : ''}>🖨️ Em Rota (Office Boy)</option>
+                      <option value="ENVIADAS_DIGITAIS" ${fGuiaStatus === 'ENVIADAS_DIGITAIS' ? 'selected' : ''}>💬 Enviadas (WhatsApp / E-mail)</option>
+                      <option value="ARQUIVADA_ASSINADA" ${fGuiaStatus === 'ARQUIVADA_ASSINADA' ? 'selected' : ''}>📁 Assinadas e Arquivadas</option>
+                    </select>
+                  </div>
+                  <div class="flex items-end gap-1.5">
+                    <button onclick="ZGestorApp.openModalUploadLoteGuias()" class="flex-1 py-1.5 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer">
+                      <i data-lucide="layers" class="w-3.5 h-3.5"></i> Lote PDF
+                    </button>
+                    <button onclick="ZGestorApp.openModalGuiaImposto()" class="flex-1 py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i> + Guia
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Barra de Ação em Lote (Office Boy / WhatsApp / E-mail) -->
+                <div class="bg-slate-900 text-white p-3.5 rounded-2xl shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                  <div class="flex items-center gap-3">
+                    <label class="inline-flex items-center gap-2 cursor-pointer font-bold select-none">
+                      <input
+                        type="checkbox"
+                        ${todasPendMarcadas ? 'checked' : ''}
+                        onchange="ZGestorApp.selecionarTodasGuiasPendentes(${JSON.stringify(idsPendentes)})"
+                        class="w-4 h-4 rounded text-indigo-500"
+                      />
+                      <span>Selecionar Pendentes (${idsPendentes.length})</span>
+                    </label>
+                    <span class="px-2.5 py-0.5 rounded-full bg-indigo-500/30 border border-indigo-400/40 font-bold text-indigo-200">
+                      ${selecionadas.length} selecionada(s)
+                    </span>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.gerarProtocoloOfficeBoySelecionadas()"
+                      class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
+                      <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                      <span>Imprimir & Gerar Protocolo Office Boy (${selecionadas.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.registrarEnvioDigitalSelecionadas('WHATSAPP')"
+                      class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
+                      <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>
+                      <span>Enviada WhatsApp (${selecionadas.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.registrarEnvioDigitalSelecionadas('EMAIL')"
+                      class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs">
+                      <i data-lucide="mail" class="w-3.5 h-3.5"></i>
+                      <span>Enviada E-mail (${selecionadas.length})</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Lista Limpa de Guias para Envio -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div class="overflow-x-auto w-full">
+                    <table class="w-full min-w-[780px] text-left border-collapse text-xs">
+                      <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
+                          <th class="py-3 px-3 w-10 text-center">Sel.</th>
+                          <th class="py-3 px-3">Empresa</th>
+                          <th class="py-3 px-3">Guia / Imposto</th>
+                          <th class="py-3 px-3">Vencimento</th>
+                          <th class="py-3 px-3">Status & Protocolo</th>
+                          <th class="py-3 px-3 text-right">Ações Rápidas</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        ${listaGuiasImpostos.length === 0 ? `
+                          <tr>
+                            <td colspan="6" class="py-8 text-center text-slate-400">
+                              Nenhuma guia gerada para a competência ${comp}. Conclua uma apuração (PGDAS-D ou ICMS) normalmente ou clique em "Gerar Guias Padrão".
+                            </td>
+                          </tr>
+                        ` : listaGuiasImpostos.map(g => {
+                          const emp = db.data.empresas.find(e => e.id === g.empresa_id);
+                          const marcado = selecionadas.includes(g.id);
+                          const pend = ehPendente(g);
+                          const ehIcms = g.segundo_mes_subsequente || (g.tipo_guia || '').toLowerCase().includes('icms');
+                          return `
+                            <tr class="hover:bg-slate-50 ${marcado ? 'bg-indigo-50/50' : ''}">
+                              <td class="py-3 px-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  ${marcado ? 'checked' : ''}
+                                  onchange="ZGestorApp.toggleSelecaoGuia('${g.id}')"
+                                  class="w-4 h-4 rounded text-indigo-600 cursor-pointer"
+                                />
+                              </td>
+                              <td class="py-3 px-3">
+                                <div class="font-bold text-slate-900">${emp ? `#${emp.codigo_interno} — ${emp.nome_fantasia}` : '—'}</div>
+                                <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : ''}</div>
+                              </td>
+                              <td class="py-3 px-3">
+                                <div class="font-bold text-slate-900">${this.escapeHtml(g.tipo_guia || 'Guia')}</div>
+                                ${g.observacoes ? `<div class="text-[11px] text-slate-500 mt-0.5">${this.escapeHtml(g.observacoes)}</div>` : ''}
+                              </td>
+                              <td class="py-3 px-3 whitespace-nowrap">
+                                <div class="font-bold text-slate-800">${this.formatDate(g.data_vencimento)}</div>
+                                ${ehIcms ? `
+                                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-bold mt-0.5">
+                                    ⚠ 2º Mês Subseq.
+                                  </span>
+                                ` : ''}
+                              </td>
+                              <td class="py-3 px-3">
+                                <div>${statusGuiaImpBadge(g.status_envio)}</div>
+                                ${g.protocolo_codigo ? `
+                                  <div class="text-[11px] font-mono font-bold text-blue-700 mt-1">${g.protocolo_codigo}</div>
+                                ` : g.data_envio ? `
+                                  <div class="text-[11px] text-slate-500 mt-1">${this.formatDate(g.data_envio)} • ${g.canal_envio || ''}</div>
+                                ` : ''}
+                              </td>
+                              <td class="py-3 px-3 text-right whitespace-nowrap">
+                                <div class="inline-flex items-center justify-end gap-1">
+                                  ${pend ? `
+                                    <button type="button" onclick="ZGestorApp.gerarProtocoloOfficeBoySelecionadas('${g.id}')" class="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-[10px] font-bold cursor-pointer" title="Imprimir e Gerar Protocolo Office Boy">Office Boy</button>
+                                    <button type="button" onclick="ZGestorApp.registrarEnvioDigitalSelecionadas('WHATSAPP', '${g.id}')" class="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold cursor-pointer" title="Marcar Enviada via WhatsApp">WhatsApp</button>
+                                    <button type="button" onclick="ZGestorApp.registrarEnvioDigitalSelecionadas('EMAIL', '${g.id}')" class="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-bold cursor-pointer" title="Marcar Enviada via E-mail">E-mail</button>
+                                  ` : ''}
+                                  <button onclick="ZGestorApp.openModalGuiaImposto('${g.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer" title="Editar"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                                  <button onclick="ZGestorApp.excluirGuiaImposto('${g.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer" title="Excluir"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                </div>
+                              </td>
+                            </tr>
+                          `;
+                        }).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- ARQUIVO DE PROTOCOLOS DO MÊS (OFFICE BOY) -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div class="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <i data-lucide="archive" class="w-4 h-4 text-indigo-600"></i>
+                        <span>Arquivo de Protocolos de Office Boy — Competência ${comp}</span>
+                      </h3>
+                      <p class="text-[11px] text-slate-500">Todos os lotes impressos ficam arquivados juntos aqui para conferência e baixa após assinatura.</p>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-full bg-white border border-slate-200 text-xs font-bold text-slate-700">
+                      ${protocolosComp.length} protocolo(s)
+                    </span>
+                  </div>
+
+                  ${protocolosComp.length === 0 ? `
+                    <div class="p-6 text-center text-xs text-slate-400 italic">
+                      Nenhum protocolo de Office Boy gerado nesta competência ainda. Selecione as guias acima e clique em "Imprimir & Gerar Protocolo Office Boy".
+                    </div>
+                  ` : `
+                    <div class="divide-y divide-slate-100">
+                      ${protocolosComp.map(prot => {
+                        const arquivado = prot.status === 'ARQUIVADO_ASSINADO';
+                        return `
+                          <div class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70">
+                            <div class="space-y-1">
+                              <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-mono font-extrabold text-xs text-indigo-800 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-200">${prot.codigo}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${arquivado ? 'bg-teal-100 text-teal-900 border-teal-300' : 'bg-blue-100 text-blue-900 border-blue-300'}">
+                                  ${arquivado ? `✓ Assinado e Arquivado em ${this.formatDate(prot.data_arquivamento)}` : '🖨️ Em Rota (Aguardando Retorno Assinado)'}
+                                </span>
+                                <span class="text-xs font-bold text-slate-600">• ${(prot.guia_ids || []).length} guia(s)</span>
+                              </div>
+                              <div class="text-[11px] text-slate-600">
+                                <strong>Empresas:</strong> ${(prot.itens || []).map(it => it.empresa_nome).join(', ')}
+                              </div>
+                              <div class="text-[10px] text-slate-400">
+                                Emitido em ${this.formatDate(prot.data_saida)} por ${prot.responsavel_emissao || 'Escritório'}
+                              </div>
+                            </div>
+
+                            <div class="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onclick="ZGestorReports.imprimirProtocoloOfficeBoy('${prot.id}')"
+                                class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer">
+                                <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                                <span>Reimprimir Folha</span>
+                              </button>
+                              ${!arquivado ? `
+                                <button
+                                  type="button"
+                                  onclick="ZGestorApp.arquivarProtocoloAssinado('${prot.id}')"
+                                  class="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer">
+                                  <i data-lucide="folder-check" class="w-3.5 h-3.5"></i>
+                                  <span>Arquivar Assinado</span>
+                                </button>
+                              ` : ''}
+                            </div>
                           </div>
-                        ` : ''}
-                      </td>
-                      <td class="py-3 px-2.5">
-                        <div class="font-bold text-slate-900">${g.tipo_guia || 'Guia'}</div>
-                        <div class="mt-1">${this.deptBadge(g.departamento || 'FISCAL')}</div>
-                        ${g.observacoes ? `<div class="text-[11px] text-slate-500 mt-1">${g.observacoes}</div>` : ''}
-                      </td>
-                      <td class="py-3 px-2.5">
-                        <div class="font-bold text-slate-800">Venc: ${this.formatDate(g.data_vencimento)}</div>
-                      </td>
-                      <td class="py-3 px-2.5">
-                        <div>${statusGuiaImpBadge(g.status_envio)}</div>
-                        ${g.status_envio === 'VISUALIZADA_CLIENTE' ? `
-                          <div class="font-bold text-teal-800 mt-1 flex items-center gap-1">
-                            <i data-lucide="eye" class="w-3 h-3 text-teal-600"></i>
-                            <span>Baixada pelo cliente ${g.visualizado_em ? `em ${g.visualizado_em}` : ''}</span>
-                          </div>
-                          <div class="text-[11px] text-slate-500">Por: <strong>${g.visualizado_por || 'Cliente'}</strong></div>
-                        ` : g.data_envio ? `
-                          <div class="font-bold text-emerald-700 mt-1">Enviada em ${this.formatDate(g.data_envio)} (${g.canal_envio || 'WhatsApp/Portal'})</div>
-                          <div class="text-[11px] text-slate-500">Resp: ${g.responsavel_nome || '—'}</div>
-                        ` : `
-                          <div class="text-[11px] text-slate-500 mt-1">Resp: ${g.responsavel_nome || '—'}</div>
-                        `}
-                      </td>
-                      <td class="py-3 px-3 text-right">
-                        <div class="inline-flex flex-wrap items-center justify-end gap-1">
-                          ${!enviada ? `
-                            <button onclick="ZGestorApp.openModalEnvioGuiaImposto('${g.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold inline-flex items-center gap-1 shadow-xs">
-                              <i data-lucide="send" class="w-3 h-3"></i> Confirmar Envio
-                            </button>
-                          ` : ''}
-                          <button onclick="ZGestorApp.openModalGuiaImposto('${g.id}')" class="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100" title="Editar Guia">
-                            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
-                          </button>
-                          <button onclick="ZGestorApp.excluirGuiaImposto('${g.id}')" class="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50" title="Remover Guia">
-                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  `;
-        }).join('') || `
-                  <tr>
-                    <td colspan="5" class="py-8 text-center text-slate-400">
-                      Nenhuma guia de imposto listada para a competência ${comp}. Clique em "Gerar Guias Padrão (${comp})" acima!
-                    </td>
-                  </tr>
-                `}
-              </tbody>
-            </table>
-            </div>
-          </div>
+                        `;
+                      }).join('')}
+                    </div>
+                  `}
+                </div>
+              </div>
+            `;
+          })()}
         `}
       </div>
     `;

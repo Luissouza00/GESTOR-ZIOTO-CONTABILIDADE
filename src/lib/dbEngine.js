@@ -231,6 +231,9 @@
             if (!Array.isArray(parsed.alvaras)) {
               parsed.alvaras = [];
             }
+            if (!Array.isArray(parsed.protocolos_guias)) {
+              parsed.protocolos_guias = [];
+            }
             // Saneamento de empresas fictícias de demonstração antigas (emp-1, emp-2, emp-3, emp-4)
             const demoEmpIds = ['emp-1', 'emp-2', 'emp-3', 'emp-4'];
             const tinhaDemoEmp = (parsed.empresas || []).some(e => demoEmpIds.includes(e.id));
@@ -411,6 +414,15 @@
       const ultimoDiaMes = new Date(sub.ano, sub.mes, 0).getDate();
       const diaValido = String(Math.min(Math.max(1, Number(dia || 10)), ultimoDiaMes)).padStart(2, '0');
       return `${sub.ano}-${sub.mesFormatado}-${diaValido}`;
+    }
+
+    calcularDataSegundoMesSubsequente(competencia, dia = 20) {
+      const sub1 = this.obterMesSubsequente(competencia);
+      const compSub1 = `${sub1.mesFormatado}/${sub1.ano}`;
+      const sub2 = this.obterMesSubsequente(compSub1);
+      const ultimoDiaMes = new Date(sub2.ano, sub2.mes, 0).getDate();
+      const diaValido = String(Math.min(Math.max(1, Number(dia || 20)), ultimoDiaMes)).padStart(2, '0');
+      return `${sub2.ano}-${sub2.mesFormatado}-${diaValido}`;
     }
 
     // =========================================================================
@@ -1040,10 +1052,73 @@
         t.responsavel_nome = user.nome;
       }
 
+      // Integração automática com Controle de Guias e Protocolos:
+      // Se PGDAS-D ou ICMS foi concluída COM MOVIMENTO (ENTREGUE_NORMAL), garante a guia pronta para envio/impressão.
+      // Se foi concluída SEM MOVIMENTO, remove eventual guia pendente não enviada.
+      const tituloLower = (t.titulo || '').toLowerCase();
+      const ehPgdas = tituloLower.includes('pgdas') || tituloLower.includes('guia das');
+      const ehIcms = tituloLower.includes('icms') && !tituloLower.includes('destda');
+      if (ehPgdas || ehIcms) {
+        const tipoGuiaAlvo = ehPgdas
+          ? 'DAS - Simples Nacional'
+          : 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)';
+        if (acao === 'ENTREGUE_NORMAL') {
+          this._garantirGuiaPorConclusaoTarefa(t, tipoGuiaAlvo, 20, ehIcms);
+        } else if (acao === 'SEM_MOVIMENTO') {
+          if (Array.isArray(this.data.guias_impostos)) {
+            this.data.guias_impostos = this.data.guias_impostos.filter(g => {
+              const mesmoAlvo = g.empresa_id === t.empresa_id && g.competencia === t.competencia && g.tipo_guia === tipoGuiaAlvo;
+              const aindaPendente = g.status_envio === 'PENDENTE_GERACAO' || g.status_envio === 'GERADA_AGUARDANDO_ENVIO' || g.status_envio === 'PENDENTE_ENVIO';
+              return !(mesmoAlvo && aindaPendente);
+            });
+          }
+        }
+      }
+
       this.sincronizarSolicitacaoPortalComTarefa(t);
       this.saveLocalData();
       this.registrarLog('ETAPA_TAREFA', 'Tarefas', `Etapa "${t.titulo}" marcada como ${acao} (${t.competencia}).`);
       return t;
+    }
+
+    _garantirGuiaPorConclusaoTarefa(tarefa, tipoGuia, dia = 20, segundoMesSubsequente = false) {
+      if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
+      const existente = this.data.guias_impostos.find(
+        g => g.empresa_id === tarefa.empresa_id && g.competencia === tarefa.competencia &&
+        (g.tipo_guia === tipoGuia || (tipoGuia.includes('DAS') && g.tipo_guia.includes('DAS')) || (tipoGuia.includes('ICMS') && g.tipo_guia.includes('ICMS')))
+      );
+      const vencimento = segundoMesSubsequente
+        ? this.calcularDataSegundoMesSubsequente(tarefa.competencia, dia)
+        : this.calcularDataMesSubsequente(tarefa.competencia, dia);
+
+      if (existente) {
+        if (existente.status_envio === 'PENDENTE_GERACAO') {
+          existente.status_envio = 'GERADA_AGUARDANDO_ENVIO';
+        }
+        existente.data_vencimento = vencimento;
+        existente.segundo_mes_subsequente = Boolean(segundoMesSubsequente);
+        return existente;
+      }
+
+      const nova = {
+        id: `gimp-auto-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        empresa_id: tarefa.empresa_id,
+        competencia: tarefa.competencia,
+        tipo_guia: tipoGuia,
+        departamento: tarefa.departamento || 'FISCAL',
+        valor: 0.00,
+        data_vencimento: vencimento,
+        segundo_mes_subsequente: Boolean(segundoMesSubsequente),
+        status_envio: 'GERADA_AGUARDANDO_ENVIO',
+        data_envio: null,
+        canal_envio: '',
+        protocolo_id: null,
+        protocolo_codigo: null,
+        responsavel_nome: tarefa.responsavel_nome || (this.getCurrentUser()?.nome || 'Equipe Fiscal'),
+        observacoes: segundoMesSubsequente ? 'ICMS com vencimento no 2º mês subsequente.' : ''
+      };
+      this.data.guias_impostos.unshift(nova);
+      return nova;
     }
 
     // =========================================================================
@@ -1483,37 +1558,43 @@
       if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
       let criadas = 0;
       const empresasAtivas = this.data.empresas.filter(e => e.status === 'ATIVA' || e.status === 'EM_ONBOARDING');
+      const dpAtivo = this.getModelosTarefas().some(m => m.departamento === 'PESSOAL' && m.ativo);
 
       empresasAtivas.forEach(emp => {
         const guiasPadraoEmpresa = [];
         const temProLabore = emp.possui_pro_labore !== false;
         const temFuncionarios = Boolean(emp.possui_funcionarios);
+        const temIE = this.empresaPossuiIE(emp);
 
         if (emp.regime_tributario === 'Simples Nacional') {
-          guiasPadraoEmpresa.push({ tipo: 'DAS - Simples Nacional', dept: 'FISCAL', dia: 20 });
-          guiasPadraoEmpresa.push({ tipo: 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)', dept: 'FISCAL', dia: 20 });
+          guiasPadraoEmpresa.push({ tipo: 'DAS - Simples Nacional', dept: 'FISCAL', dia: 20, segundoMes: false });
+          if (temIE) {
+            guiasPadraoEmpresa.push({ tipo: 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)', dept: 'FISCAL', dia: 20, segundoMes: true });
+          }
         } else if (emp.regime_tributario === 'Lucro Presumido' || emp.regime_tributario === 'Lucro Real') {
-          guiasPadraoEmpresa.push({ tipo: 'DARF - PIS / COFINS', dept: 'FISCAL', dia: 25 });
-          guiasPadraoEmpresa.push({ tipo: 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)', dept: 'FISCAL', dia: 20 });
+          guiasPadraoEmpresa.push({ tipo: 'DARF - PIS / COFINS', dept: 'FISCAL', dia: 25, segundoMes: false });
+          if (temIE) {
+            guiasPadraoEmpresa.push({ tipo: 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)', dept: 'FISCAL', dia: 20, segundoMes: true });
+          }
         } else if (emp.regime_tributario === 'MEI') {
-          guiasPadraoEmpresa.push({ tipo: 'DAS - SIMEI (MEI)', dept: 'FISCAL', dia: 20 });
+          guiasPadraoEmpresa.push({ tipo: 'DAS - SIMEI (MEI)', dept: 'FISCAL', dia: 20, segundoMes: false });
         }
 
-        // Pró-Labore (padrão na maioria das empresas) ou Funcionários -> Gera DARF INSS / IRRF
-        if (temProLabore || temFuncionarios) {
+        if (dpAtivo && (temProLabore || temFuncionarios)) {
           guiasPadraoEmpresa.push({
             tipo: 'DARF - DCTFWeb / INSS / IRRF (Pró-Labore / Folha)',
             dept: 'PESSOAL',
-            dia: 20
+            dia: 20,
+            segundoMes: false
           });
         }
 
-        // Funcionários CLT -> Gera Guia de FGTS Digital (somente se possuir funcionário!)
-        if (temFuncionarios) {
+        if (dpAtivo && temFuncionarios) {
           guiasPadraoEmpresa.push({
             tipo: 'FGTS Digital - Guia Mensal (Funcionários CLT)',
             dept: 'PESSOAL',
-            dia: 20
+            dia: 20,
+            segundoMes: false
           });
         }
 
@@ -1526,6 +1607,9 @@
           );
           if (!jaExiste) {
             const colab = this.data.profiles.find(p => p.departamento === gp.dept && p.ativo);
+            const dtVenc = gp.segundoMes
+              ? this.calcularDataSegundoMesSubsequente(competencia, gp.dia)
+              : this.calcularDataMesSubsequente(competencia, gp.dia);
             this.data.guias_impostos.push({
               id: `gimp-gen-${Date.now()}-${criadas}-${Math.random().toString(36).slice(2, 5)}`,
               empresa_id: emp.id,
@@ -1533,12 +1617,15 @@
               tipo_guia: gp.tipo,
               departamento: gp.dept,
               valor: 0.00,
-              data_vencimento: this.calcularDataMesSubsequente(competencia, gp.dia),
-              status_envio: 'PENDENTE_GERACAO',
+              data_vencimento: dtVenc,
+              segundo_mes_subsequente: Boolean(gp.segundoMes),
+              status_envio: 'GERADA_AGUARDANDO_ENVIO',
               data_envio: null,
-              canal_envio: 'Portal do Cliente + WhatsApp',
-              responsavel_nome: colab ? colab.nome : 'Mariana Souza (Analista Fiscal)',
-              observacoes: ''
+              canal_envio: '',
+              protocolo_id: null,
+              protocolo_codigo: null,
+              responsavel_nome: colab ? colab.nome : (this.getCurrentUser()?.nome || 'Equipe Fiscal'),
+              observacoes: gp.segundoMes ? 'ICMS com vencimento no 2º mês subsequente.' : ''
             });
             criadas++;
           }
@@ -1547,6 +1634,119 @@
 
       if (criadas > 0) this.saveLocalData();
       return criadas;
+    }
+
+    getProtocolosGuias(competencia = null) {
+      if (!Array.isArray(this.data.protocolos_guias)) this.data.protocolos_guias = [];
+      let lista = [...this.data.protocolos_guias];
+      if (competencia) lista = lista.filter(p => p.competencia === competencia);
+      return lista.sort((a, b) => (b.data_geracao || '').localeCompare(a.data_geracao || ''));
+    }
+
+    gerarProtocoloLoteOfficeBoy(guiaIds, competencia, observacao = '') {
+      if (!Array.isArray(guiaIds) || guiaIds.length === 0) {
+        throw new Error('Selecione ao menos uma guia para gerar o protocolo do Office Boy.');
+      }
+      if (!Array.isArray(this.data.protocolos_guias)) this.data.protocolos_guias = [];
+      const compLimpa = (competencia || '10/2026').replace('/', '');
+      const seq = this.data.protocolos_guias.filter(p => p.competencia === competencia).length + 1;
+      const codigo = `PROT-${compLimpa}-${String(seq).padStart(3, '0')}`;
+      const user = this.getCurrentUser();
+      const hoje = new Date().toISOString().slice(0, 10);
+
+      const itensResumo = [];
+      guiaIds.forEach(gid => {
+        const g = (this.data.guias_impostos || []).find(item => item.id === gid);
+        if (g) {
+          g.status_envio = 'IMPRESSA_OFFICE_BOY';
+          g.canal_envio = 'Office Boy (Impresso)';
+          g.data_envio = hoje;
+          g.protocolo_codigo = codigo;
+          const emp = this.data.empresas.find(e => e.id === g.empresa_id);
+          itensResumo.push({
+            guia_id: g.id,
+            empresa_id: g.empresa_id,
+            empresa_nome: emp ? emp.nome_fantasia : 'Empresa',
+            razao_social: emp ? emp.razao_social : 'Empresa',
+            cnpj: emp ? emp.cnpj : '—',
+            tipo_guia: g.tipo_guia,
+            data_vencimento: g.data_vencimento,
+            segundo_mes_subsequente: Boolean(g.segundo_mes_subsequente)
+          });
+        }
+      });
+
+      const novoProt = {
+        id: `prot-${Date.now()}`,
+        codigo,
+        competencia,
+        tipo: 'OFFICE_BOY',
+        guia_ids: [...guiaIds],
+        itens: itensResumo,
+        data_geracao: new Date().toISOString(),
+        data_saida: hoje,
+        responsavel_emissao: user ? user.nome : 'Escritório',
+        status: 'EM_ROTA',
+        data_arquivamento: null,
+        observacao: (observacao || '').trim()
+      };
+
+      itensResumo.forEach(it => {
+        const g = this.data.guias_impostos.find(x => x.id === it.guia_id);
+        if (g) g.protocolo_id = novoProt.id;
+      });
+
+      this.data.protocolos_guias.unshift(novoProt);
+      this.saveLocalData();
+      this.registrarLog('PROTOCOLO_OFFICE_BOY', 'Guias/Protocolos', `Gerado protocolo ${codigo} com ${itensResumo.length} guia(s) para entrega via Office Boy.`);
+      return novoProt;
+    }
+
+    registrarEnvioDigitalGuia(guiaIds, canal = 'WHATSAPP') {
+      const ids = Array.isArray(guiaIds) ? guiaIds : [guiaIds];
+      if (ids.length === 0) throw new Error('Nenhuma guia selecionada.');
+      const user = this.getCurrentUser();
+      const hoje = new Date().toISOString().slice(0, 10);
+      const isEmail = canal === 'EMAIL';
+      const statusNovo = isEmail ? 'ENVIADA_EMAIL' : 'ENVIADA_WHATSAPP';
+      const nomeCanal = isEmail ? 'E-mail' : 'WhatsApp';
+
+      let atualizadas = 0;
+      ids.forEach(gid => {
+        const g = (this.data.guias_impostos || []).find(item => item.id === gid);
+        if (g) {
+          g.status_envio = statusNovo;
+          g.canal_envio = nomeCanal;
+          g.data_envio = hoje;
+          g.responsavel_nome = user ? user.nome : g.responsavel_nome;
+          atualizadas++;
+        }
+      });
+
+      if (atualizadas > 0) {
+        this.saveLocalData();
+        this.registrarLog('ENVIO_DIGITAL_GUIAS', 'Guias/Protocolos', `${atualizadas} guia(s) marcada(s) como enviada(s) via ${nomeCanal}.`);
+      }
+      return atualizadas;
+    }
+
+    arquivarProtocoloAssinado(protocoloId) {
+      const prot = (this.data.protocolos_guias || []).find(p => p.id === protocoloId);
+      if (!prot) throw new Error('Protocolo não encontrado.');
+      const hoje = new Date().toISOString().slice(0, 10);
+      prot.status = 'ARQUIVADO_ASSINADO';
+      prot.data_arquivamento = hoje;
+
+      (prot.guia_ids || []).forEach(gid => {
+        const g = (this.data.guias_impostos || []).find(x => x.id === gid);
+        if (g) {
+          g.status_envio = 'ARQUIVADA_ASSINADA';
+        }
+      });
+
+      this.saveLocalData();
+      this.registrarLog('ARQUIVAMENTO_PROTOCOLO', 'Guias/Protocolos', `Protocolo ${prot.codigo} confirmado como assinado e arquivado.`);
+      return prot;
     }
 
     // =========================================================================
