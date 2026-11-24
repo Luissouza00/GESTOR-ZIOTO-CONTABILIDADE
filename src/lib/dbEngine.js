@@ -250,6 +250,17 @@
               parsed.honorario_pagamentos = keepNonDemo(parsed.honorario_pagamentos);
               parsed.convites = (parsed.convites || []).filter(c => !demoEmpIds.includes(c.empresa_id) && c.id !== 'conv-101' && c.id !== 'conv-102');
             }
+            if (!parsed._importacao_reais_v1 && Array.isArray(window.ZGESTOR_INITIAL_DB?.empresas) && window.ZGESTOR_INITIAL_DB.empresas.length > 0) {
+              const cnpjsExistentes = new Set((parsed.empresas || []).map(e => (e.cnpj || '').replace(/\D/g, '')));
+              window.ZGESTOR_INITIAL_DB.empresas.forEach(empSeed => {
+                const cnpjLimpo = (empSeed.cnpj || '').replace(/\D/g, '');
+                if (cnpjLimpo && !cnpjsExistentes.has(cnpjLimpo)) {
+                  parsed.empresas.push(JSON.parse(JSON.stringify(empSeed)));
+                  cnpjsExistentes.add(cnpjLimpo);
+                }
+              });
+              parsed._importacao_reais_v1 = true;
+            }
             this.garantirAlvarasPadrao(parsed);
             parsed.profiles.forEach(p => {
               if (!p.permissoes) {
