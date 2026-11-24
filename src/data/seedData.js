@@ -306,6 +306,7 @@ window.ZGESTOR_INITIAL_DB = {
         guias: true,
         parcelamentos: true,
         cnds: true,
+        alvaras: true,
         empresas: true,
         onboarding: true,
         honorarios: true,
@@ -313,149 +314,6 @@ window.ZGESTOR_INITIAL_DB = {
         seguranca: true
       },
       created_at: '2026-01-10T09:00:00Z'
-    },
-    {
-      id: 'usr-admin-1',
-      nome: 'Contador Sócio (Administrador)',
-      email: 'contador@zgestorcontabil.com.br',
-      cargo: 'ADMIN',
-      departamento: 'TODOS',
-      ativo: true,
-      permissoes: {
-        dashboard: true,
-        tarefas: true,
-        guias: true,
-        parcelamentos: true,
-        cnds: true,
-        empresas: true,
-        onboarding: true,
-        honorarios: true,
-        central_cliente: true,
-        seguranca: true
-      },
-      created_at: '2026-01-10T09:00:00Z'
-    },
-    {
-      id: 'usr-fiscal-1',
-      nome: 'Mariana Souza (Analista Fiscal)',
-      email: 'fiscal@zgestorcontabil.com.br',
-      cargo: 'COLABORADOR',
-      departamento: 'FISCAL',
-      ativo: true,
-      permissoes: {
-        dashboard: true,
-        tarefas: true,
-        guias: true,
-        parcelamentos: true,
-        cnds: true,
-        central_cliente: true,
-        empresas: true,
-        onboarding: false,
-        honorarios: false,
-        seguranca: false
-      },
-      created_at: '2026-02-15T09:00:00Z'
-    },
-    {
-      id: 'usr-dp-1',
-      nome: 'Carlos Eduardo (Depto. Pessoal)',
-      email: 'dp@zgestorcontabil.com.br',
-      cargo: 'COLABORADOR',
-      departamento: 'PESSOAL',
-      ativo: true,
-      permissoes: {
-        dashboard: true,
-        tarefas: true,
-        guias: true,
-        parcelamentos: false,
-        cnds: true,
-        central_cliente: true,
-        empresas: true,
-        onboarding: false,
-        honorarios: false,
-        seguranca: false
-      },
-      created_at: '2026-02-15T09:00:00Z'
-    },
-    {
-      id: 'usr-contabil-1',
-      nome: 'Fernanda Lima (Analista Contábil)',
-      email: 'contabil@zgestorcontabil.com.br',
-      cargo: 'COLABORADOR',
-      departamento: 'CONTABIL',
-      ativo: true,
-      permissoes: {
-        dashboard: true,
-        tarefas: true,
-        guias: true,
-        parcelamentos: true,
-        cnds: true,
-        central_cliente: true,
-        empresas: true,
-        onboarding: false,
-        honorarios: false,
-        seguranca: false
-      },
-      created_at: '2026-03-01T09:00:00Z'
-    },
-    {
-      id: 'usr-fin-1',
-      nome: 'Roberto Alves (Financeiro & Honorários)',
-      email: 'financeiro@zgestorcontabil.com.br',
-      cargo: 'COLABORADOR',
-      departamento: 'FINANCEIRO',
-      ativo: true,
-      permissoes: {
-        dashboard: true,
-        tarefas: true,
-        guias: true,
-        parcelamentos: true,
-        cnds: true,
-        central_cliente: true,
-        empresas: true,
-        onboarding: false,
-        honorarios: true,
-        seguranca: false
-      },
-      created_at: '2026-03-10T09:00:00Z'
-    },
-    {
-      id: 'usr-soc-1',
-      nome: 'Patrícia Rocha (Societário / Legalização)',
-      email: 'societario@zgestorcontabil.com.br',
-      cargo: 'COLABORADOR',
-      departamento: 'SOCIETARIO',
-      ativo: true,
-      permissoes: {
-        dashboard: true,
-        tarefas: true,
-        guias: false,
-        parcelamentos: true,
-        cnds: true,
-        central_cliente: true,
-        empresas: true,
-        onboarding: true,
-        honorarios: false,
-        seguranca: false
-      },
-      created_at: '2026-04-01T09:00:00Z'
-    },
-    {
-      id: 'usr-cli-1',
-      nome: 'Henrique Moreira (Sócio TechNova)',
-      email: 'henrique@technova.com.br',
-      cargo: 'CLIENTE',
-      departamento: 'CLIENTE',
-      empresa_id: 'emp-1',
-      ativo: true,
-      permissoes: {
-        central_cliente: true,
-        guias: true,
-        cnds: true,
-        parcelamentos: true,
-        documentos: true
-      },
-      created_at: '2026-05-10T10:00:00Z'
     }
   ],
 
@@ -1032,6 +890,9 @@ window.ZGESTOR_INITIAL_DB = {
       observacao: 'Guia ISS disponibilizada no Portal do Cliente.'
     }
   ],
+
+  // CONTROLE DE ALVARÁS E LICENÇAS OPERACIONAIS
+  alvaras: [],
 
   // ===========================================================================
   // CONTROLE DE CNDs (CERTIDÕES NEGATIVAS DE DÉBITOS)

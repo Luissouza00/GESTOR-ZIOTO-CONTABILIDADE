@@ -43,6 +43,10 @@ window.ZGestorApp = {
     filtroCNDCliente: 'TODOS',
     filtroCNDOrgao: 'TODOS',
     filtroCNDStatus: 'TODOS',
+    filtroAlvaraEmpresa: 'TODAS',
+    filtroAlvaraTipo: 'TODOS',
+    filtroAlvaraStatus: 'TODOS',
+    filtroAlvaraBusca: '',
     empresaCentralId: 'emp-01',
     filtroCentralCategoria: 'TODOS',
     filtroEmpresaBusca: '',
@@ -583,6 +587,11 @@ window.ZGestorApp = {
       p.status === 'EM_ATRASO' || p.status === 'ENCERRADO_FALTA_PAGAMENTO'
     ).length : 0;
 
+    const alvarasAlertas = (db.data.alvaras || []).filter(a => {
+      const cod = db.calcularStatusAlvara(a).codigo;
+      return cod === 'VENCIDO' || cod === 'VENCENDO' || cod === 'ATENCAO';
+    }).length;
+
     const chamadosPendentes = db.data.solicitacoes_portal ? db.data.solicitacoes_portal.filter(s =>
       s.status === 'ABERTA' || s.status === 'EM_ANDAMENTO'
     ).length : 0;
@@ -625,6 +634,13 @@ window.ZGestorApp = {
             icon: 'file-badge',
             badge: cndsAlertas > 0 ? cndsAlertas : null,
             badgeCls: 'bg-amber-500 text-white'
+          },
+          {
+            id: 'alvaras',
+            label: 'Alvarás & Licenças',
+            icon: 'file-check',
+            badge: alvarasAlertas > 0 ? alvarasAlertas : null,
+            badgeCls: 'bg-rose-500 text-white'
           }
         ]
       },
@@ -966,6 +982,7 @@ window.ZGestorApp = {
     else if (t === 'tarefas') main.innerHTML = V.renderTarefas(this.state);
     else if (t === 'parcelamentos') main.innerHTML = V.renderParcelamentos(this.state);
     else if (t === 'cnds') main.innerHTML = V.renderCNDs(this.state);
+    else if (t === 'alvaras') main.innerHTML = V.renderAlvaras(this.state);
     else if (t === 'empresas') main.innerHTML = V.renderEmpresas(this.state);
     else if (t === 'onboarding') main.innerHTML = V.renderOnboarding(this.state);
     else if (t === 'honorarios') main.innerHTML = V.renderHonorarios(this.state);
@@ -6098,12 +6115,31 @@ window.ZGestorApp = {
     this.renderContentOnly();
   },
 
+  toggleCardConfigIA() {
+    const card = document.getElementById('card-config-ia');
+    if (card) card.classList.toggle('hidden');
+  },
+
+  setProvedorIA(provedor) {
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    db.salvarEscritorioConfig({
+      ia_config: {
+        ...(esc.ia_config || {}),
+        provedor
+      }
+    });
+    this.showToast(`Provedor de IA ativo alterado para: ${provedor === 'openai' ? 'OpenAI (ChatGPT)' : 'Google Gemini'}`, 'info');
+    this.renderContentOnly();
+  },
+
   salvarChaveIA(e) {
     if (e && e.preventDefault) e.preventDefault();
-    const input = document.getElementById('input-gemini-key');
+    const input = document.getElementById('f-ia-apikey');
+    const modelo = document.getElementById('f-ia-modelo')?.value || 'gemini-1.5-flash';
     const chave = input ? input.value.trim() : '';
     if (!chave) {
-      this.showToast('Informe uma chave de API válida para salvar.', 'error');
+      this.showToast('Informe uma chave de API Google Gemini válida para salvar.', 'error');
       return;
     }
     const db = window.zgestorDB;
@@ -6111,46 +6147,88 @@ window.ZGestorApp = {
     db.salvarEscritorioConfig({
       ia_config: {
         ...(esc.ia_config || {}),
+        gemini_api_key: chave,
         api_key: chave,
+        gemini_modelo: modelo,
         ativo: true,
-        provedor: 'gemini',
-        modelo: 'gemini-1.5-flash',
         atualizado_em: new Date().toISOString()
       }
     });
-    this.showToast('Chave da API Google Gemini salva com sucesso!', 'success');
+    this.showToast('Chave Google Gemini salva com sucesso!', 'success');
     this.renderContentOnly();
   },
 
   removerChaveIA() {
-    if (!confirm('Deseja realmente remover a Chave de API da IA deste dispositivo?')) return;
+    if (!confirm('Deseja realmente remover a Chave de API Google Gemini?')) return;
     const db = window.zgestorDB;
     const esc = db.getEscritorioConfig();
     db.salvarEscritorioConfig({
       ia_config: {
         ...(esc.ia_config || {}),
+        gemini_api_key: '',
         api_key: '',
-        ativo: false,
         atualizado_em: new Date().toISOString()
       }
     });
-    this.showToast('Chave da IA desvinculada com sucesso.', 'info');
+    this.showToast('Chave Google Gemini desvinculada.', 'info');
     this.renderContentOnly();
   },
 
   toggleVerChaveIA() {
-    const input = document.getElementById('input-gemini-key');
-    if (input) {
-      input.type = input.type === 'password' ? 'text' : 'password';
+    const input = document.getElementById('f-ia-apikey');
+    if (input) input.type = input.type === 'password' ? 'text' : 'password';
+  },
+
+  salvarChaveOpenAI(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const input = document.getElementById('f-ia-openaikey');
+    const modelo = document.getElementById('f-ia-openai-modelo')?.value || 'gpt-4o-mini';
+    const chave = input ? input.value.trim() : '';
+    if (!chave) {
+      this.showToast('Informe uma chave de API OpenAI válida (iniciando com sk-).', 'error');
+      return;
     }
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    db.salvarEscritorioConfig({
+      ia_config: {
+        ...(esc.ia_config || {}),
+        openai_api_key: chave,
+        openai_modelo: modelo,
+        ativo: true,
+        atualizado_em: new Date().toISOString()
+      }
+    });
+    this.showToast('Chave da OpenAI (ChatGPT) salva com sucesso!', 'success');
+    this.renderContentOnly();
+  },
+
+  removerChaveOpenAI() {
+    if (!confirm('Deseja realmente remover a Chave de API OpenAI?')) return;
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    db.salvarEscritorioConfig({
+      ia_config: {
+        ...(esc.ia_config || {}),
+        openai_api_key: '',
+        atualizado_em: new Date().toISOString()
+      }
+    });
+    this.showToast('Chave OpenAI desvinculada.', 'info');
+    this.renderContentOnly();
+  },
+
+  toggleVerChaveOpenAI() {
+    const input = document.getElementById('f-ia-openaikey');
+    if (input) input.type = input.type === 'password' ? 'text' : 'password';
   },
 
   async testarConexaoIA() {
     const db = window.zgestorDB;
     const esc = db.getEscritorioConfig();
-    const apiKey = (esc.ia_config && esc.ia_config.api_key) ? esc.ia_config.api_key.trim() : '';
+    const apiKey = (esc.ia_config && (esc.ia_config.gemini_api_key || esc.ia_config.api_key)) ? (esc.ia_config.gemini_api_key || esc.ia_config.api_key).trim() : '';
     if (!apiKey) {
-      this.showToast('Cadastre uma chave de API antes de testar a conexão.', 'error');
+      this.showToast('Cadastre uma chave de API Gemini antes de testar a conexão.', 'error');
       return;
     }
     this.showToast('Testando conexão com a Google Gemini API...', 'info');
@@ -6168,24 +6246,54 @@ window.ZGestorApp = {
       }
       this.showToast('Conexão com Google Gemini API realizada com sucesso! Z-IA 100% operacional.', 'success');
     } catch (err) {
-      this.showToast(`Falha ao conectar com a API: ${err.message}`, 'error');
+      this.showToast(`Falha ao conectar com o Google Gemini: ${err.message}`, 'error');
+    }
+  },
+
+  async testarConexaoOpenAI() {
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    const apiKey = (esc.ia_config && esc.ia_config.openai_api_key) ? esc.ia_config.openai_api_key.trim() : '';
+    if (!apiKey) {
+      this.showToast('Cadastre uma chave de API OpenAI antes de testar a conexão.', 'error');
+      return;
+    }
+    const modelo = esc.ia_config.openai_modelo || 'gpt-4o-mini';
+    this.showToast(`Testando conexão com a OpenAI API (${modelo})...`, 'info');
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: modelo,
+          messages: [{ role: 'user', content: 'Responda apenas: OK' }],
+          max_tokens: 10
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `Erro HTTP ${res.status}`);
+      }
+      this.showToast('Conexão com a OpenAI API (ChatGPT) realizada com sucesso!', 'success');
+    } catch (err) {
+      this.showToast(`Falha ao conectar com a OpenAI: ${err.message}`, 'error');
     }
   },
 
   async chamarGeminiAPI(prompt, systemInstruction = '') {
     const db = window.zgestorDB;
     const esc = db.getEscritorioConfig();
-    const apiKey = (esc.ia_config && esc.ia_config.api_key) ? esc.ia_config.api_key.trim() : '';
+    const apiKey = (esc.ia_config && (esc.ia_config.gemini_api_key || esc.ia_config.api_key)) ? (esc.ia_config.gemini_api_key || esc.ia_config.api_key).trim() : '';
     if (!apiKey) return null;
+    const modelo = esc.ia_config.gemini_modelo || 'gemini-1.5-flash';
 
     try {
-      const body = {
-        contents: [{ parts: [{ text: prompt }] }]
-      };
-      if (systemInstruction) {
-        body.systemInstruction = { parts: [{ text: systemInstruction }] };
-      }
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      const body = { contents: [{ parts: [{ text: prompt }] }] };
+      if (systemInstruction) body.systemInstruction = { parts: [{ text: systemInstruction }] };
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -6194,9 +6302,65 @@ window.ZGestorApp = {
       const data = await res.json();
       return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
     } catch (e) {
-      console.warn('Erro ao chamar Gemini API via rede:', e);
+      console.warn('Erro ao chamar Gemini API:', e);
       return null;
     }
+  },
+
+  async chamarOpenAIAPI(prompt, systemInstruction = '') {
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    const apiKey = (esc.ia_config && esc.ia_config.openai_api_key) ? esc.ia_config.openai_api_key.trim() : '';
+    if (!apiKey) return null;
+    const modelo = esc.ia_config.openai_modelo || 'gpt-4o-mini';
+
+    try {
+      const messages = [];
+      if (systemInstruction) {
+        messages.push({ role: 'system', content: systemInstruction });
+      }
+      messages.push({ role: 'user', content: prompt });
+
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: modelo,
+          messages,
+          temperature: 0.7
+        })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || null;
+    } catch (e) {
+      console.warn('Erro ao chamar OpenAI API:', e);
+      return null;
+    }
+  },
+
+  async chamarIA(prompt, systemInstruction = '') {
+    const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig();
+    const provedor = (esc.ia_config && esc.ia_config.provedor) || 'gemini';
+
+    if (provedor === 'openai') {
+      const resOpenAI = await this.chamarOpenAIAPI(prompt, systemInstruction);
+      if (resOpenAI) return resOpenAI;
+      // Fallback para Gemini se disponível
+      const resGemini = await this.chamarGeminiAPI(prompt, systemInstruction);
+      if (resGemini) return resGemini;
+    } else {
+      const resGemini = await this.chamarGeminiAPI(prompt, systemInstruction);
+      if (resGemini) return resGemini;
+      // Fallback para OpenAI se disponível
+      const resOpenAI = await this.chamarOpenAIAPI(prompt, systemInstruction);
+      if (resOpenAI) return resOpenAI;
+    }
+    return null;
   },
 
   async gerarDiagnosticoIA() {
@@ -6211,6 +6375,11 @@ window.ZGestorApp = {
       const st = db.calcularStatusValidadeCND(c).codigo;
       return st === 'VENCIDA' || st === 'PENDENCIA' || st === 'VENCENDO';
     });
+    const alvaras = db.getAlvaras ? db.getAlvaras() : [];
+    const alvarasAlertas = alvaras.filter(a => {
+      const st = db.calcularStatusAlvara(a).codigo;
+      return st === 'VENCIDO' || st === 'VENCENDO';
+    });
     const honorariosAbertos = (db.data.honorarios || []).filter(h => Number(h.saldo_aberto) > 0);
     const totalAberto = honorariosAbertos.reduce((sum, h) => sum + Number(h.saldo_aberto || 0), 0);
 
@@ -6220,18 +6389,19 @@ window.ZGestorApp = {
     const promptDiag = `Atue como Auditor Contábil e Financeiro Sênior da Zioto Contabilidade. Analise o seguinte panorama da carteira do escritório na competência ${comp} (${sub.label}):
 - Tarefas Pendentes no Mês: ${pendentes.length} de ${tarefasComp.length} obrigações totais.
 - CNDs com Alertas ou Vencidas: ${cndsAlertas.length} certidões.
+- Alvarás / Licenças Vencendo ou Vencidos: ${alvarasAlertas.length} alvarás.
 - Honorários em Aberto: R$ ${totalAberto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em ${honorariosAbertos.length} faturas.
 Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 2 recomendações tributárias/financeiras para a liderança. Seja direto, prático e profissional.`;
 
-    const respostaGemini = await this.chamarGeminiAPI(promptDiag);
-    if (respostaGemini) {
-      recomendacaoIA = respostaGemini;
+    const respostaIA = await this.chamarIA(promptDiag);
+    if (respostaIA) {
+      recomendacaoIA = respostaIA;
     } else {
       recomendacaoIA = `**PLANO DE AÇÃO EXECUTIVO DA CARTEIRA (${comp} - Vencimentos ${sub.label}):**\n\n` +
         `1. **Prioridade Fiscal Imediata**: Focar na transmissão das declarações de apuração do Simples Nacional (PGDAS-D) e emissão das guias DAS até o dia 20 para evitar multas de mora aos clientes.\n` +
-        `2. **Regularidade de Certidões (CNDs)**: Foram identificadas ${cndsAlertas.length} certidões com inconformidade ou vencimento iminente. Realizar protocolo de regularização prioritariamente na Receita Federal e Caixa (FGTS) para evitar travamento de faturamento dos clientes.\n` +
-        `3. **Gestão do Contas a Receber**: Existem R$ ${totalAberto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em honorários com saldo em aberto. Recomendamos disparo preventivo dos recibos com Chave PIX e notificação cordial aos clientes com mais de 10 dias de atraso.\n` +
-        `4. **Conformidade de Folha de Pagamento**: Garantir o fechamento do eSocial e DCTFWeb antes do dia 15 para emissão tempestiva do DAE/DARF Previdenciário.`;
+        `2. **Regularidade de Certidões e Alvarás**: Identificadas ${cndsAlertas.length} CNDs e ${alvarasAlertas.length} alvarás/licenças que exigem protocolo imediato de renovação para evitar travamento da atividade econômica dos clientes.\n` +
+        `3. **Gestão do Contas a Receber**: Existem R$ ${totalAberto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em honorários com saldo em aberto. Recomendamos envio preventivo dos recibos com Chave PIX e cobrança cordial aos clientes com mais de 10 dias de atraso.\n` +
+        `4. **Conformidade Trabalhista**: Fechamento tempestivo do eSocial e DCTFWeb antes do dia 15 para emissão do DARF Previdenciário.`;
     }
 
     this.state.diagnosticoIAResultado = {
@@ -6263,22 +6433,22 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
     this.renderContentOnly();
 
     let resposta = '';
-    const respostaGemini = await this.chamarGeminiAPI(texto, 'Você é o Assistente Virtual Contábil e Tributário da Zioto Contabilidade (Z-IA). Responda com clareza, embasamento na legislação brasileira (Simples Nacional, Lucro Presumido, CLT, IRPJ/CSLL, DCTFWeb, eSocial, PGDAS) e tom prestativo e profissional.');
+    const respostaIA = await this.chamarIA(texto, 'Você é o Consultor Tributário e Contábil Inteligente da Zioto Contabilidade (Z-IA). Forneça orientações precisas, fundamentadas na legislação brasileira (Simples Nacional, Lucro Presumido, CLT, IRPJ/CSLL, DCTFWeb, eSocial, PGDAS e Licenciamento/Alvarás) com clareza executiva.');
 
-    if (respostaGemini) {
-      resposta = respostaGemini;
+    if (respostaIA) {
+      resposta = respostaIA;
     } else {
       const t = texto.toLowerCase();
       if (t.includes('fator r')) {
         resposta = `**Fator R no Simples Nacional (Art. 18 da LC 123/2006):**\nO Fator R é a razão entre a folha de pagamento (incluindo pró-labore e encargos) dos últimos 12 meses e a receita bruta acumulada no mesmo período (Folha ÷ Receita Bruta).\n- **Se Fator R ≥ 28%**: A atividade tributa pelo **Anexo III** (alíquota inicial de 6%), resultando em grande economia tributária.\n- **Se Fator R < 28%**: A atividade tributa pelo **Anexo V** (alíquota inicial de 15,5%).\n*Dica ZGESTOR*: Recomendamos simular o aumento do Pró-Labore do sócio para atingir o índice de 28% quando a margem for próxima.`;
+      } else if (t.includes('alvará') || t.includes('licença') || t.includes('pesca') || t.includes('sanitário')) {
+        resposta = `**Gestão de Alvarás e Licenças Operacionais:**\n- **Alvará de Funcionamento**: Exigido para toda empresa com estabelecimento físico ou virtual, renovado anualmente pela Prefeitura Municipal.\n- **Vigilância Sanitária (VISA)**: Obrigatório para clínicas médicas, distribuidoras de alimentos, restaurantes e indústrias químicas.\n- **Certificado de Petrecho de Pesca**: Licença emitida pelo Ministério da Pesca / IBAMA para embarcações e armadores comerciais, com renovação vinculada a vistorias técnicas e pagamento de taxas anuais.\n*Controle no ZGESTOR*: Registre o protocolo de renovação na aba 'Alvarás & Licenças' para manter a empresa com status 'Em Renovação' e evitar multas.`;
       } else if (t.includes('mei') || t.includes('desenquadramento')) {
-        resposta = `**Desenquadramento de MEI para ME (Microempresa):**\nOcorre quando o faturamento anual ultrapassa R$ 81.000,00 ou quando a empresa contrata mais de 1 funcionário ou inclui sócio.\n- **Até 20% de excesso (até R$ 97.200,00)**: O desenquadramento tem efeitos a partir de 1º de janeiro do ano seguinte.\n- **Acima de 20% (mais de R$ 97.200,00)**: O desenquadramento é retroativo a 1º de janeiro do ano do excesso, exigindo recalcular os tributos no Simples Nacional.\n*Passo a Passo*: Solicitar desenquadramento no Portal do Simples Nacional, registrar alteração na Junta Comercial e atualizar os cadastros municipais/estaduais.`;
+        resposta = `**Desenquadramento de MEI para ME (Microempresa):**\nOcorre quando o faturamento anual ultrapassa R$ 81.000,00 ou quando a empresa contrata mais de 1 funcionário ou inclui sócio.\n- **Até 20% de excesso (até R$ 97.200,00)**: O desenquadramento tem efeitos a partir de 1º de janeiro do ano seguinte.\n- **Acima de 20% (mais de R$ 97.200,00)**: O desenquadramento é retroativo a 1º de janeiro do ano do excesso, exigindo recalcular os tributos no Simples Nacional.`;
       } else if (t.includes('inadimplente') || t.includes('cobrança') || t.includes('honorário')) {
         resposta = `**Modelo de Notificação Cordial de Honorários:**\n"Prezado(a) [Nome do Cliente], esperamos que esteja bem!\nIdentificamos em nosso financeiro que a fatura de honorários contábeis ref. à competência [Mês/Ano] com vencimento em [Data] consta em aberto no valor de R$ [Valor].\nPara sua comodidade, você pode efetuar o pagamento diretamente via Chave PIX: [Chave PIX]. Caso já tenha realizado o pagamento, por favor desconsidere este aviso ou nos envie o comprovante. Permanecemos à disposição!\nAtenciosamente, Equipe Zioto Contabilidade."`;
-      } else if (t.includes('distribuição de lucros') || t.includes('lucros')) {
-        resposta = `**Distribuição de Lucros Isenta no Simples Nacional e Lucro Presumido:**\nA distribuição de lucros aos sócios é 100% isenta de IRRF e IRPF, desde que a empresa mantenha **Escrituração Contábil Regular** comprovando a existência de lucros (saldo positivo em Lucros Acumulados no Balanço) e esteja com todos os tributos federais e previdenciários em dia (sem CNDs de débitos impeditivas nos termos do art. 32 da Lei 4.357/64).`;
       } else {
-        resposta = `**Orientação Z-IA Contábil:**\nRecebemos sua consulta: "*${texto}*".\nPara esta operação, recomendamos verificar a regularidade fiscal da empresa no e-CAC e confrontar com o regime tributário cadastrado (Simples Nacional ou Lucro Presumido).\n*Para obter respostas personalizadas mais profundas em tempo real, certifique-se de configurar a Chave de API Google Gemini na aba de Configurações.*`;
+        resposta = `**Orientação Z-IA Contábil:**\nRecebemos sua consulta: "*${texto}*".\nPara esta operação, consulte a regularidade cadastral da empresa e certidões na Prefeitura, SEFAZ e e-CAC.\n*Dica*: Configure sua Chave de API da OpenAI (ChatGPT) ou Google Gemini para respostas em tempo real com raciocínio profundo.`;
       }
     }
 
@@ -6366,6 +6536,8 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
       sugestao = `Olá! A guia solicitada já foi verificada e disponibilizada na aba 'Guias de Impostos' do seu Portal com todos os códigos de barras e QR Code PIX para pagamento tempestivo.`;
     } else if (desc.includes('cnd') || desc.includes('certidão')) {
       sugestao = `Olá! Realizamos a emissão e validação da certidão negativa solicitada. O arquivo PDF oficial já se encontra anexado na aba 'Controle de CNDs' do seu Portal.`;
+    } else if (desc.includes('alvará') || desc.includes('licença')) {
+      sugestao = `Olá! A documentação do alvará solicitado foi localizada e anexada na aba 'Alvarás & Licenças' do seu Portal com a respectiva certidão de regularidade.`;
     } else {
       sugestao = `Prezado(a) cliente, confirmamos o recebimento de sua solicitação referente a "${r.titulo}". Nossa equipe técnica contábil já realizou a análise necessária e o procedimento foi concluído com sucesso.`;
     }
@@ -6375,6 +6547,425 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
     db.saveLocalData();
     this.showToast('Resposta gerada pela IA aplicada com sucesso!', 'success');
     this.renderContentOnly();
+  },
+
+  // ===========================================================================
+  // MÓDULO DE ALVARÁS & LICENÇAS OPERACIONAIS
+  // ===========================================================================
+  setFiltroAlvaraEmpresa(empId) {
+    this.state.filtroAlvaraEmpresa = empId;
+    this.renderContentOnly();
+  },
+
+  setFiltroAlvaraTipo(tipo) {
+    this.state.filtroAlvaraTipo = tipo;
+    this.renderContentOnly();
+  },
+
+  setFiltroAlvaraStatus(status) {
+    this.state.filtroAlvaraStatus = status;
+    this.renderContentOnly();
+  },
+
+  setFiltroAlvaraBusca(busca) {
+    this.state.filtroAlvaraBusca = busca;
+    this.renderContentOnly();
+  },
+
+  openModalNovoAlvara(alvaraId = null, empresaPre = null) {
+    const db = window.zgestorDB;
+    const empresas = db.data.empresas || [];
+    const alv = alvaraId ? (db.data.alvaras || []).find(a => a.id === alvaraId) : null;
+    const empPadrao = empresaPre || (alv ? alv.empresa_id : (empresas[0]?.id || ''));
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <h3 class="text-base font-bold text-slate-900">
+                ${alv ? 'Editar Alvará / Licença' : 'Cadastrar Novo Alvará ou Licença'}
+              </h3>
+              <p class="text-xs text-slate-500">Alvarás de funcionamento, vigilância sanitária, petrechos de pesca e licenças</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitFormAlvara(event)" class="space-y-3.5 mt-4 text-xs">
+            <input type="hidden" id="f-alv-id" value="${alv ? alv.id : ''}" />
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Empresa Vinculada *</label>
+              <select id="f-alv-empresa" required class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
+                <option value="">Selecione a empresa...</option>
+                ${empresas.map(e => `
+                  <option value="${e.id}" ${e.id === empPadrao ? 'selected' : ''}>
+                    #${e.codigo_interno} — ${e.nome_fantasia} (CNPJ: ${e.cnpj})
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Tipo de Licença *</label>
+                <select id="f-alv-tipo" onchange="ZGestorApp.aoTrocarTipoAlvara(this.value)" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-medium">
+                  <option value="FUNCIONAMENTO" ${alv?.tipo === 'FUNCIONAMENTO' ? 'selected' : ''}>Alvará de Funcionamento (Prefeitura)</option>
+                  <option value="SANITARIO" ${alv?.tipo === 'SANITARIO' ? 'selected' : ''}>Vigilância Sanitária (VISA)</option>
+                  <option value="PESCA" ${alv?.tipo === 'PESCA' ? 'selected' : ''}>Certificado de Petrecho de Pesca</option>
+                  <option value="BOMBEIROS" ${alv?.tipo === 'BOMBEIROS' ? 'selected' : ''}>Corpo de Bombeiros (AVCB / CLCB)</option>
+                  <option value="AMBIENTAL" ${alv?.tipo === 'AMBIENTAL' ? 'selected' : ''}>Licença Ambiental</option>
+                  <option value="OUTRO" ${alv?.tipo === 'OUTRO' || !alv ? 'selected' : ''}>Outra Licença Específica</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Nome / Identificação do Alvará *</label>
+                <input
+                  id="f-alv-nome"
+                  type="text"
+                  required
+                  value="${this.escapeHtml(alv ? alv.nome : 'Alvará de Licença e Funcionamento')}"
+                  placeholder="Ex: Certificado de Petrecho de Pesca nº 402"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 font-semibold"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Órgão Emissor Competente *</label>
+                <input
+                  id="f-alv-orgao"
+                  type="text"
+                  required
+                  value="${this.escapeHtml(alv ? alv.orgao_emissor : 'Prefeitura Municipal')}"
+                  placeholder="Ex: Ministério da Pesca / IBAMA ou Vigilância Sanitária"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2"
+                />
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Nº do Alvará / Inscrição / Processo</label>
+                <input
+                  id="f-alv-numero"
+                  type="text"
+                  value="${this.escapeHtml(alv?.numero_documento || '')}"
+                  placeholder="Ex: 2026-ALV-9842"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Data de Emissão</label>
+                <input
+                  id="f-alv-emissao"
+                  type="date"
+                  value="${alv?.data_emissao || ''}"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2"
+                />
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Data de Vencimento / Renovação</label>
+                <input
+                  id="f-alv-vencimento"
+                  type="date"
+                  value="${alv?.data_vencimento || ''}"
+                  ${alv?.indeterminado ? 'disabled' : ''}
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold"
+                />
+                <label class="inline-flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-600 cursor-pointer">
+                  <input
+                    id="f-alv-indeterminado"
+                    type="checkbox"
+                    ${alv?.indeterminado ? 'checked' : ''}
+                    onchange="document.getElementById('f-alv-vencimento').disabled = this.checked;"
+                    class="rounded text-indigo-600"
+                  />
+                  <span>Validade Indeterminada / Isento de Renovação Anual</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Status Operacional</label>
+                <select id="f-alv-status" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-bold">
+                  <option value="VIGENTE" ${alv?.status === 'VIGENTE' ? 'selected' : ''}>Vigente / Regular</option>
+                  <option value="EM_RENOVACAO" ${alv?.status === 'EM_RENOVACAO' ? 'selected' : ''}>Em Processo de Renovação</option>
+                  <option value="VENCENDO" ${alv?.status === 'VENCENDO' ? 'selected' : ''}>Vencendo em breve</option>
+                  <option value="VENCIDO" ${alv?.status === 'VENCIDO' ? 'selected' : ''}>Vencido / Expirado</option>
+                  <option value="DISPENSADO" ${alv?.status === 'DISPENSADO' ? 'selected' : ''}>Dispensado / Não Aplicável</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Protocolo de Renovação (se houver)</label>
+                <input
+                  id="f-alv-protocolo"
+                  type="text"
+                  value="${this.escapeHtml(alv?.protocolo_renovacao || '')}"
+                  placeholder="Ex: PROT-2026/89412"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-blue-700 font-bold"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Anexar Documento do Alvará (PDF ou Imagem até 15MB)</label>
+              <input
+                id="f-alv-arquivo"
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+              />
+              ${alv?.anexo_nome ? `
+                <div class="mt-1 text-[11px] text-emerald-700 flex items-center gap-1 font-semibold">
+                  <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                  Arquivo atual anexado: ${this.escapeHtml(alv.anexo_nome)}
+                </div>
+              ` : ''}
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Observações e Exigências do Órgão</label>
+              <textarea
+                id="f-alv-obs"
+                rows="2"
+                placeholder="Ex: Vistoria anual agendada para novembro. Apresentar laudo técnico e taxa paga."
+                class="w-full rounded-xl border border-slate-300 px-3 py-2"
+              >${this.escapeHtml(alv?.observacoes || '')}</textarea>
+            </div>
+
+            <div class="flex justify-end gap-2.5 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onclick="ZGestorApp.closeModal()"
+                class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition cursor-pointer">
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition cursor-pointer">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                Salvar Alvará
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+  },
+
+  aoTrocarTipoAlvara(tipo) {
+    const nomeInput = document.getElementById('f-alv-nome');
+    const orgaoInput = document.getElementById('f-alv-orgao');
+    if (!nomeInput || !orgaoInput) return;
+
+    if (tipo === 'FUNCIONAMENTO') {
+      nomeInput.value = 'Alvará de Licença e Funcionamento';
+      orgaoInput.value = 'Prefeitura Municipal';
+    } else if (tipo === 'SANITARIO') {
+      nomeInput.value = 'Alvará da Vigilância Sanitária (VISA)';
+      orgaoInput.value = 'Vigilância Sanitária Municipal/Estadual';
+    } else if (tipo === 'PESCA') {
+      nomeInput.value = 'Certificado de Registro de Petrecho de Pesca';
+      orgaoInput.value = 'Ministério da Pesca e Aquicultura / IBAMA';
+    } else if (tipo === 'BOMBEIROS') {
+      nomeInput.value = 'Auto de Vistoria do Corpo de Bombeiros (AVCB)';
+      orgaoInput.value = 'Corpo de Bombeiros Militar';
+    } else if (tipo === 'AMBIENTAL') {
+      nomeInput.value = 'Licença Ambiental de Operação (LO)';
+      orgaoInput.value = 'Órgão Ambiental Estadual / Municipal';
+    }
+  },
+
+  async submitFormAlvara(e) {
+    e.preventDefault();
+    try {
+      const db = window.zgestorDB;
+      const id = document.getElementById('f-alv-id')?.value || null;
+      const empresaId = document.getElementById('f-alv-empresa').value;
+      const tipo = document.getElementById('f-alv-tipo').value;
+      const nome = document.getElementById('f-alv-nome').value.trim();
+      const orgao = document.getElementById('f-alv-orgao').value.trim();
+      const numero = document.getElementById('f-alv-numero').value.trim();
+      const emissao = document.getElementById('f-alv-emissao').value;
+      const vencimento = document.getElementById('f-alv-vencimento').value;
+      const indeterminado = document.getElementById('f-alv-indeterminado').checked;
+      const status = document.getElementById('f-alv-status').value;
+      const protocolo = document.getElementById('f-alv-protocolo').value.trim();
+      const obs = document.getElementById('f-alv-obs').value.trim();
+
+      const fileInput = document.getElementById('f-alv-arquivo');
+      let anexoNome = null;
+      let anexoTamanho = null;
+      let anexoBase64 = null;
+
+      if (fileInput && fileInput.files && fileInput.files[0]) {
+        const file = fileInput.files[0];
+        const val = this.validarArquivoUpload(file, ['.pdf', '.png', '.jpg', '.jpeg'], 15);
+        if (!val.valido) throw new Error(val.erro);
+        anexoNome = file.name;
+        anexoTamanho = file.size;
+        anexoBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      const dados = {
+        id,
+        empresa_id: empresaId,
+        tipo,
+        nome,
+        orgao_emissor: orgao,
+        numero_documento: numero,
+        data_emissao: emissao || null,
+        data_vencimento: indeterminado ? null : (vencimento || null),
+        indeterminado,
+        status,
+        protocolo_renovacao: protocolo,
+        observacoes: obs
+      };
+
+      if (anexoBase64) {
+        dados.anexo_nome = anexoNome;
+        dados.anexo_tamanho = anexoTamanho;
+        dados.anexo_base64 = anexoBase64;
+      }
+
+      db.salvarAlvara(dados);
+      this.closeModal();
+      this.showToast(`Alvará "${nome}" salvo com sucesso!`, 'success');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  excluirAlvara(alvaraId) {
+    if (!confirm('Deseja realmente remover este alvará do sistema?')) return;
+    window.zgestorDB.excluirAlvara(alvaraId);
+    this.showToast('Alvará excluído com sucesso.', 'info');
+    this.renderContentOnly();
+  },
+
+  abrirModalProtocoloAlvara(alvaraId) {
+    const db = window.zgestorDB;
+    const alv = (db.data.alvaras || []).find(a => a.id === alvaraId);
+    if (!alv) return;
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <h3 class="text-base font-bold text-slate-900">Registrar Protocolo de Renovação</h3>
+              <p class="text-xs text-slate-500">${this.escapeHtml(alv.nome)}</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitProtocoloAlvara(event, '${alv.id}')" class="space-y-3.5 mt-4 text-xs">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Número do Protocolo do Pedido de Renovação *</label>
+              <input
+                id="f-prot-num"
+                type="text"
+                required
+                value="${this.escapeHtml(alv.protocolo_renovacao || '')}"
+                placeholder="Ex: 2026-PROT-109283"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono font-bold text-blue-700"
+              />
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Data do Protocolo *</label>
+              <input
+                id="f-prot-data"
+                type="date"
+                required
+                value="${alv.data_protocolo || new Date().toISOString().slice(0, 10)}"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Observações da Renovação</label>
+              <textarea
+                id="f-prot-obs"
+                rows="2"
+                placeholder="Ex: Protocolo aberto na Prefeitura. Aguardando emissão da DAM."
+                class="w-full rounded-xl border border-slate-300 px-3 py-2"
+              ></textarea>
+            </div>
+
+            <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-[11px]">
+              Ao salvar o protocolo, o status do alvará mudará automaticamente para <strong>"Em Renovação"</strong>, resguardando o cliente em caso de fiscalização.
+            </div>
+
+            <div class="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onclick="ZGestorApp.closeModal()"
+                class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition cursor-pointer">
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/20 flex items-center gap-1.5 transition cursor-pointer">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                Salvar Protocolo
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+  },
+
+  submitProtocoloAlvara(e, alvaraId) {
+    e.preventDefault();
+    const protocolo = document.getElementById('f-prot-num').value.trim();
+    const dataProt = document.getElementById('f-prot-data').value;
+    const obs = document.getElementById('f-prot-obs').value.trim();
+
+    window.zgestorDB.registrarProtocoloAlvara(alvaraId, protocolo, dataProt, obs);
+    this.closeModal();
+    this.showToast('Protocolo de renovação gravado com sucesso!', 'success');
+    this.renderContentOnly();
+  },
+
+  baixarArquivoAlvara(alvaraId) {
+    const db = window.zgestorDB;
+    const alv = (db.data.alvaras || []).find(a => a.id === alvaraId);
+    if (!alv || !alv.anexo_base64) {
+      this.showToast('Nenhum arquivo anexado a este alvará.', 'error');
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.href = alv.anexo_base64;
+    link.download = alv.anexo_nome || `Alvara_${alv.tipo}.pdf`;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    this.showToast(`Download iniciado: ${link.download}`, 'success');
   }
 };
 

@@ -207,11 +207,16 @@
             if (!Array.isArray(parsed.convites)) {
               parsed.convites = JSON.parse(JSON.stringify(window.ZGESTOR_INITIAL_DB.convites || []));
             }
-            if (!parsed.profiles.some(p => p.cargo === 'CLIENTE')) {
-              const seedCli = (window.ZGESTOR_INITIAL_DB.profiles || []).find(p => p.cargo === 'CLIENTE');
-              if (seedCli) parsed.profiles.push(JSON.parse(JSON.stringify(seedCli)));
-            }
-            if (!parsed.profiles.some(p => p.email && p.email.toLowerCase() === 'ziotocont.luisf@gmail.com')) {
+            // Saneamento de usuários: remove usuários fictícios antigos e mantém apenas usuários reais validados
+            parsed.profiles = (parsed.profiles || []).filter(p => {
+              const em = (p.email || '').toLowerCase().trim();
+              if (em === 'ziotocont.luisf@gmail.com') return true;
+              if (em.endsWith('@example.test')) return true; // para testes automatizados locais
+              if (em.endsWith('@zgestorcontabil.com.br') || ['usr-admin-1', 'usr-fiscal-1', 'usr-dp-1', 'usr-contabil-1', 'usr-fin-1', 'usr-soc-1', 'usr-cli-1'].includes(p.id)) return false;
+              if (['contador@zgestorcontabil.com.br', 'fiscal@zgestorcontabil.com.br', 'dp@zgestorcontabil.com.br', 'contabil@zgestorcontabil.com.br', 'financeiro@zgestorcontabil.com.br', 'societario@zgestorcontabil.com.br'].includes(em)) return false;
+              return true;
+            });
+            if (!parsed.profiles.some(p => (p.email || '').toLowerCase() === 'ziotocont.luisf@gmail.com')) {
               parsed.profiles.unshift({
                 id: 'usr-admin-luis',
                 nome: 'Luis Filipe (Zioto Contabilidade)',
@@ -219,10 +224,14 @@
                 cargo: 'ADMIN',
                 departamento: 'TODOS',
                 ativo: true,
-                permissoes: { dashboard: true, tarefas: true, guias: true, parcelamentos: true, cnds: true, central_cliente: true, empresas: true, onboarding: true, honorarios: true, seguranca: true },
+                permissoes: { dashboard: true, tarefas: true, guias: true, parcelamentos: true, cnds: true, alvaras: true, central_cliente: true, empresas: true, onboarding: true, honorarios: true, seguranca: true },
                 created_at: '2026-01-10T09:00:00Z'
               });
             }
+            if (!Array.isArray(parsed.alvaras)) {
+              parsed.alvaras = [];
+            }
+            this.garantirAlvarasPadrao(parsed);
             parsed.profiles.forEach(p => {
               if (!p.permissoes) {
                 if (p.cargo === 'ADMIN') {
@@ -276,6 +285,7 @@
         console.warn('Erro ao carregar dados locais, usando seed inicial:', e);
       }
       const initial = JSON.parse(JSON.stringify(window.ZGESTOR_INITIAL_DB));
+      this.garantirAlvarasPadrao(initial);
       this._migrarCredenciais(initial);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
       return initial;
@@ -288,6 +298,7 @@
 
     resetToSeedData() {
       const initial = JSON.parse(JSON.stringify(window.ZGESTOR_INITIAL_DB));
+      this.garantirAlvarasPadrao(initial);
       this._migrarCredenciais(initial);
       this.data = initial;
       this.saveLocalData();
@@ -391,13 +402,23 @@
         }
         if (!this.data.escritorio.ia_config) {
           this.data.escritorio.ia_config = {
-            api_key: '',
             provedor: 'gemini',
-            modelo: 'gemini-1.5-flash',
+            gemini_api_key: '',
+            openai_api_key: '',
+            api_key: '',
+            gemini_modelo: 'gemini-1.5-flash',
+            openai_modelo: 'gpt-4o-mini',
             temperatura: 0.7,
             ativo: false,
             ultima_utilizacao: null
           };
+        } else {
+          if (!this.data.escritorio.ia_config.provedor) this.data.escritorio.ia_config.provedor = 'gemini';
+          if (!this.data.escritorio.ia_config.gemini_modelo) this.data.escritorio.ia_config.gemini_modelo = 'gemini-1.5-flash';
+          if (!this.data.escritorio.ia_config.openai_modelo) this.data.escritorio.ia_config.openai_modelo = 'gpt-4o-mini';
+          if (this.data.escritorio.ia_config.api_key && !this.data.escritorio.ia_config.gemini_api_key) {
+            this.data.escritorio.ia_config.gemini_api_key = this.data.escritorio.ia_config.api_key;
+          }
         }
       }
       return this.data.escritorio;
@@ -1783,6 +1804,177 @@
       return criadas;
     }
 
+
+    // =========================================================================
+    // GESTÃO DE ALVARÁS E LICENÇAS OPERACIONAIS
+    // =========================================================================
+    garantirAlvarasPadrao(targetData = null) {
+      const dataStore = targetData || this.data;
+      if (!dataStore) return;
+      if (!Array.isArray(dataStore.alvaras)) {
+        dataStore.alvaras = [];
+      }
+      const empresas = dataStore.empresas || [];
+      const hoje = new Date();
+      const anoCorrente = hoje.getFullYear();
+
+      empresas.forEach(emp => {
+        const jaTem = dataStore.alvaras.some(a => a.empresa_id === emp.id && (a.tipo === 'FUNCIONAMENTO' || (a.nome && a.nome.toLowerCase().includes('funcionamento'))));
+        if (!jaTem) {
+          const vencimentoPadrao = `${anoCorrente}-12-31`;
+          dataStore.alvaras.push({
+            id: `alv-${emp.id}-func`,
+            empresa_id: emp.id,
+            tipo: 'FUNCIONAMENTO',
+            nome: 'Alvará de Licença e Funcionamento',
+            orgao_emissor: `Prefeitura Municipal (${emp.municipio_uf || 'Municipal'})`,
+            numero_documento: emp.inscricao_municipal && emp.inscricao_municipal !== 'Isento' ? `ALV-${emp.inscricao_municipal}` : `ALV-${emp.codigo_interno || '001'}`,
+            data_emissao: `${anoCorrente}-01-10`,
+            data_vencimento: vencimentoPadrao,
+            indeterminado: false,
+            status: 'VIGENTE',
+            protocolo_renovacao: '',
+            data_protocolo: null,
+            observacoes: 'Alvará padrão de funcionamento emitido pela Prefeitura Municipal. Renovação anual obrigatória.',
+            anexo_nome: null,
+            anexo_tamanho: null,
+            anexo_base64: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        }
+      });
+      if (!targetData && this.saveLocalData) {
+        this.saveLocalData();
+      }
+    }
+
+    calcularStatusAlvara(alvara) {
+      if (!alvara) return { codigo: 'SEM_DATA', label: 'Sem Registro', cor: 'slate', dias: 0 };
+      if (alvara.status === 'DISPENSADO' || alvara.indeterminado) {
+        return { codigo: 'DISPENSADO', label: 'Validade Indeterminada / Isento', cor: 'emerald', dias: null };
+      }
+      if (alvara.status === 'EM_RENOVACAO') {
+        return { codigo: 'EM_RENOVACAO', label: 'Em Processo de Renovação', cor: 'blue', dias: null };
+      }
+      if (!alvara.data_vencimento) {
+        return { codigo: 'SEM_DATA', label: 'Sem Data Informada', cor: 'amber', dias: null };
+      }
+
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      const partes = alvara.data_vencimento.split('-');
+      if (partes.length < 3) return { codigo: 'SEM_DATA', label: 'Data Inválida', cor: 'slate', dias: 0 };
+      const [ano, mes, dia] = partes.map(Number);
+      const dtVenc = new Date(ano, mes - 1, dia, 0, 0, 0);
+      const diffMs = dtVenc - hoje;
+      const dias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+      if (dias < 0) {
+        return { codigo: 'VENCIDO', label: `Vencido há ${Math.abs(dias)} dia(s)`, cor: 'rose', dias };
+      } else if (dias <= 30) {
+        return { codigo: 'VENCENDO', label: `Vence em ${dias} dia(s)`, cor: 'amber', dias };
+      } else if (dias <= 60) {
+        return { codigo: 'ATENCAO', label: `Vence em ${dias} dias`, cor: 'orange', dias };
+      } else {
+        return { codigo: 'VIGENTE', label: `Válido (${dias} dias rest.)`, cor: 'emerald', dias };
+      }
+    }
+
+    getAlvaras(empresaId = null, filtroStatus = 'TODOS') {
+      this.garantirAlvarasPadrao();
+      let lista = [...(this.data.alvaras || [])];
+      if (empresaId && empresaId !== 'TODAS') {
+        lista = lista.filter(a => a.empresa_id === empresaId);
+      }
+      if (filtroStatus && filtroStatus !== 'TODOS') {
+        lista = lista.filter(a => {
+          const st = this.calcularStatusAlvara(a);
+          return st.codigo === filtroStatus || a.status === filtroStatus;
+        });
+      }
+      return lista;
+    }
+
+    salvarAlvara(dados) {
+      if (!dados.empresa_id) throw new Error('Selecione a empresa vinculada ao alvará.');
+      if (!dados.nome || !dados.nome.trim()) throw new Error('O nome / tipo do alvará é obrigatório.');
+
+      if (!Array.isArray(this.data.alvaras)) this.data.alvaras = [];
+      const agora = new Date().toISOString();
+
+      let registro;
+      if (dados.id) {
+        const idx = this.data.alvaras.findIndex(a => a.id === dados.id);
+        if (idx !== -1) {
+          registro = {
+            ...this.data.alvaras[idx],
+            ...dados,
+            updated_at: agora
+          };
+          this.data.alvaras[idx] = registro;
+        } else {
+          registro = {
+            ...dados,
+            id: dados.id,
+            created_at: agora,
+            updated_at: agora
+          };
+          this.data.alvaras.unshift(registro);
+        }
+      } else {
+        registro = {
+          id: `alv-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          empresa_id: dados.empresa_id,
+          tipo: dados.tipo || 'OUTRO',
+          nome: dados.nome.trim(),
+          orgao_emissor: (dados.orgao_emissor || '').trim() || 'Órgão Competente',
+          numero_documento: (dados.numero_documento || '').trim(),
+          data_emissao: dados.data_emissao || null,
+          data_vencimento: dados.indeterminado ? null : (dados.data_vencimento || null),
+          indeterminado: Boolean(dados.indeterminado),
+          status: dados.status || 'VIGENTE',
+          protocolo_renovacao: (dados.protocolo_renovacao || '').trim(),
+          data_protocolo: dados.data_protocolo || null,
+          observacoes: (dados.observacoes || '').trim(),
+          anexo_nome: dados.anexo_nome || null,
+          anexo_tamanho: dados.anexo_tamanho || null,
+          anexo_base64: dados.anexo_base64 || null,
+          created_at: agora,
+          updated_at: agora
+        };
+        this.data.alvaras.unshift(registro);
+      }
+
+      this.saveLocalData();
+      const emp = (this.data.empresas || []).find(e => e.id === registro.empresa_id);
+      this.registrarLog('SALVAR_ALVARA', 'Alvarás e Licenças', `Alvará "${registro.nome}" gravado para a empresa ${emp ? emp.nome_fantasia : registro.empresa_id}.`);
+      return registro;
+    }
+
+    excluirAlvara(alvaraId) {
+      if (!Array.isArray(this.data.alvaras)) return;
+      const alvo = this.data.alvaras.find(a => a.id === alvaraId);
+      this.data.alvaras = this.data.alvaras.filter(a => a.id !== alvaraId);
+      this.saveLocalData();
+      if (alvo) {
+        this.registrarLog('EXCLUIR_ALVARA', 'Alvarás e Licenças', `Alvará "${alvo.nome}" removido do sistema.`);
+      }
+    }
+
+    registrarProtocoloAlvara(alvaraId, protocolo, dataProtocolo, observacao = '') {
+      const idx = (this.data.alvaras || []).findIndex(a => a.id === alvaraId);
+      if (idx === -1) throw new Error('Alvará não encontrado.');
+      this.data.alvaras[idx].protocolo_renovacao = (protocolo || '').trim();
+      this.data.alvaras[idx].data_protocolo = dataProtocolo || new Date().toISOString().slice(0, 10);
+      this.data.alvaras[idx].status = 'EM_RENOVACAO';
+      if (observacao) {
+        this.data.alvaras[idx].observacoes = (this.data.alvaras[idx].observacoes ? this.data.alvaras[idx].observacoes + '\n' : '') + observacao;
+      }
+      this.data.alvaras[idx].updated_at = new Date().toISOString();
+      this.saveLocalData();
+      return this.data.alvaras[idx];
+    }
     // =========================================================================
     // PORTAL / CENTRAL DO CLIENTE: ARQUIVOS DA EMPRESA E SOLICITAÇÕES À CONTABILIDADE
     // =========================================================================

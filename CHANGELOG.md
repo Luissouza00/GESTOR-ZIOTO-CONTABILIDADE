@@ -5,6 +5,31 @@ O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.
 
 ---
 
+## [1.3.0] - 2026-11-23
+
+### Adicionado
+- **Módulo Completo de Alvarás & Licenças Operacionais**:
+  - Geração automática e padronizada do **Alvará de Funcionamento** para todas as empresas da carteira do escritório.
+  - Funcionalidade completa para cadastro e controle de licenças adicionais:
+    - Vigilância Sanitária (VISA municipal/estadual)
+    - Certificado de Registro de Petrecho de Pesca (Ministério da Pesca / IBAMA)
+    - Auto de Vistoria do Corpo de Bombeiros (AVCB / CLCB)
+    - Licenciamento Ambiental (CETESB / Órgãos Ambientais)
+    - Outras licenças regulatórias e municipais personalizadas.
+  - Painel com KPIs executivos: total de alvarás monitorados, vigentes, a vencer em 30/60 dias, vencidos e em renovação.
+  - Registro de protocolo de pedido de renovação (atribui automaticamente status "Em Renovação" resguardando o cliente perante fiscalizações).
+  - Anexo de documentos (PDF e imagens até 15MB) com download e visualização direta.
+  - Filtros avançados por empresa, tipo de licença, status de validade e busca textual.
+- **Suporte Multi-Provedor de Inteligência Artificial (OpenAI ChatGPT + Google Gemini)**:
+  - Adição de integração nativa com a **OpenAI API (ChatGPT)** permitindo vincular chave de API (`sk-...`) e selecionar modelos (`gpt-4o-mini`, `gpt-4o`, `gpt-3.5-turbo`).
+  - Botão de teste de conexão em tempo real diretamente com os servidores da OpenAI.
+  - Seletor de provedor preferencial ativo (Google Gemini ou OpenAI) com fallback automático e inteligência tributária nativa offline.
+- **Saneamento e Limpeza da Base de Usuários**:
+  - Remoção definitiva de todos os usuários fictícios de demonstração antigos (`contador@...`, `fiscal@...`, `dp@...`, etc.).
+  - Preservação estrita e exclusiva do usuário real validado: **Luis Filipe (Zioto Contabilidade) - `ziotocont.luisf@gmail.com`** com privilégios de Administrador Master.
+
+---
+
 ## [1.2.0] - 2026-11-23
 
 ### Adicionado

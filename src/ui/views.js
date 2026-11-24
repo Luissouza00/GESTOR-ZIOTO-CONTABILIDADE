@@ -4071,7 +4071,7 @@ window.ZGestorViews = {
           <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> v1.2.0
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> v1.3.0
             </span>
           </div>
         </div>
@@ -4566,18 +4566,381 @@ window.ZGestorViews = {
 ,
 
   // ===========================================================================
+  // 9.5. CONTROLE DE ALVARÁS E LICENÇAS OPERACIONAIS
+  // ===========================================================================
+  renderAlvaras(appState) {
+    const db = window.zgestorDB;
+    db.garantirAlvarasPadrao();
+    const fEmpresa = appState.filtroAlvaraEmpresa || 'TODAS';
+    const fTipo = appState.filtroAlvaraTipo || 'TODOS';
+    const fStatus = appState.filtroAlvaraStatus || 'TODOS';
+    const busca = (appState.filtroAlvaraBusca || '').toLowerCase().trim();
+
+    const empresas = db.data.empresas || [];
+    let todosAlvaras = db.getAlvaras();
+
+    // Filtros
+    let lista = [...todosAlvaras];
+    if (fEmpresa !== 'TODAS') {
+      lista = lista.filter(a => a.empresa_id === fEmpresa);
+    }
+    if (fTipo !== 'TODOS') {
+      lista = lista.filter(a => a.tipo === fTipo);
+    }
+    if (fStatus !== 'TODOS') {
+      lista = lista.filter(a => {
+        const st = db.calcularStatusAlvara(a);
+        return st.codigo === fStatus || a.status === fStatus;
+      });
+    }
+    if (busca) {
+      lista = lista.filter(a => {
+        const emp = empresas.find(e => e.id === a.empresa_id);
+        const empNome = emp ? (emp.nome_fantasia + ' ' + emp.razao_social + ' ' + emp.cnpj) : '';
+        return (
+          (a.nome || '').toLowerCase().includes(busca) ||
+          (a.orgao_emissor || '').toLowerCase().includes(busca) ||
+          (a.numero_documento || '').toLowerCase().includes(busca) ||
+          (a.protocolo_renovacao || '').toLowerCase().includes(busca) ||
+          empNome.toLowerCase().includes(busca)
+        );
+      });
+    }
+
+    // Contadores para KPIs
+    let vigentesCount = 0;
+    let vencendoCount = 0;
+    let vencidosCount = 0;
+    let renovacaoCount = 0;
+
+    todosAlvaras.forEach(a => {
+      const st = db.calcularStatusAlvara(a);
+      if (st.codigo === 'VENCIDO') vencidosCount++;
+      else if (st.codigo === 'VENCENDO' || st.codigo === 'ATENCAO') vencendoCount++;
+      else if (st.codigo === 'EM_RENOVACAO') renovacaoCount++;
+      else vigentesCount++;
+    });
+
+    const tipoLabels = {
+      FUNCIONAMENTO: { label: 'Alvará de Funcionamento', badge: 'bg-blue-50 text-blue-700 border-blue-200', icon: 'building-2' },
+      SANITARIO: { label: 'Vigilância Sanitária', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: 'shield-plus' },
+      PESCA: { label: 'Petrecho de Pesca', badge: 'bg-cyan-50 text-cyan-800 border-cyan-200', icon: 'anchor' },
+      BOMBEIROS: { label: 'Corpo de Bombeiros (AVCB)', badge: 'bg-rose-50 text-rose-700 border-rose-200', icon: 'flame' },
+      AMBIENTAL: { label: 'Licença Ambiental', badge: 'bg-green-50 text-green-800 border-green-200', icon: 'trees' },
+      OUTRO: { label: 'Outro / Específico', badge: 'bg-purple-50 text-purple-700 border-purple-200', icon: 'file-text' }
+    };
+
+    return `
+      <div class="space-y-6">
+        <!-- Topo: Título e Ação de Adicionar -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                Regularidade Operacional
+              </span>
+              <span class="text-xs text-slate-400">•</span>
+              <span class="text-xs text-slate-500 font-semibold">${todosAlvaras.length} alvarás ativos no escritório</span>
+            </div>
+            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-1 flex items-center gap-2">
+              <i data-lucide="file-check" class="w-6 h-6 text-indigo-600"></i>
+              Controle de Alvarás & Licenças
+            </h1>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Gestão preventiva de Alvará de Funcionamento, Vigilância Sanitária, Petrechos de Pesca, Bombeiros (AVCB) e Licenças Ambientais
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              onclick="ZGestorApp.openModalNovoAlvara()"
+              class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-md shadow-indigo-600/20 flex items-center gap-2 transition cursor-pointer">
+              <i data-lucide="plus-circle" class="w-4 h-4"></i>
+              <span>+ Novo Alvará / Licença</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 Cards de Resumo Executivo / KPIs -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div class="flex items-center justify-between text-slate-500 text-xs font-semibold">
+              <span>Total Monitorado</span>
+              <i data-lucide="layers" class="w-4 h-4 text-slate-400"></i>
+            </div>
+            <div class="text-2xl font-black text-slate-900 mt-2">${todosAlvaras.length}</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">Alvarás de todas as empresas</div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-emerald-200 shadow-xs">
+            <div class="flex items-center justify-between text-emerald-700 text-xs font-semibold">
+              <span>Alvarás Vigentes</span>
+              <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600"></i>
+            </div>
+            <div class="text-2xl font-black text-emerald-600 mt-2">${vigentesCount}</div>
+            <div class="text-[11px] text-emerald-600 mt-0.5">Dentro do prazo de validade</div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-amber-200 shadow-xs">
+            <div class="flex items-center justify-between text-amber-700 text-xs font-semibold">
+              <span>Vencendo em até 60 dias</span>
+              <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600"></i>
+            </div>
+            <div class="text-2xl font-black text-amber-600 mt-2">${vencendoCount}</div>
+            <div class="text-[11px] text-amber-600 mt-0.5">Exigem protocolo de renovação</div>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border ${vencidosCount > 0 ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200'} shadow-xs">
+            <div class="flex items-center justify-between text-rose-700 text-xs font-semibold">
+              <span>Vencidos / Expirados</span>
+              <i data-lucide="alert-octagon" class="w-4 h-4 text-rose-600"></i>
+            </div>
+            <div class="text-2xl font-black text-rose-600 mt-2">${vencidosCount}</div>
+            <div class="text-[11px] text-rose-600 mt-0.5">${vencidosCount > 0 ? 'Risco de autuação municipal' : 'Nenhum alvará vencido'}</div>
+          </div>
+        </div>
+
+        <!-- Barra de Filtros e Busca -->
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Filtrar por Empresa</label>
+              <select
+                onchange="ZGestorApp.setFiltroAlvaraEmpresa(this.value)"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-medium focus:outline-none focus:border-indigo-500">
+                <option value="TODAS" ${fEmpresa === 'TODAS' ? 'selected' : ''}>Todas as Empresas (${empresas.length})</option>
+                ${empresas.map(e => `
+                  <option value="${e.id}" ${fEmpresa === e.id ? 'selected' : ''}>
+                    #${e.codigo_interno} — ${e.nome_fantasia}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Tipo de Licença / Alvará</label>
+              <select
+                onchange="ZGestorApp.setFiltroAlvaraTipo(this.value)"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-medium focus:outline-none focus:border-indigo-500">
+                <option value="TODOS" ${fTipo === 'TODOS' ? 'selected' : ''}>Todos os Tipos</option>
+                <option value="FUNCIONAMENTO" ${fTipo === 'FUNCIONAMENTO' ? 'selected' : ''}>Alvará de Funcionamento (Prefeitura)</option>
+                <option value="SANITARIO" ${fTipo === 'SANITARIO' ? 'selected' : ''}>Vigilância Sanitária</option>
+                <option value="PESCA" ${fTipo === 'PESCA' ? 'selected' : ''}>Certificado de Petrecho de Pesca</option>
+                <option value="BOMBEIROS" ${fTipo === 'BOMBEIROS' ? 'selected' : ''}>Corpo de Bombeiros (AVCB / CLCB)</option>
+                <option value="AMBIENTAL" ${fTipo === 'AMBIENTAL' ? 'selected' : ''}>Licença Ambiental</option>
+                <option value="OUTRO" ${fTipo === 'OUTRO' ? 'selected' : ''}>Outras Licenças Específicas</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Status de Validade</label>
+              <select
+                onchange="ZGestorApp.setFiltroAlvaraStatus(this.value)"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-medium focus:outline-none focus:border-indigo-500">
+                <option value="TODOS" ${fStatus === 'TODOS' ? 'selected' : ''}>Todos os Status</option>
+                <option value="VIGENTE" ${fStatus === 'VIGENTE' ? 'selected' : ''}>Vigentes / Válidos</option>
+                <option value="VENCENDO" ${fStatus === 'VENCENDO' ? 'selected' : ''}>Vencendo em até 30 dias</option>
+                <option value="VENCIDO" ${fStatus === 'VENCIDO' ? 'selected' : ''}>Vencidos / Expirados</option>
+                <option value="EM_RENOVACAO" ${fStatus === 'EM_RENOVACAO' ? 'selected' : ''}>Em Renovação / Protocolados</option>
+                <option value="DISPENSADO" ${fStatus === 'DISPENSADO' ? 'selected' : ''}>Indeterminados / Dispensados</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Buscar por Palavra-Chave</label>
+              <div class="relative">
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                <input
+                  type="text"
+                  placeholder="Nome, órgão ou nº do alvará..."
+                  value="${this.escapeHtml(appState.filtroAlvaraBusca || '')}"
+                  oninput="ZGestorApp.setFiltroAlvaraBusca(this.value)"
+                  class="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 text-xs font-medium focus:outline-none focus:border-indigo-500" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabela / Cards de Alvarás -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          ${lista.length === 0 ? `
+            <div class="p-12 text-center">
+              <i data-lucide="file-x" class="w-12 h-12 text-slate-300 mx-auto mb-3"></i>
+              <h3 class="text-sm font-bold text-slate-700">Nenhum alvará ou licença encontrado com os filtros aplicados</h3>
+              <p class="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Tente alterar os filtros de empresa ou status, ou adicione uma nova licença.</p>
+              <button
+                type="button"
+                onclick="ZGestorApp.openModalNovoAlvara()"
+                class="mt-4 px-4 py-2 rounded-xl bg-indigo-50 text-indigo-700 font-bold text-xs hover:bg-indigo-100 transition inline-flex items-center gap-1.5 cursor-pointer">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                Cadastrar Alvará
+              </button>
+            </div>
+          ` : `
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th class="py-3 px-4">Empresa</th>
+                    <th class="py-3 px-4">Alvará / Licença</th>
+                    <th class="py-3 px-4">Órgão Emissor</th>
+                    <th class="py-3 px-4">Nº Documento / Inscrição</th>
+                    <th class="py-3 px-4">Validade / Vencimento</th>
+                    <th class="py-3 px-4">Status</th>
+                    <th class="py-3 px-4">Protocolo de Renovação</th>
+                    <th class="py-3 px-4 text-center">Arquivo</th>
+                    <th class="py-3 px-4 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${lista.map(alv => {
+                    const emp = empresas.find(e => e.id === alv.empresa_id);
+                    const st = db.calcularStatusAlvara(alv);
+                    const tipoInfo = tipoLabels[alv.tipo] || tipoLabels.OUTRO;
+
+                    return `
+                      <tr class="hover:bg-slate-50/80 transition">
+                        <td class="py-3.5 px-4 font-semibold text-slate-900 whitespace-nowrap">
+                          ${emp ? `
+                            <div class="font-bold text-slate-900">${this.escapeHtml(emp.nome_fantasia)}</div>
+                            <div class="text-[11px] text-slate-400 font-normal">CNPJ: ${this.escapeHtml(emp.cnpj)}</div>
+                          ` : 'Empresa não encontrada'}
+                        </td>
+                        <td class="py-3.5 px-4 whitespace-nowrap">
+                          <div class="font-bold text-slate-800">${this.escapeHtml(alv.nome)}</div>
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border mt-0.5 ${tipoInfo.badge}">
+                            <i data-lucide="${tipoInfo.icon}" class="w-3 h-3"></i>
+                            ${tipoInfo.label}
+                          </span>
+                        </td>
+                        <td class="py-3.5 px-4 text-slate-600 font-medium whitespace-nowrap">
+                          ${this.escapeHtml(alv.orgao_emissor || 'Prefeitura')}
+                        </td>
+                        <td class="py-3.5 px-4 font-mono text-[11px] text-slate-700 whitespace-nowrap">
+                          ${this.escapeHtml(alv.numero_documento || 'Não informado')}
+                        </td>
+                        <td class="py-3.5 px-4 whitespace-nowrap">
+                          ${alv.indeterminado ? `
+                            <span class="text-emerald-700 font-semibold">Indeterminado / Isento</span>
+                          ` : alv.data_vencimento ? `
+                            <div class="font-bold text-slate-800">${alv.data_vencimento.split('-').reverse().join('/')}</div>
+                            <div class="text-[10px] ${st.codigo === 'VENCIDO' ? 'text-rose-600 font-bold' : st.codigo === 'VENCENDO' ? 'text-amber-600 font-bold' : 'text-slate-400'}">
+                              ${st.label}
+                            </div>
+                          ` : '<span class="text-slate-400">Sem data</span>'}
+                        </td>
+                        <td class="py-3.5 px-4 whitespace-nowrap">
+                          <span class="px-2.5 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1.5 w-fit
+                            ${st.codigo === 'VIGENTE' || st.codigo === 'DISPENSADO' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : ''}
+                            ${st.codigo === 'VENCENDO' || st.codigo === 'ATENCAO' ? 'bg-amber-50 text-amber-800 border-amber-300' : ''}
+                            ${st.codigo === 'VENCIDO' ? 'bg-rose-50 text-rose-800 border-rose-300 font-extrabold' : ''}
+                            ${st.codigo === 'EM_RENOVACAO' ? 'bg-blue-50 text-blue-800 border-blue-300' : ''}
+                            ${st.codigo === 'SEM_DATA' ? 'bg-slate-50 text-slate-700 border-slate-300' : ''}
+                          ">
+                            <span class="w-1.5 h-1.5 rounded-full
+                              ${st.codigo === 'VIGENTE' || st.codigo === 'DISPENSADO' ? 'bg-emerald-500' : ''}
+                              ${st.codigo === 'VENCENDO' || st.codigo === 'ATENCAO' ? 'bg-amber-500' : ''}
+                              ${st.codigo === 'VENCIDO' ? 'bg-rose-500' : ''}
+                              ${st.codigo === 'EM_RENOVACAO' ? 'bg-blue-500' : ''}
+                              ${st.codigo === 'SEM_DATA' ? 'bg-slate-400' : ''}
+                            "></span>
+                            ${st.codigo === 'VIGENTE' ? 'Vigente' : st.codigo === 'VENCENDO' ? 'A Vencer' : st.codigo === 'VENCIDO' ? 'Vencido' : st.codigo === 'EM_RENOVACAO' ? 'Em Renovação' : st.label}
+                          </span>
+                        </td>
+                        <td class="py-3.5 px-4 whitespace-nowrap">
+                          ${alv.protocolo_renovacao ? `
+                            <div class="flex items-center gap-1.5">
+                              <span class="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                                Prot: ${this.escapeHtml(alv.protocolo_renovacao)}
+                              </span>
+                              ${alv.data_protocolo ? `
+                                <span class="text-[10px] text-slate-400">(${alv.data_protocolo.split('-').reverse().join('/')})</span>
+                              ` : ''}
+                            </div>
+                          ` : `
+                            <button
+                              type="button"
+                              onclick="ZGestorApp.abrirModalProtocoloAlvara('${alv.id}')"
+                              class="text-[11px] text-slate-500 hover:text-indigo-600 font-semibold flex items-center gap-1 hover:underline cursor-pointer">
+                              <i data-lucide="plus" class="w-3 h-3"></i> Registrar Protocolo
+                            </button>
+                          `}
+                        </td>
+                        <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                          ${alv.anexo_base64 ? `
+                            <button
+                              type="button"
+                              onclick="ZGestorApp.baixarArquivoAlvara('${alv.id}')"
+                              title="Baixar ou visualizar arquivo anexado"
+                              class="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold transition inline-flex items-center gap-1 text-[11px] cursor-pointer">
+                              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                              <span>PDF</span>
+                            </button>
+                          ` : `
+                            <span class="text-slate-300 text-xs">—</span>
+                          `}
+                        </td>
+                        <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                          <div class="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onclick="ZGestorApp.abrirModalProtocoloAlvara('${alv.id}')"
+                              title="Registrar / Atualizar Protocolo de Renovação"
+                              class="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition cursor-pointer">
+                              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button
+                              type="button"
+                              onclick="ZGestorApp.openModalNovoAlvara('${alv.id}')"
+                              title="Editar Alvará"
+                              class="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer">
+                              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button
+                              type="button"
+                              onclick="ZGestorApp.excluirAlvara('${alv.id}')"
+                              title="Excluir Alvará"
+                              class="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer">
+                              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  },
+
+  // ===========================================================================
   // 10. MÓDULO DE INTELIGÊNCIA ARTIFICIAL & ASSISTENTE CONTÁBIL (Z-IA)
   // ===========================================================================
   renderInteligenciaIA(appState) {
     const db = window.zgestorDB;
     const esc = db.getEscritorioConfig();
     const iaConfig = esc.ia_config || {
-      api_key: '',
       provedor: 'gemini',
-      modelo: 'gemini-1.5-flash',
+      gemini_api_key: '',
+      openai_api_key: '',
+      api_key: '',
+      gemini_modelo: 'gemini-1.5-flash',
+      openai_modelo: 'gpt-4o-mini',
       ativo: false
     };
-    const hasKey = Boolean(iaConfig.api_key && iaConfig.api_key.trim());
+
+    const provedorAtivo = iaConfig.provedor || 'gemini';
+    const geminiKey = iaConfig.gemini_api_key || iaConfig.api_key || '';
+    const openaiKey = iaConfig.openai_api_key || '';
+    const hasGemini = Boolean(geminiKey && geminiKey.trim());
+    const hasOpenAI = Boolean(openaiKey && openaiKey.trim());
+    const hasKey = hasGemini || hasOpenAI;
+
     const subTab = appState.subTabIA || 'diagnostico';
     const comp = appState.competencia || '10/2026';
     const sub = db.obterMesSubsequente(comp);
@@ -4607,137 +4970,225 @@ window.ZGestorViews = {
             <div class="flex items-center gap-2 flex-wrap">
               <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 flex items-center gap-1.5">
                 <i data-lucide="sparkles" class="w-3 h-3 text-indigo-300"></i>
-                Z-IA Contábil • v1.2.0
+                Z-IA Contábil • v1.3.0
               </span>
               <span class="text-xs text-slate-400">|</span>
               <span class="text-xs text-indigo-200 font-medium">Competência de Análise: <strong>${comp} (${sub.label})</strong></span>
             </div>
             <h1 class="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
-              Assistente IA & Inteligência Contábil
+              <span>Inteligência Artificial & Auditoria Contábil</span>
             </h1>
-            <p class="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Auditoria preventiva da competência, consultor tributário especializado (Simples Nacional, DCTFWeb, EFD-Reinf) e automação de comunicados e cobranças em 1 clique.
+            <p class="text-xs text-indigo-200/80 max-w-xl">
+              Diagnóstico preditivo de obrigações, consultor tributário especializado, gerador de cobranças cordiais com PIX e respostas de suporte para clientes.
             </p>
           </div>
 
-          <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 shrink-0">
-            ${hasKey ? `
-              <div class="px-3.5 py-2 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-2 shadow-sm">
-                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Google Gemini Ativo (${iaConfig.modelo || 'gemini-1.5-flash'})</span>
+          <!-- Status dos Provedores IA Conectados -->
+          <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 bg-white/5 p-3 rounded-2xl border border-white/10 backdrop-blur-xs">
+            <div class="space-y-1 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full ${hasGemini ? 'bg-emerald-400 ring-4 ring-emerald-400/20' : 'bg-slate-500'}"></span>
+                <span class="text-[11px] font-semibold text-slate-300">Google Gemini:</span>
+                <span class="font-bold ${hasGemini ? 'text-emerald-300' : 'text-slate-400'}">${hasGemini ? 'Conectado' : 'Sem Chave'}</span>
               </div>
-            ` : `
-              <div class="px-3.5 py-2 rounded-2xl bg-amber-950/70 border border-amber-500/50 text-amber-200 text-xs font-medium flex items-center gap-2 shadow-sm">
-                <i data-lucide="info" class="w-4 h-4 text-amber-400 shrink-0"></i>
-                <span>Modo Local Ativo (Vincule sua chave)</span>
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full ${hasOpenAI ? 'bg-emerald-400 ring-4 ring-emerald-400/20' : 'bg-slate-500'}"></span>
+                <span class="text-[11px] font-semibold text-slate-300">OpenAI (ChatGPT):</span>
+                <span class="font-bold ${hasOpenAI ? 'text-emerald-300' : 'text-slate-400'}">${hasOpenAI ? 'Conectado' : 'Sem Chave'}</span>
               </div>
-            `}
+              <div class="text-[10px] text-indigo-300 pt-0.5">
+                Provedor Ativo: <strong class="text-white uppercase">${provedorAtivo === 'openai' ? 'OpenAI (ChatGPT)' : 'Google Gemini'}</strong>
+              </div>
+            </div>
+
             <button
+              type="button"
               onclick="ZGestorApp.toggleCardConfigIA()"
-              class="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm cursor-pointer">
-              <i data-lucide="key" class="w-3.5 h-3.5"></i>
-              <span>${hasKey ? 'Gerenciar Chave' : 'Vincular Chave de IA'}</span>
+              class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap">
+              <i data-lucide="settings-2" class="w-3.5 h-3.5"></i>
+              <span>Gerenciar Chaves</span>
             </button>
           </div>
         </div>
 
-        <!-- CARD RETRÁTIL DE CONFIGURAÇÃO DE CHAVE DE IA (GOOGLE GEMINI) -->
+        <!-- PAINEL RETRÁTIL DE CONFIGURAÇÃO DE CHAVES DE IA (DUAL: OPENAI + GOOGLE GEMINI) -->
         <div id="card-config-ia" class="${hasKey ? 'hidden' : 'block'} bg-white p-5 rounded-2xl border border-indigo-200 shadow-sm space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
             <div class="flex items-center gap-2.5">
               <div class="p-2 rounded-xl bg-indigo-50 text-indigo-700">
-                <i data-lucide="key-round" class="w-5 h-5"></i>
+                <i data-lucide="cpu" class="w-5 h-5"></i>
               </div>
               <div>
-                <h2 class="text-sm font-bold text-slate-900">Vincular Chave de API de Inteligência Artificial</h2>
-                <p class="text-[11px] text-slate-500">Conecte o Google Gemini para habilitar respostas profundas, personalizadas e em tempo real</p>
+                <h2 class="text-sm font-bold text-slate-900">Configuração de APIs de Inteligência Artificial</h2>
+                <p class="text-[11px] text-slate-500">Conecte sua chave da OpenAI (ChatGPT) ou do Google Gemini para alimentar as análises tributárias e diagnósticos</p>
               </div>
             </div>
-            <a
-              href="https://aistudio.google.com/app/apikey"
-              target="_blank"
-              class="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200 transition">
-              <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-              <span>Obter Chave Gratuita no Google AI Studio</span>
-            </a>
+            
+            <!-- Seletor de Provedor Preferencial Ativo -->
+            <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onclick="ZGestorApp.setProvedorIA('gemini')"
+                class="px-3 py-1.5 rounded-lg transition cursor-pointer ${provedorAtivo === 'gemini' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                Google Gemini
+              </button>
+              <button
+                type="button"
+                onclick="ZGestorApp.setProvedorIA('openai')"
+                class="px-3 py-1.5 rounded-lg transition cursor-pointer ${provedorAtivo === 'openai' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+                OpenAI (ChatGPT)
+              </button>
+            </div>
           </div>
 
-          <form onsubmit="ZGestorApp.salvarChaveIA(event)" class="space-y-3.5 text-xs">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div class="md:col-span-2">
-                <label class="block font-bold text-slate-700 mb-1">Chave de API do Google Gemini (API Key) *</label>
-                <div class="relative">
-                  <input
-                    id="f-ia-apikey"
-                    type="password"
-                    required
-                    value="${iaConfig.api_key || ''}"
-                    placeholder="Cole sua chave aqui (ex: AIzaSy...)"
-                    class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 pr-10 font-mono text-xs focus:bg-white focus:border-indigo-600 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onclick="ZGestorApp.toggleVerChaveIA()"
-                    class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer">
-                    <i id="icon-ver-chave-ia" data-lucide="eye" class="w-4 h-4"></i>
-                  </button>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- COLUNA 1: GOOGLE GEMINI -->
+            <div class="p-4 rounded-xl border ${provedorAtivo === 'gemini' ? 'border-indigo-300 bg-indigo-50/20' : 'border-slate-200 bg-white'} space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">G</span>
+                  <div>
+                    <h3 class="font-bold text-slate-800 text-xs">Google Gemini API</h3>
+                    <span class="text-[10px] text-slate-400">Modelo ultra-rápido do Google</span>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label class="block font-bold text-slate-700 mb-1">Modelo de IA Recomendado</label>
-                <select id="f-ia-modelo" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-bold text-slate-800">
-                  <option value="gemini-1.5-flash" ${(iaConfig.modelo || 'gemini-1.5-flash') === 'gemini-1.5-flash' ? 'selected' : ''}>gemini-1.5-flash (Ultra Rápido & Grátis)</option>
-                  <option value="gemini-2.0-flash" ${iaConfig.modelo === 'gemini-2.0-flash' ? 'selected' : ''}>gemini-2.0-flash (Nova Geração)</option>
-                  <option value="gemini-1.5-pro" ${iaConfig.modelo === 'gemini-1.5-pro' ? 'selected' : ''}>gemini-1.5-pro (Raciocínio Tributário Avançado)</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-600 space-y-1 text-[11px]">
-              <div class="font-bold text-slate-800 flex items-center gap-1.5">
-                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
-                Como obter sua chave em 1 minuto sem custos:
-              </div>
-              <p>
-                1. Entre em <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-indigo-600 font-bold underline">aistudio.google.com</a> com sua conta Google. 2. Clique em <strong>"Create API Key"</strong>. 3. Cole o código gerado no campo acima e clique em <strong>Salvar Chave & Ativar IA</strong>.
-              </p>
-            </div>
-
-            <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
-              <div class="flex items-center gap-2">
-                ${hasKey ? `
-                  <button
-                    type="button"
-                    onclick="ZGestorApp.removerChaveIA()"
-                    class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs border border-rose-200 transition cursor-pointer">
-                    Desvincular Chave
-                  </button>
-                ` : ''}
-                <button
-                  type="button"
-                  onclick="ZGestorApp.testarConexaoIA()"
-                  class="px-4 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-300 transition flex items-center gap-1.5 cursor-pointer">
-                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-teal-600"></i>
-                  <span>Testar Conexão</span>
-                </button>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${hasGemini ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">
+                  ${hasGemini ? 'Configurado' : 'Pendente'}
+                </span>
               </div>
 
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  onclick="ZGestorApp.toggleCardConfigIA()"
-                  class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition cursor-pointer">
-                  Recolher
-                </button>
-                <button
-                  type="submit"
-                  class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer">
-                  <i data-lucide="save" class="w-3.5 h-3.5"></i>
-                  <span>Salvar Chave & Ativar IA</span>
-                </button>
-              </div>
+              <form onsubmit="ZGestorApp.salvarChaveIA(event)" class="space-y-3 text-xs">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1">Chave de API Gemini (API Key)</label>
+                  <div class="relative">
+                    <input
+                      id="f-ia-apikey"
+                      type="password"
+                      value="${geminiKey}"
+                      placeholder="Cole a chave (AIzaSy...)"
+                      class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 pr-9 font-mono text-xs focus:border-indigo-600 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.toggleVerChaveIA()"
+                      class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer">
+                      <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1">Modelo Gemini</label>
+                  <select id="f-ia-modelo" class="w-full rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold">
+                    <option value="gemini-1.5-flash" ${(iaConfig.gemini_modelo || 'gemini-1.5-flash') === 'gemini-1.5-flash' ? 'selected' : ''}>gemini-1.5-flash (Gratuito & Rápido)</option>
+                    <option value="gemini-2.0-flash" ${iaConfig.gemini_modelo === 'gemini-2.0-flash' ? 'selected' : ''}>gemini-2.0-flash (Nova Geração)</option>
+                    <option value="gemini-1.5-pro" ${iaConfig.gemini_modelo === 'gemini-1.5-pro' ? 'selected' : ''}>gemini-1.5-pro (Raciocínio Avançado)</option>
+                  </select>
+                </div>
+
+                <div class="flex items-center justify-between pt-1 gap-2">
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    class="text-[11px] font-bold text-indigo-600 hover:underline inline-flex items-center gap-1">
+                    <i data-lucide="external-link" class="w-3 h-3"></i>
+                    Obter no Google AI Studio
+                  </a>
+                  <div class="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.testarConexaoIA()"
+                      class="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-[11px] border border-teal-200 transition cursor-pointer">
+                      Testar
+                    </button>
+                    <button
+                      type="submit"
+                      class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] shadow-xs transition cursor-pointer">
+                      Salvar Gemini
+                    </button>
+                  </div>
+                </div>
+              </form>
             </div>
-          </form>
+
+            <!-- COLUNA 2: OPENAI (CHATGPT) -->
+            <div class="p-4 rounded-xl border ${provedorAtivo === 'openai' ? 'border-indigo-300 bg-indigo-50/20' : 'border-slate-200 bg-white'} space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs">O</span>
+                  <div>
+                    <h3 class="font-bold text-slate-800 text-xs">OpenAI API (ChatGPT)</h3>
+                    <span class="text-[10px] text-slate-400">Modelos GPT-4o Mini e GPT-4o</span>
+                  </div>
+                </div>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${hasOpenAI ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}">
+                  ${hasOpenAI ? 'Configurado' : 'Pendente'}
+                </span>
+              </div>
+
+              <form onsubmit="ZGestorApp.salvarChaveOpenAI(event)" class="space-y-3 text-xs">
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1">Chave de API OpenAI (sk-...)</label>
+                  <div class="relative">
+                    <input
+                      id="f-ia-openaikey"
+                      type="password"
+                      value="${openaiKey}"
+                      placeholder="Cole sua chave OpenAI (sk-...)"
+                      class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 pr-9 font-mono text-xs focus:border-indigo-600 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.toggleVerChaveOpenAI()"
+                      class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer">
+                      <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block font-bold text-slate-700 mb-1">Modelo ChatGPT</label>
+                  <select id="f-ia-openai-modelo" class="w-full rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold">
+                    <option value="gpt-4o-mini" ${(iaConfig.openai_modelo || 'gpt-4o-mini') === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini (Recomendado - Rápido e Econômico)</option>
+                    <option value="gpt-4o" ${iaConfig.openai_modelo === 'gpt-4o' ? 'selected' : ''}>gpt-4o (Mais Inteligente e Completo)</option>
+                    <option value="gpt-3.5-turbo" ${iaConfig.openai_modelo === 'gpt-3.5-turbo' ? 'selected' : ''}>gpt-3.5-turbo (Clássico)</option>
+                  </select>
+                </div>
+
+                <div class="flex items-center justify-between pt-1 gap-2">
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    class="text-[11px] font-bold text-emerald-600 hover:underline inline-flex items-center gap-1">
+                    <i data-lucide="external-link" class="w-3 h-3"></i>
+                    Obter na OpenAI Platform
+                  </a>
+                  <div class="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.testarConexaoOpenAI()"
+                      class="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-[11px] border border-teal-200 transition cursor-pointer">
+                      Testar
+                    </button>
+                    <button
+                      type="submit"
+                      class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-xs transition cursor-pointer">
+                      Salvar OpenAI
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-2">
+            <button
+              type="button"
+              onclick="ZGestorApp.toggleCardConfigIA()"
+              class="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition cursor-pointer">
+              Fechar Painel de Configuração
+            </button>
+          </div>
         </div>
 
         <!-- NAVEGAÇÃO DE SUB-ABAS DE IA (4 FERRAMENTAS) -->
