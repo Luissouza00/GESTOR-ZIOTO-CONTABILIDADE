@@ -811,8 +811,12 @@
           });
           this._getCloudCollections().forEach(col => {
             if (Array.isArray(porColecao[col])) {
-              this.data[col] = porColecao[col];
-              atualizado = true;
+              const novoJson = JSON.stringify(porColecao[col]);
+              const atualJson = JSON.stringify(this.data[col] || []);
+              if (novoJson !== atualJson) {
+                this.data[col] = porColecao[col];
+                atualizado = true;
+              }
             }
           });
         }
@@ -820,12 +824,16 @@
         if (Array.isArray(configs) && configs.length > 0) {
           configs.forEach(c => {
             if (c.chave === 'escritorio' && c.dados) {
-              this.data.escritorio = c.dados;
-              atualizado = true;
+              if (JSON.stringify(c.dados) !== JSON.stringify(this.data.escritorio || {})) {
+                this.data.escritorio = c.dados;
+                atualizado = true;
+              }
             }
             if (c.chave === 'modelos_tarefas' && Array.isArray(c.dados)) {
-              this.data.modelos_tarefas = c.dados;
-              atualizado = true;
+              if (JSON.stringify(c.dados) !== JSON.stringify(this.data.modelos_tarefas || [])) {
+                this.data.modelos_tarefas = c.dados;
+                atualizado = true;
+              }
             }
           });
         }

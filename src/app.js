@@ -123,12 +123,32 @@ window.ZGestorApp = {
       }
     });
     this.renderAll();
+    const executarAutoSyncNuvem = () => {
+      if (!db.supabaseConnected || db.supabaseConfig?.autoSync === false) return;
+      if (db.statusNuvem === 'SINCRONIZANDO' || db._cloudSyncTimer) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const modalAberto = Boolean(document.getElementById('modal-root')?.innerHTML?.trim());
+      const tagAtiva = document.activeElement?.tagName;
+      const digitando = tagAtiva === 'INPUT' || tagAtiva === 'TEXTAREA' || tagAtiva === 'SELECT';
+      if (modalAberto || digitando) return;
+      db.syncFromSupabase().then(res => {
+        if (res && res.ok && res.atualizado) {
+          this.renderAll();
+        }
+      }).catch(() => {});
+    };
     if (db.supabaseConnected && db.supabaseConfig?.autoSync !== false) {
       db.syncFromSupabase().then(res => {
         if (res && res.ok && res.atualizado) {
           this.renderAll();
         }
       }).catch(() => {});
+    }
+    if (this._autoSyncInterval) clearInterval(this._autoSyncInterval);
+    this._autoSyncInterval = setInterval(executarAutoSyncNuvem, 45000);
+    if (typeof window !== 'undefined' && window.addEventListener && !this._autoSyncFocusBound) {
+      this._autoSyncFocusBound = true;
+      window.addEventListener('focus', executarAutoSyncNuvem);
     }
   },
 
