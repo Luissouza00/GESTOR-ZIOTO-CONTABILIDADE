@@ -261,7 +261,8 @@
               parsed.honorario_pagamentos = keepNonDemo(parsed.honorario_pagamentos);
               parsed.convites = (parsed.convites || []).filter(c => !demoEmpIds.includes(c.empresa_id) && c.id !== 'conv-101' && c.id !== 'conv-102');
             }
-            if (!parsed._limpeza_empresas_v1 && parsed._importacao_reais_v1) {
+            const temEmpresasReaisSeed = (parsed.empresas || []).some(e => (e.id || '').startsWith('emp-real-'));
+            if (!parsed._limpeza_empresas_v1 && (parsed._importacao_reais_v1 || temEmpresasReaisSeed)) {
               parsed.empresas = [];
               parsed.onboarding_itens = [];
               parsed.tarefas = [];
