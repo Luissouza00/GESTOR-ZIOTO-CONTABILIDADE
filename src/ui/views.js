@@ -584,7 +584,9 @@ window.ZGestorViews = {
     const todasGuiasComp = db.getGuiasParaEntregaNaCompetencia(comp) || [];
     let listaGuiasImpostos = [...todasGuiasComp];
     if (fCliente !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.empresa_id === fCliente);
-    if (fGuiaTipo !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.tipo_guia === fGuiaTipo);
+    if (fGuiaTipo !== 'TODOS') {
+      listaGuiasImpostos = listaGuiasImpostos.filter(g => fGuiaTipo === 'Parcelamento' ? (g.tipo_guia || '').startsWith('Parcelamento') : g.tipo_guia === fGuiaTipo);
+    }
     if (fGuiaStatus !== 'TODOS') {
       if (fGuiaStatus === 'PENDENTES') {
         listaGuiasImpostos = listaGuiasImpostos.filter(g => !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
@@ -3505,6 +3507,8 @@ window.ZGestorViews = {
   renderEmpresas(appState) {
     const db = window.zgestorDB;
     const user = db.getCurrentUser();
+    const isAdmin = db.isAdmin();
+    const subTabEmp = isAdmin ? (appState.subTabEmpresas || 'lista') : 'lista';
     const canSeeHon = db.canAccessModule('honorarios', user);
     const busca = (appState.filtroEmpresaBusca || '').toLowerCase().trim();
     const regime = appState.filtroEmpresaRegime || 'TODOS';
@@ -3522,13 +3526,15 @@ window.ZGestorViews = {
       );
     }
 
+    const previewImp = appState.importacaoEmpresasPreview;
+
     return `
       <div class="space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <div>
             <h1 class="text-lg font-bold text-slate-900">Cadastro de Empresas do Escritório</h1>
             <p class="text-xs text-slate-500">
-              Gerencie os dados cadastrais, regime tributário e a configuração separada de <strong>Pró-Labore (Padrão = Gera DARF INSS/IRRF)</strong> e <strong>Funcionários CLT (Gera Guia de FGTS Digital)</strong>.
+              Gerencie os dados cadastrais, regime tributário, Inscrição Estadual e configurações de folha.
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
@@ -3541,6 +3547,132 @@ window.ZGestorViews = {
           </div>
         </div>
 
+        ${isAdmin ? `
+          <div class="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-2">
+            <button
+              onclick="ZGestorApp.setFiltro('subTabEmpresas', 'lista')"
+              class="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${subTabEmp === 'lista' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}">
+              <i data-lucide="building-2" class="w-4 h-4"></i>
+              <span>Empresas Cadastradas (${db.data.empresas.length})</span>
+            </button>
+            <button
+              onclick="ZGestorApp.setFiltro('subTabEmpresas', 'importar_lote')"
+              class="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${subTabEmp === 'importar_lote' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}">
+              <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+              <span>Importar Empresas em Lote (Excel)</span>
+            </button>
+          </div>
+        ` : ''}
+
+        ${subTabEmp === 'importar_lote' && isAdmin ? `
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 text-xs">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+              <div>
+                <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
+                  Importação em Lote de Empresas via Planilha Excel (.xlsx / .xls / .csv)
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">
+                  Baixe o modelo pronto, preencha as colunas abaixo e envie a planilha para cadastrar ou atualizar empresas automaticamente.
+                </p>
+              </div>
+              <button
+                type="button"
+                onclick="ZGestorApp.baixarModeloPlanilhaEmpresas()"
+                class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer">
+                <i data-lucide="download" class="w-4 h-4"></i>
+                Baixar Planilha Modelo (.xlsx)
+              </button>
+            </div>
+
+            <!-- Definição das Colunas -->
+            <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+              <div class="font-bold text-slate-800 mb-2">Colunas da Planilha Excel (cabeçalho exato na linha 1):</div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-[11px]">
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-indigo-700">razao_social</code> * <span class="text-slate-500">Razão Social completa</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-indigo-700">cnpj</code> * <span class="text-slate-500">CNPJ (com ou sem pontos)</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">codigo_interno</code> <span class="text-slate-500">Ex: 062 (auto se vazio)</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">nome_fantasia</code> <span class="text-slate-500">Nome curto (opcional)</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">inscricao_estadual</code> <span class="text-slate-500">Número I.E. ou ISENTO</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">regime_tributario</code> <span class="text-slate-500">Simples Nacional, Lucro Presumido, Lucro Real, MEI</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">possui_folha</code> <span class="text-slate-500">SIM ou NAO</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">responsavel_legal</code> <span class="text-slate-500">Nome do sócio</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">email</code> <span class="text-slate-500">E-mail de contato</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">telefone</code> <span class="text-slate-500">WhatsApp / Telefone</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">valor_honorario_padrao</code> <span class="text-slate-500">Ex: 1200.00</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">dia_vencimento_honorario</code> <span class="text-slate-500">Dia 1 a 28 (Ex: 10)</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">cidade</code> <span class="text-slate-500">Cidade</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">uf</code> <span class="text-slate-500">Sigla UF (Ex: MG)</span></div>
+                <div><code class="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold text-slate-700">status</code> <span class="text-slate-500">ATIVA ou INATIVA</span></div>
+              </div>
+            </div>
+
+            <!-- Upload da Planilha -->
+            <div class="p-5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 text-center space-y-2">
+              <input id="f-import-empresas-excel" type="file" accept=".xlsx,.xls,.csv" onchange="ZGestorApp.lerPlanilhaEmpresasLote(event)" class="hidden" />
+              <label for="f-import-empresas-excel" class="cursor-pointer inline-flex flex-col items-center">
+                <div class="w-11 h-11 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mb-2">
+                  <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+                </div>
+                <span class="font-bold text-emerald-950 text-sm">Clique para selecionar sua planilha Excel (.xlsx, .xls ou .csv)</span>
+                <span class="text-[11px] text-slate-500 mt-0.5">Você poderá revisar todas as empresas antes de confirmar a gravação</span>
+              </label>
+            </div>
+
+            ${previewImp && Array.isArray(previewImp.linhas) ? `
+              <div class="space-y-3 pt-2">
+                <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+                  <div class="font-bold text-indigo-950">
+                    Pré-visualização: ${previewImp.linhas.length} linha(s) lida(s) do arquivo "${this.escapeHtml(previewImp.nomeArquivo || '')}"
+                    (${previewImp.novas} nova(s) • ${previewImp.existentes} já cadastrada(s))
+                  </div>
+                  <label class="inline-flex items-center gap-2 font-semibold text-indigo-900 cursor-pointer">
+                    <input type="checkbox" ${appState.importacaoEmpresasAtualizar !== false ? 'checked' : ''} onchange="ZGestorApp.setFiltro('importacaoEmpresasAtualizar', this.checked)" class="w-4 h-4 rounded text-indigo-600" />
+                    <span>Atualizar dados das empresas já existentes (pelo CNPJ)</span>
+                  </label>
+                </div>
+
+                <div class="overflow-x-auto max-h-[340px] border border-slate-200 rounded-xl">
+                  <table class="w-full min-w-[700px] text-left border-collapse text-xs">
+                    <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-500">
+                      <tr>
+                        <th class="py-2 px-3">Cód.</th>
+                        <th class="py-2 px-3">Razão Social / Fantasia</th>
+                        <th class="py-2 px-3">CNPJ</th>
+                        <th class="py-2 px-3">I.E.</th>
+                        <th class="py-2 px-3">Regime</th>
+                        <th class="py-2 px-3">Situação</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      ${previewImp.linhas.slice(0, 100).map(l => `
+                        <tr>
+                          <td class="py-2 px-3 font-mono">${this.escapeHtml(l.codigo_interno || 'Auto')}</td>
+                          <td class="py-2 px-3 font-bold text-slate-900">${this.escapeHtml(l.razao_social || '—')}</td>
+                          <td class="py-2 px-3 font-mono">${this.escapeHtml(l.cnpj || '—')}</td>
+                          <td class="py-2 px-3 font-mono">${this.escapeHtml(l.inscricao_estadual || 'ISENTO')}</td>
+                          <td class="py-2 px-3">${this.escapeHtml(l.regime_tributario || 'Simples Nacional')}</td>
+                          <td class="py-2 px-3">
+                            ${l._valida === false
+                              ? '<span class="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px]">Falta Razão/CNPJ</span>'
+                              : l._existe
+                                ? '<span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">Já Cadastrada</span>'
+                                : '<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">Nova Empresa</span>'}
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                  <button type="button" onclick="ZGestorApp.limparPreviewImportacaoEmpresas()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer">Limpar</button>
+                  <button type="button" onclick="ZGestorApp.confirmarImportacaoEmpresasLote()" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow cursor-pointer">Confirmar Importação em Lote</button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        ` : `
         <!-- Filtros -->
         <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-3">
           <div class="md:col-span-2">
@@ -3676,6 +3808,7 @@ window.ZGestorViews = {
           </table>
           </div>
         </div>
+        `}
       </div>
     `;
   },
@@ -4522,13 +4655,21 @@ window.ZGestorViews = {
             </div>
           </div>
 
-          <div class="flex flex-wrap gap-2 pt-3">
-            <button onclick="ZGestorApp.salvarConfigSupabase()" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-2xs">
+          <div class="flex flex-wrap items-center gap-2 pt-3">
+            <button onclick="ZGestorApp.salvarConfigSupabase()" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-2xs cursor-pointer">
               Salvar & Conectar
             </button>
-            <button onclick="ZGestorApp.exportarBackupJSON()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold">
-              Exportar Backup (.JSON)
+            <button onclick="ZGestorApp.exportarBackupJSON()" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs cursor-pointer">
+              ⬇ Exportar Backup (.JSON)
             </button>
+            <label class="px-3.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold cursor-pointer">
+              ⬆ Restaurar Backup (.JSON)
+              <input type="file" accept=".json" onchange="ZGestorApp.importarBackupJSON(event)" class="hidden" />
+            </label>
+          </div>
+          <div class="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
+            <div><strong>Como funciona a proteção dos seus dados:</strong> Tudo o que você cadastra e anexa fica salvo localmente no navegador (<code class="px-1 bg-white rounded border">zgestor_db_v6</code>) e <strong>não é apagado</strong> quando liberamos atualizações do sistema.</div>
+            <div><strong>Recomendação diária:</strong> Clique em <strong>Exportar Backup (.JSON)</strong> ao final do expediente ou antes de grandes importações para manter uma cópia de segurança fora do navegador.</div>
           </div>
         </div>
       </div>

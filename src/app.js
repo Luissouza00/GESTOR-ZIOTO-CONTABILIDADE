@@ -47,6 +47,9 @@ window.ZGestorApp = {
     filtroCNDStatus: 'TODOS',
     filtroParcelamentoBusca: '',
     filtroParcelamentoStatus: 'TODOS',
+    subTabEmpresas: 'lista',
+    importacaoEmpresasPreview: null,
+    importacaoEmpresasAtualizar: true,
     filtroAlvaraEmpresa: 'TODAS',
     filtroAlvaraTipo: 'TODOS',
     filtroAlvaraStatus: 'TODOS',
@@ -6127,8 +6130,8 @@ window.ZGestorApp = {
   },
 
   async salvarConfigSupabase() {
-    const url = document.getElementById('inp-sb-url').value;
-    const key = document.getElementById('inp-sb-key').value;
+    const url = document.getElementById('cfg-supa-url')?.value || '';
+    const key = document.getElementById('cfg-supa-key')?.value || '';
     const ok = window.zgestorDB.saveSupabaseConfig(url, key, true);
     if (ok) {
       const sync = await window.zgestorDB.syncFromSupabase();
@@ -6136,6 +6139,139 @@ window.ZGestorApp = {
     } else {
       this.showToast('Modo local ativo.', 'info');
     }
+    this.renderAll();
+  },
+
+  importarBackupJSON(e) {
+    const file = e?.target?.files?.[0];
+    if (!file) return;
+    if (!window.zgestorDB.isAdmin()) {
+      this.showToast('Apenas o Administrador Geral pode restaurar backups.', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target.result);
+        const qtdEmp = Array.isArray(parsed.empresas) ? parsed.empresas.length : 0;
+        if (!confirm(`Confirmar restauração do backup "${file.name}" (${qtdEmp} empresas)? Os dados atuais deste navegador serão substituídos pelos dados do arquivo.`)) {
+          e.target.value = '';
+          return;
+        }
+        const res = window.zgestorDB.restaurarBackupJSON(parsed);
+        this.showToast(`Backup restaurado! ${res.empresas} empresas, ${res.tarefas} tarefas e ${res.cnds} CNDs carregadas.`, 'success');
+        this.renderAll();
+      } catch (err) {
+        this.showToast('Erro ao restaurar backup: ' + err.message, 'error');
+      }
+      e.target.value = '';
+    };
+    reader.readAsText(file);
+  },
+
+  baixarModeloPlanilhaEmpresas() {
+    const colunas = [
+      'codigo_interno', 'razao_social', 'nome_fantasia', 'cnpj', 'inscricao_estadual',
+      'regime_tributario', 'possui_folha', 'responsavel_legal', 'email', 'telefone',
+      'valor_honorario_padrao', 'dia_vencimento_honorario', 'cidade', 'uf', 'status'
+    ];
+    const exemplo = {
+      codigo_interno: '062',
+      razao_social: 'EMPRESA EXEMPLO LTDA',
+      nome_fantasia: 'EMPRESA EXEMPLO',
+      cnpj: '12.345.678/0001-90',
+      inscricao_estadual: '0012345670089',
+      regime_tributario: 'Simples Nacional',
+      possui_folha: 'SIM',
+      responsavel_legal: 'João da Silva',
+      email: 'contato@empresaexemplo.com.br',
+      telefone: '(31) 99999-9999',
+      valor_honorario_padrao: '1200.00',
+      dia_vencimento_honorario: '10',
+      cidade: 'Belo Horizonte',
+      uf: 'MG',
+      status: 'ATIVA'
+    };
+
+    if (window.XLSX) {
+      const ws = window.XLSX.utils.json_to_sheet([exemplo], { header: colunas });
+      const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, 'Empresas');
+      window.XLSX.writeFile(wb, 'modelo_importacao_empresas_zgestor.xlsx');
+      this.showToast('Planilha modelo (.xlsx) baixada com sucesso!', 'success');
+      return;
+    }
+
+    const csv = [colunas.join(';'), colunas.map(c => exemplo[c]).join(';')].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'modelo_importacao_empresas_zgestor.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    this.showToast('Modelo (.csv) baixado!', 'info');
+  },
+
+  lerPlanilhaEmpresasLote(e) {
+    const file = e?.target?.files?.[0];
+    if (!file) return;
+    if (!window.XLSX) {
+      this.showToast('Biblioteca Excel (SheetJS) ainda carregando. Aguarde 2 segundos e tente novamente.', 'warning');
+      return;
+    }
+    const db = window.zgestorDB;
+    const cnpjsAtuais = new Set((db.data.empresas || []).map(emp => (emp.cnpj || '').replace(/\D/g, '')));
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = window.XLSX.read(evt.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '' });
+        const normalizadas = rows.map(r => {
+          const obj = {};
+          Object.keys(r).forEach(k => {
+            obj[String(k).trim().toLowerCase()] = r[k];
+          });
+          const razao = String(obj.razao_social || '').trim();
+          const cnpjLimpo = String(obj.cnpj || '').replace(/\D/g, '');
+          return {
+            ...obj,
+            _valida: Boolean(razao && cnpjLimpo),
+            _existe: Boolean(cnpjLimpo && cnpjsAtuais.has(cnpjLimpo))
+          };
+        });
+        this.state.importacaoEmpresasPreview = {
+          nomeArquivo: file.name,
+          linhas: normalizadas,
+          novas: normalizadas.filter(l => l._valida && !l._existe).length,
+          existentes: normalizadas.filter(l => l._valida && l._existe).length
+        };
+        this.renderContentOnly();
+      } catch (err) {
+        this.showToast('Erro ao ler planilha Excel: ' + err.message, 'error');
+      }
+      e.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+  },
+
+  limparPreviewImportacaoEmpresas() {
+    this.state.importacaoEmpresasPreview = null;
+    this.renderContentOnly();
+  },
+
+  confirmarImportacaoEmpresasLote() {
+    const prev = this.state.importacaoEmpresasPreview;
+    if (!prev || !Array.isArray(prev.linhas) || prev.linhas.length === 0) {
+      this.showToast('Nenhuma planilha carregada para importar.', 'warning');
+      return;
+    }
+    const atualizar = this.state.importacaoEmpresasAtualizar !== false;
+    const res = window.zgestorDB.importarEmpresasEmLote(prev.linhas, atualizar);
+    this.state.importacaoEmpresasPreview = null;
+    this.state.subTabEmpresas = 'lista';
+    this.showToast(`Importação concluída: ${res.inseridas} nova(s), ${res.atualizadas} atualizada(s), ${res.ignoradas} ignorada(s).`, 'success');
     this.renderAll();
   },
 

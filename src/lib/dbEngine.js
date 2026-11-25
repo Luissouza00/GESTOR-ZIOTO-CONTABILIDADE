@@ -338,7 +338,147 @@
 
     saveLocalData() {
       this._migrarCredenciais(this.data);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+      } catch (err) {
+        console.error('Erro ao salvar no localStorage:', err);
+        if (typeof window !== 'undefined' && window.ZGestorApp?.showToast) {
+          window.ZGestorApp.showToast('Atenção: limite de armazenamento do navegador atingido! Exporte um Backup (.JSON) e evite anexar arquivos muito grandes.', 'error');
+        }
+      }
+    }
+
+    restaurarBackupJSON(backupData) {
+      if (!this.isAdmin()) throw new Error('Apenas o Administrador Geral pode restaurar backups.');
+      if (!backupData || typeof backupData !== 'object' || !Array.isArray(backupData.empresas)) {
+        throw new Error('Arquivo de backup inválido: estrutura de empresas não encontrada.');
+      }
+      const perfisAtuais = Array.isArray(this.data?.profiles) ? this.data.profiles : [];
+      const novoBanco = JSON.parse(JSON.stringify(backupData));
+
+      // Preserva credenciais locais dos usuários caso o backup tenha sido exportado sem senhas
+      if (Array.isArray(novoBanco.profiles)) {
+        novoBanco.profiles = novoBanco.profiles.map(p => {
+          const atual = perfisAtuais.find(pa => pa.id === p.id || (pa.email && p.email && pa.email.toLowerCase() === p.email.toLowerCase()));
+          if (atual && !p.senha_hash && !p.senha) {
+            return { ...p, senha_hash: atual.senha_hash, senha_salt: atual.senha_salt };
+          }
+          return p;
+        });
+      } else {
+        novoBanco.profiles = JSON.parse(JSON.stringify(perfisAtuais));
+      }
+
+      const arraysPadrao = [
+        'empresas', 'onboarding_itens', 'tarefas', 'guias_impostos', 'protocolos_guias',
+        'parcelamentos', 'parcelamento_guias', 'cnds', 'alvaras', 'portal_arquivos',
+        'central_cliente_registros', 'honorarios', 'honorario_pagamentos',
+        'encerramentos_exercicio', 'modelos_tarefas', 'convites', 'audit_logs'
+      ];
+      arraysPadrao.forEach(k => {
+        if (!Array.isArray(novoBanco[k])) novoBanco[k] = [];
+      });
+      if (!novoBanco.escritorio) {
+        novoBanco.escritorio = JSON.parse(JSON.stringify(window.ZGESTOR_MODELS?.escritorioPadrao || {}));
+      }
+      this.garantirAlvarasPadrao(novoBanco);
+      this.data = novoBanco;
+      this.saveLocalData();
+      this.registrarLog('RESTAURACAO_BACKUP', 'Sistema', `Backup JSON restaurado (${novoBanco.empresas.length} empresas).`);
+      return { empresas: novoBanco.empresas.length, tarefas: novoBanco.tarefas.length, cnds: novoBanco.cnds.length };
+    }
+
+    importarEmpresasEmLote(linhas = [], atualizarExistentes = true) {
+      if (!this.isAdmin()) throw new Error('Apenas o Administrador Geral pode importar empresas em lote.');
+      if (!Array.isArray(this.data.empresas)) this.data.empresas = [];
+
+      const formatarCnpj = (raw) => {
+        const d = String(raw || '').replace(/\D/g, '');
+        if (d.length === 14) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12,14)}`;
+        return String(raw || '').trim();
+      };
+      const normRegime = (r) => {
+        const s = String(r || '').toLowerCase();
+        if (s.includes('presumido')) return 'Lucro Presumido';
+        if (s.includes('real')) return 'Lucro Real';
+        if (s.includes('mei')) return 'MEI';
+        if (s.includes('imune') || s.includes('isenta')) return 'Imune/Isenta';
+        return 'Simples Nacional';
+      };
+
+      let inseridas = 0;
+      let atualizadas = 0;
+      let ignoradas = 0;
+      const erros = [];
+
+      let maxCod = this.data.empresas.reduce((m, e) => Math.max(m, parseInt(e.codigo_interno, 10) || 0), 0);
+
+      linhas.forEach((row, idx) => {
+        const razao = String(row.razao_social || '').trim();
+        const cnpjLimpo = String(row.cnpj || '').replace(/\D/g, '');
+        if (!razao || !cnpjLimpo) {
+          ignoradas++;
+          erros.push(`Linha ${idx + 2}: Razão Social e CNPJ são obrigatórios.`);
+          return;
+        }
+        const cnpjFmt = formatarCnpj(cnpjLimpo);
+        const existenteIdx = this.data.empresas.findIndex(e => (e.cnpj || '').replace(/\D/g, '') === cnpjLimpo);
+
+        const codInformado = String(row.codigo_interno || '').trim();
+        const ieVal = String(row.inscricao_estadual || '').trim();
+        const folhaStr = String(row.possui_folha || '').trim().toUpperCase();
+        const possuiFolha = folhaStr === 'SIM' || folhaStr === 'S' || folhaStr === 'TRUE' || folhaStr === '1';
+        const statusStr = String(row.status || '').trim().toUpperCase();
+        const status = statusStr === 'INATIVA' ? 'INATIVA' : 'ATIVA';
+        const valHon = Number(String(row.valor_honorario_padrao || '0').replace(/[^\d.,-]/g, '').replace(',', '.')) || 0;
+        const diaVenc = Math.min(28, Math.max(1, parseInt(row.dia_vencimento_honorario, 10) || 10));
+
+        const payload = {
+          razao_social: razao,
+          nome_fantasia: String(row.nome_fantasia || '').trim() || razao,
+          cnpj: cnpjFmt,
+          inscricao_estadual: ieVal,
+          regime_tributario: normRegime(row.regime_tributario),
+          possui_prolabore: true,
+          possui_funcionarios: possuiFolha,
+          responsavel_legal: String(row.responsavel_legal || '').trim(),
+          email: String(row.email || '').trim(),
+          telefone: String(row.telefone || '').trim(),
+          valor_honorario_padrao: valHon,
+          dia_vencimento_honorario: diaVenc,
+          cidade: String(row.cidade || '').trim(),
+          uf: String(row.uf || '').trim().toUpperCase().slice(0, 2),
+          status
+        };
+
+        if (existenteIdx !== -1) {
+          if (atualizarExistentes) {
+            this.data.empresas[existenteIdx] = {
+              ...this.data.empresas[existenteIdx],
+              ...payload,
+              codigo_interno: codInformado || this.data.empresas[existenteIdx].codigo_interno
+            };
+            atualizadas++;
+          } else {
+            ignoradas++;
+          }
+        } else {
+          maxCod++;
+          const novoCod = codInformado || String(maxCod).padStart(3, '0');
+          this.data.empresas.push({
+            id: `emp-imp-${Date.now()}-${inseridas}-${Math.random().toString(36).slice(2, 5)}`,
+            codigo_interno: novoCod,
+            ...payload,
+            created_at: new Date().toISOString()
+          });
+          inseridas++;
+        }
+      });
+
+      this.garantirAlvarasPadrao(this.data);
+      this.saveLocalData();
+      this.registrarLog('IMPORTACAO_EMPRESAS_LOTE', 'Empresas', `Importação Excel: ${inseridas} novas, ${atualizadas} atualizadas, ${ignoradas} ignoradas.`);
+      return { inseridas, atualizadas, ignoradas, erros };
     }
 
     resetToSeedData() {
