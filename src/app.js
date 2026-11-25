@@ -37,6 +37,7 @@ window.ZGestorApp = {
     filtroTarefaDept: 'TODOS',
     filtroTarefaModalidade: 'TODOS',
     filtroTarefaStatus: 'TODOS',
+    filtroTarefaObrigacao: 'TODOS',
     filtroTarefaBusca: '',
     filtroGuiaImpostoTipo: 'TODOS',
     filtroGuiaImpostoStatus: 'TODOS',

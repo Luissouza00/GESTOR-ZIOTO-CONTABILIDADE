@@ -1084,13 +1084,12 @@ window.ZGestorReports = {
     const gruposEmpresas = Array.from(porEmpresaMap.values());
     const linhas = gruposEmpresas.map((grupo, idx) => {
       const guiasListaHtml = grupo.guias.map(it => `
-        <div class="py-1 border-b last:border-b-0 border-slate-200/80 flex items-center justify-between gap-2">
-          <div>
-            <span class="font-bold text-slate-900">• ${it.tipo_guia}</span>
-            ${it.competencia_guia ? `<span class="text-[10px] text-slate-500 ml-1">(Comp. ${it.competencia_guia})</span>` : ''}
-            ${it.segundo_mes_subsequente ? '<span class="ml-1 text-[10px] font-bold text-amber-700">[2º Mês Subseq.]</span>' : ''}
+        <div class="py-1.5 border-b last:border-b-0 border-slate-200/80 flex items-center justify-between gap-3">
+          <div class="text-[11px] leading-snug">
+            <strong class="text-slate-900">• ${it.tipo_guia}</strong>
+            ${it.competencia_guia ? `<span class="text-[10px] text-slate-600 ml-1 whitespace-nowrap">(Comp. ${it.competencia_guia})</span>` : ''}
           </div>
-          <span class="font-bold text-slate-800 whitespace-nowrap">Venc: ${V.formatDate(it.data_vencimento)}</span>
+          <span class="font-bold text-slate-800 whitespace-nowrap text-[11px]">Venc: ${V.formatDate(it.data_vencimento)}</span>
         </div>
       `).join('');
 

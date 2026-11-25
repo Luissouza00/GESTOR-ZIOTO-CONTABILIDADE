@@ -510,6 +510,7 @@ window.ZGestorViews = {
     const fCliente = appState.filtroTarefaCliente || 'TODOS';
     const fDept = appState.filtroTarefaDept || 'TODOS';
     const fModalidade = appState.filtroTarefaModalidade || 'TODOS';
+    const fObrigacao = appState.filtroTarefaObrigacao || 'TODOS';
     const fStatus = appState.filtroTarefaStatus || 'TODOS';
     const fBusca = (appState.filtroTarefaBusca || '').toLowerCase().trim();
     const fGuiaTipo = appState.filtroGuiaImpostoTipo || 'TODOS';
@@ -536,6 +537,7 @@ window.ZGestorViews = {
 
     if (fCliente !== 'TODOS') lista = lista.filter(t => t.empresa_id === fCliente);
     if (fModalidade !== 'TODOS') lista = lista.filter(t => t.tipo === fModalidade);
+    if (fObrigacao !== 'TODOS') lista = lista.filter(t => (t.titulo || '') === fObrigacao);
     if (fStatus !== 'TODOS') {
       if (fStatus === 'NAO_INICIADA') {
         lista = lista.filter(t => db.obterStatusSimplesTarefa(t) === 'NAO_INICIADA');
@@ -1058,6 +1060,15 @@ window.ZGestorViews = {
                   <div id="lista-opcoes-empresas"></div>
                 </div>
               </div>
+
+              <select
+                onchange="ZGestorApp.setFiltro('filtroTarefaObrigacao', this.value)"
+                class="rounded-xl bg-white border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800 max-w-[260px]">
+                <option value="TODOS" ${fObrigacao === 'TODOS' ? 'selected' : ''}>Todas as Obrigações / Etapas</option>
+                ${Array.from(new Set(todasComp.map(t => t.titulo).filter(Boolean))).sort().map(tit => `
+                  <option value="${this.escapeHtml(tit)}" ${fObrigacao === tit ? 'selected' : ''}>${this.escapeHtml(tit)}</option>
+                `).join('')}
+              </select>
 
               <select
                 onchange="ZGestorApp.setFiltro('filtroTarefaModalidade', this.value)"
@@ -1965,7 +1976,11 @@ window.ZGestorViews = {
             const protocolosComp = db.getProtocolosGuias(comp);
             const selecionadas = appState.guiasSelecionadas || [];
             const ehPendente = (g) => !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio);
-            const pendentesLista = listaGuiasImpostos.filter(ehPendente);
+            const listaGuiasAtivas = fGuiaStatus === 'ARQUIVADA_ASSINADA'
+              ? listaGuiasImpostos
+              : listaGuiasImpostos.filter(g => g.status_envio !== 'ARQUIVADA_ASSINADA');
+            const listaGuiasArquivadas = todasGuiasComp.filter(g => g.status_envio === 'ARQUIVADA_ASSINADA');
+            const pendentesLista = listaGuiasAtivas.filter(ehPendente);
             const idsPendentes = pendentesLista.map(g => g.id);
             const todasPendMarcadas = idsPendentes.length > 0 && idsPendentes.every(id => selecionadas.includes(id));
 
@@ -2093,17 +2108,16 @@ window.ZGestorViews = {
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-slate-100">
-                        ${listaGuiasImpostos.length === 0 ? `
+                        ${listaGuiasAtivas.length === 0 ? `
                           <tr>
                             <td colspan="6" class="py-8 text-center text-slate-400">
-                              Nenhuma guia gerada para a competência ${comp}. Conclua uma apuração (PGDAS-D ou ICMS) normalmente ou clique em "Gerar Guias Padrão".
+                              Nenhuma guia pendente ou em rota para os filtros selecionados. Guias já arquivadas ficam na seção separada abaixo.
                             </td>
                           </tr>
-                        ` : listaGuiasImpostos.map(g => {
+                        ` : listaGuiasAtivas.map(g => {
                           const emp = db.data.empresas.find(e => e.id === g.empresa_id);
                           const marcado = selecionadas.includes(g.id);
                           const pend = ehPendente(g);
-                          const ehIcms = g.segundo_mes_subsequente || (g.tipo_guia || '').toLowerCase().includes('icms');
                           return `
                             <tr class="hover:bg-slate-50 ${marcado ? 'bg-indigo-50/50' : ''}">
                               <td class="py-3 px-3 text-center">
@@ -2127,11 +2141,6 @@ window.ZGestorViews = {
                               </td>
                               <td class="py-3 px-3 whitespace-nowrap">
                                 <div class="font-bold text-slate-800">${this.formatDate(g.data_vencimento)}</div>
-                                ${ehIcms ? `
-                                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-bold mt-0.5">
-                                    ⚠ 2º Mês Subseq.
-                                  </span>
-                                ` : ''}
                               </td>
                               <td class="py-3 px-3">
                                 <div>${statusGuiaImpBadge(g.status_envio)}</div>
@@ -2235,6 +2244,41 @@ window.ZGestorViews = {
                     </div>
                   `}
                 </div>
+
+                <!-- SEÇÃO SEPARADA: GUIAS JÁ ASSINADAS E ARQUIVADAS -->
+                ${listaGuiasArquivadas.length > 0 ? `
+                  <div class="bg-white rounded-2xl border border-teal-200 shadow-xs overflow-hidden">
+                    <div class="p-4 bg-teal-50/70 border-b border-teal-200 flex items-center justify-between">
+                      <div>
+                        <h3 class="text-sm font-bold text-teal-950 flex items-center gap-2">
+                          <i data-lucide="folder-check" class="w-4 h-4 text-teal-700"></i>
+                          <span>Guias Assinadas e Arquivadas (${listaGuiasArquivadas.length})</span>
+                        </h3>
+                        <p class="text-[11px] text-teal-800/80">Guias já entregues e arquivadas separadamente da lista de pendências.</p>
+                      </div>
+                    </div>
+                    <div class="divide-y divide-slate-100">
+                      ${listaGuiasArquivadas.map(g => {
+                        const emp = db.data.empresas.find(e => e.id === g.empresa_id);
+                        return `
+                          <div class="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-50">
+                            <div class="flex items-center gap-2 flex-wrap">
+                              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-300">✓ Arquivada</span>
+                              <span class="font-bold text-slate-900">${emp ? `#${emp.codigo_interno} — ${emp.nome_fantasia}` : '—'}</span>
+                              <span class="text-slate-600">• ${this.escapeHtml(g.tipo_guia || '')}</span>
+                              <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-mono">Comp. ${g.competencia}</span>
+                            </div>
+                            <div class="flex items-center gap-3 text-[11px] text-slate-500 shrink-0">
+                              <span>Venc: <strong>${this.formatDate(g.data_vencimento)}</strong></span>
+                              ${g.protocolo_codigo ? `<span class="font-mono font-bold text-teal-700">${g.protocolo_codigo}</span>` : ''}
+                              <button onclick="ZGestorApp.excluirGuiaImposto('${g.id}')" class="p-1 rounded text-slate-400 hover:text-rose-600 cursor-pointer" title="Excluir Guia"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>
+                  </div>
+                ` : ''}
               </div>
             `;
           })()}
