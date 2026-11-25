@@ -1913,6 +1913,8 @@
       const parc = this.data.parcelamentos.find(p => p.id === parcelamentoId);
       if (!parc) return null;
       parc.status = novoStatus;
+      const comps = [...new Set((this.data.parcelamento_guias || []).filter(g => g.parcelamento_id === parcelamentoId).map(g => g.competencia))];
+      comps.forEach(c => this.sincronizarGuiasParcelamentoNoProtocolo(c));
       this.saveLocalData();
       const emp = this.data.empresas.find(e => e.id === parc.empresa_id);
       this.registrarLog('STATUS_PARCELAMENTO', 'Parcelamentos', `Status do parcelamento ${parc.orgao} (${emp ? emp.nome_fantasia : ''}) alterado para ${novoStatus}.`);
@@ -1924,9 +1926,56 @@
       if (!parc) return false;
       this.data.parcelamentos = this.data.parcelamentos.filter(p => p.id !== parcId);
       this.data.parcelamento_guias = this.data.parcelamento_guias.filter(g => g.parcelamento_id !== parcId);
+      const enviados = ['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'];
+      if (Array.isArray(this.data.guias_impostos)) {
+        this.data.guias_impostos = this.data.guias_impostos.filter(gi => !(gi.parcelamento_id === parcId && !enviados.includes(gi.status_envio)));
+      }
       this.saveLocalData();
       this.registrarLog('EXCLUSAO_PARCELAMENTO', 'Parcelamentos', `Parcelamento ${parc.orgao} (${parc.modalidade}) excluído.`);
       return true;
+    }
+
+    sincronizarGuiasParcelamentoNoProtocolo(competencia) {
+      if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
+      if (!Array.isArray(this.data.parcelamento_guias)) return;
+      const enviados = ['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'];
+      const guiasMes = this.data.parcelamento_guias.filter(g => g.competencia === competencia);
+
+      guiasMes.forEach(g => {
+        const parc = (this.data.parcelamentos || []).find(p => p.id === g.parcelamento_id);
+        const ativo = Boolean(parc && (parc.status === 'ATIVO' || parc.status === 'EM_ATRASO'));
+        const idxExist = this.data.guias_impostos.findIndex(gi => gi.parcelamento_guia_id === g.id);
+
+        if (ativo) {
+          const tipoLabel = `Parcelamento — ${parc.orgao || 'Tributário'} (${g.numero_parcela}/${parc.total_parcelas || '?'})`;
+          const obsLabel = `${parc.modalidade || ''}${parc.status === 'EM_ATRASO' ? ' • ATIVO EM ATRASO' : ''}`.trim();
+          if (idxExist === -1) {
+            this.data.guias_impostos.push({
+              id: `guia-parc-${g.id}`,
+              parcelamento_guia_id: g.id,
+              parcelamento_id: parc.id,
+              empresa_id: parc.cliente_avulso ? null : parc.empresa_id,
+              cliente_avulso: Boolean(parc.cliente_avulso),
+              nome_cliente: parc.nome_cliente || g.nome_cliente || '',
+              documento: parc.documento || g.documento || '',
+              tipo_guia: tipoLabel,
+              competencia: g.competencia,
+              data_vencimento: g.data_vencimento,
+              valor: Number(g.valor_guia || 0),
+              status_envio: 'PENDENTE',
+              origem: 'PARCELAMENTO',
+              observacoes: obsLabel
+            });
+          } else if (!enviados.includes(this.data.guias_impostos[idxExist].status_envio)) {
+            this.data.guias_impostos[idxExist].tipo_guia = tipoLabel;
+            this.data.guias_impostos[idxExist].data_vencimento = g.data_vencimento;
+            this.data.guias_impostos[idxExist].valor = Number(g.valor_guia || 0);
+            this.data.guias_impostos[idxExist].observacoes = obsLabel;
+          }
+        } else if (idxExist !== -1 && !enviados.includes(this.data.guias_impostos[idxExist].status_envio)) {
+          this.data.guias_impostos.splice(idxExist, 1);
+        }
+      });
     }
 
     sincronizarPendenciasParcelamento(competencia) {
@@ -1956,6 +2005,7 @@
           guiaAtual.detalhe_pendencia_anterior = '';
         }
       });
+      this.sincronizarGuiasParcelamentoNoProtocolo(competencia);
       this.saveLocalData();
     }
 
@@ -2046,6 +2096,9 @@
       }
       const dataVal = cnd.data_vencimento || cnd.data_validade;
       if (!dataVal) {
+        if (cnd.situacao === 'PENDENTE') {
+          return { codigo: 'SEM_DATA', label: 'Pendente (Aguardando Anexo)', diasRestantes: 0, cor: 'amber' };
+        }
         return { codigo: 'SEM_DATA', label: 'Sem Data de Validade', diasRestantes: 0, cor: 'slate' };
       }
       const dHoje = new Date(hoje + 'T00:00:00');
@@ -2163,13 +2216,14 @@
       throw new Error('Serviço oficial da API Integra Contador indisponível no momento. A situação da certidão e o arquivo anterior foram mantidos.');
     }
 
-    anexarPDFCND(cndId, nomeArquivo, base64 = '', dataEmissao = null, dataValidade = null, numeroControle = null) {
+    anexarPDFCND(cndId, nomeArquivo, base64 = '', dataEmissao = null, dataValidade = null, numeroControle = null, situacao = null) {
       if (!Array.isArray(this.data.cnds)) this.data.cnds = [];
       const idx = this.data.cnds.findIndex(c => c.id === cndId);
       if (idx === -1) throw new Error('Certidão não encontrada.');
 
       const cnd = this.data.cnds[idx];
       const emp = this.data.empresas.find(e => e.id === cnd.empresa_id);
+      const novaSituacao = situacao || (cnd.situacao === 'PENDENTE' ? 'NEGATIVA' : (cnd.situacao || 'NEGATIVA'));
 
       this.data.cnds[idx] = {
         ...cnd,
@@ -2179,9 +2233,9 @@
         data_emissao: dataEmissao || cnd.data_emissao,
         data_validade: dataValidade || cnd.data_validade,
         data_vencimento: dataValidade || cnd.data_vencimento,
-        numero_controle: numeroControle || cnd.numero_controle,
-        codigo_controle: numeroControle || cnd.codigo_controle,
-        situacao: cnd.situacao || 'NEGATIVA'
+        numero_controle: numeroControle !== null && numeroControle !== '' ? numeroControle : cnd.numero_controle,
+        codigo_controle: numeroControle !== null && numeroControle !== '' ? numeroControle : cnd.codigo_controle,
+        situacao: novaSituacao
       };
 
       this.saveLocalData();
@@ -2194,33 +2248,32 @@
       this.saveLocalData();
     }
 
-    gerarGradePadraoCNDs() {
+    gerarGradePadraoCNDs(empresaIds = null) {
       if (!Array.isArray(this.data.cnds)) this.data.cnds = [];
       let criadas = 0;
-      const hoje = new Date();
-      const emissaoStr = hoje.toISOString().slice(0, 10);
       const tipos = window.ZGESTOR_MODELS.tiposCND || [];
+      const alvoEmpresas = Array.isArray(empresaIds) && empresaIds.length > 0
+        ? this.data.empresas.filter(e => empresaIds.includes(e.id))
+        : this.data.empresas;
 
-      this.data.empresas.forEach(emp => {
+      alvoEmpresas.forEach(emp => {
         tipos.forEach(t => {
           const nomeTipo = typeof t === 'string' ? t : t.nome;
-          const diasVal = typeof t === 'object' && t.validade_dias ? t.validade_dias : 180;
           const jaExiste = this.data.cnds.some(c => c.empresa_id === emp.id && (c.tipo_cnd === nomeTipo || c.orgao === nomeTipo));
           if (!jaExiste) {
-            const dVal = new Date(hoje.getTime() + (diasVal * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
             this.data.cnds.push({
               id: `cnd-gen-${Date.now()}-${criadas}-${Math.random().toString(36).slice(2, 5)}`,
               empresa_id: emp.id,
               tipo_cnd: nomeTipo,
               orgao: nomeTipo,
-              situacao: 'NEGATIVA',
-              data_emissao: emissaoStr,
-              data_validade: dVal,
-              data_vencimento: dVal,
+              situacao: 'PENDENTE',
+              data_emissao: '',
+              data_validade: '',
+              data_vencimento: '',
               codigo_controle: '',
               numero_controle: '',
               responsavel_nome: this.getCurrentUser().nome,
-              observacoes: 'Gerada na grade padrão de monitoramento.'
+              observacoes: 'Pendente — aguardando emissão e anexo da certidão.'
             });
             criadas++;
           }

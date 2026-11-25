@@ -45,6 +45,8 @@ window.ZGestorApp = {
     filtroCNDCliente: 'TODOS',
     filtroCNDOrgao: 'TODOS',
     filtroCNDStatus: 'TODOS',
+    filtroParcelamentoBusca: '',
+    filtroParcelamentoStatus: 'TODOS',
     filtroAlvaraEmpresa: 'TODAS',
     filtroAlvaraTipo: 'TODOS',
     filtroAlvaraStatus: 'TODOS',
@@ -3259,11 +3261,97 @@ window.ZGestorApp = {
   // CONTROLE DE CNDs (CERTIDÕES NEGATIVAS DE DÉBITOS)
   // ===========================================================================
   gerarGradeCNDs() {
-    const qtd = window.zgestorDB.gerarGradePadraoCNDs();
+    this.abrirModalGerarGradeCNDs();
+  },
+
+  abrirModalGerarGradeCNDs() {
+    const db = window.zgestorDB;
+    const empresas = db.data.empresas || [];
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <h3 class="text-base font-bold text-slate-900">Gerar Grade Padrão de CNDs</h3>
+              <p class="text-xs text-slate-500">Selecione as empresas para criar as certidões pendentes (sem datas fictícias)</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.confirmarGerarGradeCNDs(event)" class="flex flex-col flex-1 min-h-0 mt-3 space-y-3 text-xs">
+            <div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
+              As certidões faltantes (Federal, FGTS, Trabalhista, Estadual e Municipal) serão geradas como <strong>Pendente de Emissão</strong>, sem datas fictícias, para você anexar o PDF e definir emissão e validade depois.
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <input
+                type="text"
+                id="f-grade-cnd-busca"
+                oninput="ZGestorApp.filtrarEmpresasGradeCND(this.value)"
+                placeholder="Buscar empresa por nome, código ou CNPJ..."
+                class="flex-1 min-w-[200px] rounded-xl border border-slate-300 px-3 py-1.5 text-xs focus:border-teal-600 focus:outline-none"
+              />
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="ZGestorApp.marcarTodasEmpresasGradeCND(true)" class="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold border border-teal-200 cursor-pointer">Marcar Todas</button>
+                <button type="button" onclick="ZGestorApp.marcarTodasEmpresasGradeCND(false)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 cursor-pointer">Limpar</button>
+              </div>
+            </div>
+
+            <div id="lista-empresas-grade-cnd" class="flex-1 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-[45vh]">
+              ${empresas.map(e => `
+                <label class="item-emp-grade-cnd flex items-center gap-3 p-2.5 hover:bg-slate-50 cursor-pointer" data-search="${(e.codigo_interno + ' ' + e.nome_fantasia + ' ' + e.cnpj).toLowerCase()}">
+                  <input type="checkbox" name="grade-cnd-emp" value="${e.id}" class="w-4 h-4 rounded text-teal-600 cursor-pointer shrink-0" />
+                  <div class="min-w-0 flex-1">
+                    <div class="font-bold text-slate-900 truncate">#${e.codigo_interno} — ${e.nome_fantasia}</div>
+                    <div class="text-[11px] text-slate-500 font-mono">${e.cnpj} • ${e.regime_tributario}</div>
+                  </div>
+                </label>
+              `).join('')}
+            </div>
+
+            <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+              <button type="submit" class="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold shadow cursor-pointer">Gerar Grade Selecionada</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  filtrarEmpresasGradeCND(termo) {
+    const q = (termo || '').trim().toLowerCase();
+    document.querySelectorAll('.item-emp-grade-cnd').forEach(el => {
+      const txt = el.getAttribute('data-search') || '';
+      el.style.display = (!q || txt.includes(q)) ? 'flex' : 'none';
+    });
+  },
+
+  marcarTodasEmpresasGradeCND(marcar) {
+    document.querySelectorAll('.item-emp-grade-cnd').forEach(el => {
+      if (el.style.display !== 'none') {
+        const cb = el.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = Boolean(marcar);
+      }
+    });
+  },
+
+  confirmarGerarGradeCNDs(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const selecionadas = Array.from(document.querySelectorAll('input[name="grade-cnd-emp"]:checked')).map(el => el.value);
+    if (selecionadas.length === 0) {
+      this.showToast('Selecione pelo menos uma empresa para gerar a grade de CNDs.', 'warning');
+      return;
+    }
+    const qtd = window.zgestorDB.gerarGradePadraoCNDs(selecionadas);
+    this.closeModal();
     if (qtd > 0) {
-      this.showToast(`${qtd} novas certidões adicionadas à grade de monitoramento das empresas!`, 'success');
+      this.showToast(`${qtd} certidão(ões) pendente(s) criada(s) para ${selecionadas.length} empresa(s)!`, 'success');
     } else {
-      this.showToast('A grade padrão de CNDs (Federal, Estadual, FGTS e Trabalhista) já está completa.', 'info');
+      this.showToast('As empresas selecionadas já possuem todas as certidões da grade padrão.', 'info');
     }
     this.renderAll();
   },
@@ -3332,6 +3420,7 @@ window.ZGestorApp = {
                   <option value="NEGATIVA" ${c.situacao === 'NEGATIVA' ? 'selected' : ''}>🟢 Certidão Negativa</option>
                   <option value="POSITIVA_EFEITO_NEGATIVA" ${c.situacao === 'POSITIVA_EFEITO_NEGATIVA' ? 'selected' : ''}>🔵 Positiva com Efeito de Negativa</option>
                   <option value="POSITIVA_COM_PENDENCIA" ${c.situacao === 'POSITIVA_COM_PENDENCIA' ? 'selected' : ''}>🔴 Positiva / Com Pendência</option>
+                  <option value="PENDENTE" ${c.situacao === 'PENDENTE' ? 'selected' : ''}>⏳ Pendente de Emissão</option>
                 </select>
               </div>
               <div>
@@ -3639,9 +3728,19 @@ window.ZGestorApp = {
               </div>
             </div>
 
-            <div>
-              <label class="block font-bold text-slate-700 mb-1">Código de Controle / Autenticação (opcional)</label>
-              <input id="f-cnd-anexo-cod" type="text" value="${cnd.numero_controle || ''}" placeholder="Ex: 8F92.A104.C329.7711" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono" />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Resultado da Certidão *</label>
+                <select id="f-cnd-anexo-sit" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold bg-white">
+                  <option value="NEGATIVA" ${(cnd.situacao === 'NEGATIVA' || cnd.situacao === 'PENDENTE') ? 'selected' : ''}>🟢 Certidão Negativa</option>
+                  <option value="POSITIVA_EFEITO_NEGATIVA" ${cnd.situacao === 'POSITIVA_EFEITO_NEGATIVA' ? 'selected' : ''}>🔵 Positiva com Efeito de Negativa</option>
+                  <option value="POSITIVA_COM_PENDENCIA" ${cnd.situacao === 'POSITIVA_COM_PENDENCIA' ? 'selected' : ''}>🔴 Positiva / Com Pendência</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Código de Controle / Autenticação (opcional)</label>
+                <input id="f-cnd-anexo-cod" type="text" value="${cnd.numero_controle || ''}" placeholder="Ex: 8F92.A104.C329.7711" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono" />
+              </div>
             </div>
 
             <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
@@ -3685,12 +3784,13 @@ window.ZGestorApp = {
     const dataEmis = document.getElementById('f-cnd-anexo-emis').value;
     const dataVenc = document.getElementById('f-cnd-anexo-venc').value;
     const numCod = document.getElementById('f-cnd-anexo-cod').value.trim();
+    const sit = document.getElementById('f-cnd-anexo-sit')?.value || null;
     const anexo = this.state.cndAnexoTemp || {};
 
     const nome = anexo.nome || 'Certidao_Negativa.pdf';
     const b64 = anexo.base64 || '';
 
-    window.zgestorDB.anexarPDFCND(cndId, nome, b64, dataEmis, dataVenc, numCod);
+    window.zgestorDB.anexarPDFCND(cndId, nome, b64, dataEmis, dataVenc, numCod, sit);
     this.closeModal();
     this.showToast(`Certidão renovada e arquivo PDF "${nome}" anexado com sucesso!`, 'success');
     this.renderAll();

@@ -2023,6 +2023,7 @@ window.ZGestorViews = {
                     <select onchange="ZGestorApp.setFiltro('filtroGuiaImpostoTipo', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
                       <option value="TODOS" ${fGuiaTipo === 'TODOS' ? 'selected' : ''}>Todas (DAS, ICMS, DARF...)</option>
                       ${modelosTiposGuias.map(tg => `<option value="${tg.sigla}" ${fGuiaTipo === tg.sigla ? 'selected' : ''}>${tg.sigla}</option>`).join('')}
+                      <option value="Parcelamento" ${fGuiaTipo === 'Parcelamento' ? 'selected' : ''}>Parcelamentos</option>
                     </select>
                   </div>
                   <div>
@@ -2120,8 +2121,11 @@ window.ZGestorViews = {
                                 />
                               </td>
                               <td class="py-3 px-3">
-                                <div class="font-bold text-slate-900">${emp ? `#${emp.codigo_interno} — ${emp.nome_fantasia}` : '—'}</div>
-                                <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : ''}</div>
+                                <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                                  <span>${emp ? `#${emp.codigo_interno} — ${emp.nome_fantasia}` : this.escapeHtml(g.nome_cliente || 'Cliente Avulso')}</span>
+                                  ${!emp && g.cliente_avulso ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Avulso</span>` : ''}
+                                </div>
+                                <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : this.escapeHtml(g.documento || 'Parcelamento Avulso')}</div>
                               </td>
                               <td class="py-3 px-3">
                                 <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
@@ -2292,9 +2296,43 @@ window.ZGestorViews = {
 
     db.sincronizarPendenciasParcelamento(comp);
 
-    const parcelamentos = db.data.parcelamentos;
-    const guiasMes = db.data.parcelamento_guias.filter(g => g.competencia === comp);
+    const parcelamentos = db.data.parcelamentos || [];
+    const guiasMes = (db.data.parcelamento_guias || []).filter(g => g.competencia === comp);
     const guiasComPendenciaAnterior = guiasMes.filter(g => Number(g.parcelas_anteriores_abertas || 0) > 0);
+    const fBuscaParc = (appState.filtroParcelamentoBusca || '').trim().toLowerCase();
+    const fStatusParc = appState.filtroParcelamentoStatus || 'TODOS';
+
+    const qtdAtivosEmDia = parcelamentos.filter(p => p.status === 'ATIVO').length;
+    const qtdEmAtraso = parcelamentos.filter(p => p.status === 'EM_ATRASO').length;
+    const qtdGuiasEnviadas = guiasMes.filter(g => g.status_guia === 'ENVIADA_CLIENTE' || g.status_guia === 'EMITIDA').length;
+    const totalPrevistoMes = guiasMes.reduce((acc, g) => acc + Number(g.valor_guia || 0), 0);
+
+    const matchBuscaParc = (nome, doc, orgao, mod) => {
+      if (!fBuscaParc) return true;
+      return `${nome} ${doc} ${orgao} ${mod}`.toLowerCase().includes(fBuscaParc);
+    };
+    const matchStatusParc = (parc) => {
+      if (fStatusParc === 'TODOS') return true;
+      if (fStatusParc === 'ATIVOS') return parc && (parc.status === 'ATIVO' || parc.status === 'EM_ATRASO');
+      if (fStatusParc === 'EM_ATRASO') return parc && parc.status === 'EM_ATRASO';
+      if (fStatusParc === 'ENCERRADOS') return parc && (parc.status === 'ENCERRADO_FALTA_PAGAMENTO' || parc.status === 'ENCERRADO_OPCAO');
+      return true;
+    };
+
+    const guiasMesFiltradas = guiasMes.filter(g => {
+      const emp = g.empresa_id ? db.data.empresas.find(e => e.id === g.empresa_id) : null;
+      const parc = parcelamentos.find(p => p.id === g.parcelamento_id);
+      const nome = emp ? emp.nome_fantasia : (parc?.nome_cliente || g.nome_cliente || '');
+      const doc = emp ? emp.cnpj : (parc?.documento || g.documento || '');
+      return matchStatusParc(parc) && matchBuscaParc(nome, doc, parc?.orgao || '', parc?.modalidade || '');
+    });
+
+    const parcelamentosFiltrados = parcelamentos.filter(p => {
+      const emp = p.empresa_id ? db.data.empresas.find(e => e.id === p.empresa_id) : null;
+      const nome = emp ? emp.nome_fantasia : (p.nome_cliente || '');
+      const doc = emp ? emp.cnpj : (p.documento || '');
+      return matchStatusParc(p) && matchBuscaParc(nome, doc, p.orgao || '', p.modalidade || '');
+    });
 
     const statusGuiaBadge = (st) => {
       if (st === 'ENVIADA_CLIENTE') {
@@ -2333,42 +2371,83 @@ window.ZGestorViews = {
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <div>
             <div class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-600 mb-0.5">
-              <i data-lucide="layers" class="w-4 h-4"></i> Controle Especial de Parcelamentos Tributários e Previdenciários
+              <i data-lucide="layers" class="w-4 h-4"></i> Parcelamentos Tributários e Previdenciários
             </div>
-            <h1 class="text-lg font-bold text-slate-900">Guias e Cadastros de Parcelamentos (Comp. ${comp} → Venc. ${sub.label})</h1>
+            <h1 class="text-lg font-bold text-slate-900">Controle de Parcelamentos — Comp. ${comp}</h1>
             <p class="text-xs text-slate-500">
-              Controle de guias focado em <strong>Emitida</strong> e <strong>Enviada</strong>, com seletor direto do <strong>Status do Parcelamento</strong> (Ativo, Ativo em Atraso, Encerrado por Falta de Pagamento ou por Opção).
+              Acordos marcados como <strong>Ativo</strong> ou <strong>Ativo em Atraso</strong> entram automaticamente na aba de Protocolos de Guias.
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <button onclick="ZGestorReports.emitirRelatorioAba('parcelamentos', ZGestorApp.state)" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
-              <i data-lucide="printer" class="w-3.5 h-3.5"></i> Emitir Relatório
+              <i data-lucide="printer" class="w-3.5 h-3.5"></i> Relatório
             </button>
             <button onclick="ZGestorApp.gerarGuiasParcelamentoMes()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-1.5">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-indigo-600"></i> Gerar / Sincronizar Guias (${comp})
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-indigo-600"></i> Sincronizar Guias (${comp})
             </button>
             <button onclick="ZGestorApp.openModalParcelamento()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
-              <i data-lucide="plus" class="w-3.5 h-3.5"></i> + Novo Parcelamento
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Novo Parcelamento
             </button>
           </div>
         </div>
 
-        <!-- Navegação de Sub-Abas de Parcelamentos -->
-        <div class="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
+        <!-- 4 KPIs Modernos de Parcelamentos -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div class="bg-white p-3.5 rounded-2xl border border-emerald-200 shadow-2xs">
+            <div class="text-[11px] font-bold text-emerald-700 uppercase">Ativos (Em Dia)</div>
+            <div class="text-2xl font-black text-emerald-600 mt-1">${qtdAtivosEmDia}</div>
+            <div class="text-[10px] text-slate-500">Geram guia no protocolo</div>
+          </div>
+          <div class="bg-white p-3.5 rounded-2xl border border-rose-200 shadow-2xs">
+            <div class="text-[11px] font-bold text-rose-700 uppercase">Ativos em Atraso</div>
+            <div class="text-2xl font-black text-rose-600 mt-1">${qtdEmAtraso}</div>
+            <div class="text-[10px] text-slate-500">Exigem atenção e protocolo</div>
+          </div>
+          <div class="bg-white p-3.5 rounded-2xl border border-indigo-200 shadow-2xs">
+            <div class="text-[11px] font-bold text-indigo-700 uppercase">Emitidas / Enviadas</div>
+            <div class="text-2xl font-black text-indigo-600 mt-1">${qtdGuiasEnviadas}/${guiasMes.length}</div>
+            <div class="text-[10px] text-slate-500">Guias na competência ${comp}</div>
+          </div>
+          <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+            <div class="text-[11px] font-bold text-slate-500 uppercase">Total Previsto (${comp})</div>
+            <div class="text-xl sm:text-2xl font-black text-slate-900 mt-1">${this.formatCurrency(totalPrevistoMes)}</div>
+            <div class="text-[10px] text-slate-500">Soma das parcelas do mês</div>
+          </div>
+        </div>
+
+        <!-- Navegação de Sub-Abas + Busca/Filtro -->
+        <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-2.5">
           <div class="flex flex-wrap items-center gap-2">
             <button
               onclick="ZGestorApp.setFiltro('subTabParcelamentos', 'guias')"
               class="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${subTab === 'guias' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}">
               <i data-lucide="calendar-check" class="w-4 h-4"></i>
-              <span>1. Controle Mensal de Guias — Emitida e Enviada (${comp}) (${guiasMes.length})</span>
-              ${guiasComPendenciaAnterior.length > 0 ? `<span class="px-2 py-0.5 rounded-full text-[10px] bg-rose-500 text-white">${guiasComPendenciaAnterior.length} alerta(s)</span>` : ''}
+              <span>Guias do Mês (${guiasMes.length})</span>
+              ${guiasComPendenciaAnterior.length > 0 ? `<span class="px-2 py-0.5 rounded-full text-[10px] bg-rose-500 text-white">${guiasComPendenciaAnterior.length}</span>` : ''}
             </button>
             <button
               onclick="ZGestorApp.setFiltro('subTabParcelamentos', 'cadastros')"
               class="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${subTab === 'cadastros' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}">
               <i data-lucide="folder-kanban" class="w-4 h-4"></i>
-              <span>2. Cadastros de Parcelamentos — Ver e Editar Pré-Cadastrados (${parcelamentos.length})</span>
+              <span>Acordos Cadastrados (${parcelamentos.length})</span>
             </button>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value="${this.escapeHtml(appState.filtroParcelamentoBusca || '')}"
+              oninput="ZGestorApp.setFiltro('filtroParcelamentoBusca', this.value)"
+              placeholder="Buscar empresa, órgão ou modalidade..."
+              class="w-full sm:w-56 rounded-xl border border-slate-300 px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none"
+            />
+            <select
+              onchange="ZGestorApp.setFiltro('filtroParcelamentoStatus', this.value)"
+              class="rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white">
+              <option value="TODOS" ${fStatusParc === 'TODOS' ? 'selected' : ''}>Todos os Status</option>
+              <option value="ATIVOS" ${fStatusParc === 'ATIVOS' ? 'selected' : ''}>Somente Ativos (No Protocolo)</option>
+              <option value="EM_ATRASO" ${fStatusParc === 'EM_ATRASO' ? 'selected' : ''}>Somente Em Atraso</option>
+              <option value="ENCERRADOS" ${fStatusParc === 'ENCERRADOS' ? 'selected' : ''}>Encerrados / Quitados</option>
+            </select>
           </div>
         </div>
 
@@ -2410,7 +2489,7 @@ window.ZGestorViews = {
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 text-xs">
-                ${guiasMes.map(g => {
+                ${guiasMesFiltradas.map(g => {
       const emp = g.empresa_id ? db.data.empresas.find(e => e.id === g.empresa_id) : null;
       const parc = db.data.parcelamentos.find(p => p.id === g.parcelamento_id);
       const isAvulso = (parc && parc.cliente_avulso) || g.cliente_avulso || (!emp && (g.nome_cliente || (parc && parc.nome_cliente)));
@@ -2515,7 +2594,7 @@ window.ZGestorViews = {
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 text-xs">
-                ${parcelamentos.map(p => {
+                ${parcelamentosFiltrados.map(p => {
       const isAvulso = Boolean(p.cliente_avulso || !p.empresa_id);
       const emp = !isAvulso ? db.data.empresas.find(e => e.id === p.empresa_id) : null;
       const nomeCliente = isAvulso ? (p.nome_cliente || 'Cliente Avulso') : (emp ? emp.nome_fantasia : '—');
@@ -2604,7 +2683,7 @@ window.ZGestorViews = {
         VENCENDO: 'bg-amber-100 text-amber-900 border-amber-300',
         VENCIDA: 'bg-rose-100 text-rose-800 border-rose-300',
         PENDENCIA: 'bg-rose-100 text-rose-900 border-rose-400',
-        SEM_DATA: 'bg-slate-100 text-slate-600 border-slate-300'
+        SEM_DATA: cnd.situacao === 'PENDENTE' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-600 border-slate-300'
       };
       return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${map[info.codigo] || map.SEM_DATA}">${info.label}</span>`;
     };
@@ -2743,15 +2822,20 @@ window.ZGestorViews = {
                     <td class="py-3 px-2.5">
                       <span class="px-2 py-0.5 rounded text-[11px] font-bold ${c.situacao === 'NEGATIVA' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
           c.situacao === 'POSITIVA_EFEITO_NEGATIVA' ? 'bg-sky-50 text-sky-800 border border-sky-200' :
-            'bg-rose-100 text-rose-800 border border-rose-300'
+            c.situacao === 'PENDENTE' ? 'bg-amber-50 text-amber-800 border border-amber-300' :
+              'bg-rose-100 text-rose-800 border border-rose-300'
         }">
-                        ${c.situacao === 'NEGATIVA' ? 'Negativa' : c.situacao === 'POSITIVA_EFEITO_NEGATIVA' ? 'Positiva c/ Efeito Negativa' : 'Positiva / Com Pendência'}
+                        ${c.situacao === 'NEGATIVA' ? 'Negativa' : c.situacao === 'POSITIVA_EFEITO_NEGATIVA' ? 'Positiva c/ Efeito Negativa' : c.situacao === 'PENDENTE' ? 'Pendente de Emissão' : 'Positiva / Com Pendência'}
                       </span>
                       <div class="text-[11px] font-mono text-slate-500 mt-1">Cód: ${c.numero_controle || '—'}</div>
                     </td>
                     <td class="py-3 px-2.5">
-                      <div class="text-[11px] text-slate-500">Emissão: ${this.formatDate(c.data_emissao)}</div>
-                      <div class="font-bold text-slate-900 mt-0.5">Vence: ${this.formatDate(c.data_vencimento)}</div>
+                      ${(!c.data_emissao && !c.data_vencimento) ? `
+                        <span class="text-[11px] text-amber-700 font-semibold italic">A definir ao anexar</span>
+                      ` : `
+                        <div class="text-[11px] text-slate-500">Emissão: ${this.formatDate(c.data_emissao)}</div>
+                        <div class="font-bold text-slate-900 mt-0.5">Vence: ${this.formatDate(c.data_vencimento)}</div>
+                      `}
                     </td>
                     <td class="py-3 px-2.5">
                       ${badgeValidadeCND(c)}
