@@ -32,6 +32,16 @@
       overflow-x: hidden;
       -webkit-tap-highlight-color: transparent;
     }
+    button, a, select, input, textarea {
+      touch-action: manipulation;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
     /* Rolagem horizontal suave e sem travamento para tabelas no celular */
     .table-container-responsive {
       width: 100%;

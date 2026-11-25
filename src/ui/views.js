@@ -4441,6 +4441,7 @@ window.ZGestorViews = {
   // ===========================================================================
   renderLogin(appState) {
     const db = window.zgestorDB;
+    const esc = db.getEscritorioConfig() || {};
     const colaboradores = (db.data.profiles || []).filter(p => p.cargo !== 'CLIENTE' && p.ativo);
 
     return `
@@ -5759,8 +5760,8 @@ window.ZGestorViews = {
           </div>
         ` : subTab === 'chat' ? `
           <!-- ABA 2: CONSULTOR TRIBUTÁRIO & FISCAL (CHAT IA) -->
-          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[650px] overflow-hidden">
-            <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[calc(100dvh-230px)] min-h-[420px] max-h-[650px] overflow-hidden">
+            <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center gap-2">
                 <div class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
                   <i data-lucide="bot" class="w-4 h-4"></i>

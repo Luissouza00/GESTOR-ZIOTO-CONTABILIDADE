@@ -866,7 +866,7 @@ window.ZGestorApp = {
               onclick="ZGestorApp.toggleCalendarioCompetencia(event)"
               class="px-3 py-1.5 rounded-lg bg-white hover:bg-indigo-600 hover:text-white text-indigo-900 border border-indigo-200 font-extrabold text-xs flex items-center gap-2 transition shadow-2xs">
               <i data-lucide="calendar-days" class="w-4 h-4 text-indigo-600"></i>
-              <span>Competência: <strong>${nomeComp} (${comp})</strong></span>
+              <span><span class="hidden sm:inline">Competência: </span><strong>${nomeComp} (${comp})</strong></span>
               <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
             </button>
 
@@ -880,7 +880,7 @@ window.ZGestorApp = {
 
             ${calAberto ? `
               <!-- POPOVER DO CALENDÁRIO DE MESES (JAN A DEZ) -->
-              <div onclick="event.stopPropagation()" class="absolute left-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border-2 border-indigo-500 p-4 z-50">
+              <div onclick="event.stopPropagation()" class="fixed sm:absolute left-3 right-3 sm:left-0 sm:right-auto top-14 sm:top-full mt-0 sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-2xl border-2 border-indigo-500 p-4 z-50">
                 <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
                   <button
                     type="button"
@@ -944,20 +944,21 @@ window.ZGestorApp = {
             ` : ''}
           </div>
 
-          <button onclick="ZGestorReports.emitirRelatorioAba(ZGestorApp.state.currentTab, ZGestorApp.state)" class="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white shadow-xs transition">
+          <button onclick="ZGestorReports.emitirRelatorioAba(ZGestorApp.state.currentTab, ZGestorApp.state)" class="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white shadow-xs transition">
             <i data-lucide="printer" class="w-3.5 h-3.5"></i>
-            Relatório da Aba Atual
+            <span class="hidden sm:inline">Relatório da Aba Atual</span>
+            <span class="sm:hidden">Relatório</span>
           </button>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           <!-- BADGE DE IDENTIDADE DO USUÁRIO LOGADO (SEM SELETOR PÚBLICO) -->
-          <div class="flex items-center gap-2.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl shadow-2xs">
+          <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 px-2.5 sm:px-3 py-1.5 rounded-xl shadow-2xs min-w-0">
             <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-xs">
               ${(user.avatar_iniciais || (user.nome || 'US').split(' ').map(n => n[0]).slice(0, 2).join('')).toUpperCase()}
             </div>
-            <div class="flex flex-col text-left">
-              <span class="text-xs font-bold text-slate-900 leading-tight truncate max-w-[200px]" title="${user.nome || ''}">
+            <div class="flex flex-col text-left min-w-0">
+              <span class="text-xs font-bold text-slate-900 leading-tight truncate max-w-[150px] sm:max-w-[200px]" title="${user.nome || ''}">
                 ${user.nome || 'Usuário'}
               </span>
               <span class="text-[10px] text-slate-500 font-semibold leading-tight flex items-center gap-1">
