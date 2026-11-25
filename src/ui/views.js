@@ -215,11 +215,11 @@ window.ZGestorViews = {
         <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-5 text-white shadow-lg flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <div class="flex flex-wrap items-center gap-2 text-indigo-300 text-xs font-semibold uppercase tracking-wider mb-1">
-              <span class="inline-flex items-center gap-1"><i data-lucide="calendar-clock" class="w-4 h-4"></i> Competência ${comp} → Entrega e Vencimento em ${sub.label}</span>
+              <span class="inline-flex items-center gap-1"><i data-lucide="calendar-clock" class="w-4 h-4"></i> Competência ${comp}</span>
               <span>•</span>
               <span>Usuário: ${user.nome} (${user.departamento})</span>
             </div>
-            <h1 class="text-xl sm:text-2xl font-bold">Painel Executivo — Competência ${comp} (Vencimentos em ${sub.label})</h1>
+            <h1 class="text-xl sm:text-2xl font-bold">Painel Executivo — Competência ${comp}</h1>
             <p class="text-slate-300 text-xs sm:text-sm mt-1">
               Obrigações mensais, envio de guias, parcelamentos e certidões negativas da carteira de clientes.
             </p>
@@ -231,7 +231,7 @@ window.ZGestorViews = {
             </button>
             <button onclick="ZGestorApp.gerarRotinaCompletaMes()" class="px-3.5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-xs shadow flex items-center gap-1.5 transition">
               <i data-lucide="sparkles" class="w-4 h-4"></i>
-              Gerar Competência ${comp} (Vence em ${sub.label})
+              Gerar Competência ${comp}
             </button>
           </div>
         </div>
@@ -393,7 +393,7 @@ window.ZGestorViews = {
             <div class="flex items-center justify-between mb-4">
               <div>
                 <h2 class="text-sm font-bold text-slate-900">Entregas por Departamento</h2>
-                <p class="text-xs text-slate-500">Competência ${comp} (Entregas em ${sub.label})</p>
+                <p class="text-xs text-slate-500">Competência ${comp}</p>
               </div>
             </div>
             <div class="space-y-3.5">
@@ -414,7 +414,7 @@ window.ZGestorViews = {
           <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm lg:col-span-2">
             <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div>
-                <h2 class="text-sm font-bold text-slate-900">Próximos Prazos de Entrega (Comp. ${comp} → Entrega em ${sub.label})</h2>
+                <h2 class="text-sm font-bold text-slate-900">Próximos Prazos de Entrega — Comp. ${comp}</h2>
                 <p class="text-xs text-slate-500">Tarefas pendentes ordenadas pela data limite no mês seguinte</p>
               </div>
               <button onclick="ZGestorApp.openModalTarefa()" class="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-xs flex items-center gap-1">
@@ -5831,10 +5831,11 @@ window.ZGestorViews = {
             </div>
 
             <!-- Caixa de Envio -->
-            <form onsubmit="ZGestorApp.enviarMensagemChatIA(event)" class="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+            <form autocomplete="off" onsubmit="ZGestorApp.enviarMensagemChatIA(event)" class="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
               <input
                 id="f-chat-ia-input"
                 type="text"
+                autocomplete="off"
                 required
                 placeholder="Digite sua dúvida contábil ou fiscal (ex: Prazo de entrega da EFD-Reinf sem movimento)..."
                 class="flex-1 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-xs text-slate-900 focus:bg-white focus:border-indigo-600 focus:outline-none font-medium"

@@ -867,9 +867,6 @@ window.ZGestorApp = {
               class="px-3 py-1.5 rounded-lg bg-white hover:bg-indigo-600 hover:text-white text-indigo-900 border border-indigo-200 font-extrabold text-xs flex items-center gap-2 transition shadow-2xs">
               <i data-lucide="calendar-days" class="w-4 h-4 text-indigo-600"></i>
               <span>Competência: <strong>${nomeComp} (${comp})</strong></span>
-              <span class="hidden md:inline text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                Vence em ${sub.label}
-              </span>
               <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
             </button>
 
