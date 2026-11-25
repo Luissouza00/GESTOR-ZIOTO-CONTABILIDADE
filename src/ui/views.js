@@ -1175,7 +1175,14 @@ window.ZGestorViews = {
                                       <div class="text-xs font-extrabold text-slate-900 leading-snug mt-0.5">
                                         ${this.escapeHtml(t.titulo)}
                                       </div>
-                                      ${t.protocolo_observacao ? `
+                                      ${t.icms_apuracao_definida ? `
+                                        <div class="flex flex-wrap gap-1 mt-1.5">
+                                          ${t.icms_sem_movimento
+                                            ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-bold">Apurado: Sem Movimento</span>'
+                                            : (t.icms_apuracao_tipos || []).map(tp => `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">Apurado: ${this.escapeHtml(tp)}</span>`).join('')}
+                                        </div>
+                                      ` : ''}
+                                      ${t.protocolo_observacao && !t.icms_apuracao_definida ? `
                                         <div class="text-[10px] text-slate-500 truncate mt-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
                                           ${this.escapeHtml(t.protocolo_observacao)}
                                         </div>
@@ -1349,7 +1356,13 @@ window.ZGestorViews = {
                                           <span class="text-[11px] font-bold ${atrasada ? 'text-rose-600' : 'text-slate-400'}">• Prazo: ${this.formatDate(t.prazo_entrega)}</span>
                                         </div>
                                         <div class="text-xs font-semibold text-slate-700 mt-0.5">${this.escapeHtml(t.titulo)}</div>
-                                        ${t.protocolo_observacao ? `<div class="text-[11px] text-slate-500 mt-0.5 truncate">Obs: ${this.escapeHtml(t.protocolo_observacao)}</div>` : ''}
+                                        ${t.icms_apuracao_definida ? `
+                                          <div class="flex flex-wrap gap-1 mt-1">
+                                            ${t.icms_sem_movimento
+                                              ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-bold">Apurado: Sem Movimento</span>'
+                                              : (t.icms_apuracao_tipos || []).map(tp => `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">Apurado: ${this.escapeHtml(tp)}</span>`).join('')}
+                                          </div>
+                                        ` : t.protocolo_observacao ? `<div class="text-[11px] text-slate-500 mt-0.5 truncate">Obs: ${this.escapeHtml(t.protocolo_observacao)}</div>` : ''}
                                       </div>
                                     </div>
 
@@ -2208,6 +2221,13 @@ window.ZGestorViews = {
                                   <span>Arquivar Assinado</span>
                                 </button>
                               ` : ''}
+                              <button
+                                type="button"
+                                onclick="ZGestorApp.openModalExcluirProtocolo('${prot.id}')"
+                                class="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition cursor-pointer"
+                                title="Excluir Protocolo (com confirmação)">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                              </button>
                             </div>
                           </div>
                         `;

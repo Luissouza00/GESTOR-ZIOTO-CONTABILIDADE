@@ -1489,6 +1489,36 @@
       });
     }
 
+    salvarApuracaoICMSEmAndamento(tarefaId, tiposSelecionados = [], semMovimento = false, dataVencimentoCustom = null) {
+      const idx = (this.data.tarefas || []).findIndex(t => t.id === tarefaId);
+      if (idx === -1) throw new Error('Tarefa não encontrada.');
+      const t = this.data.tarefas[idx];
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment(t.departamento, user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
+      }
+
+      const tipos = semMovimento ? [] : (Array.isArray(tiposSelecionados) ? tiposSelecionados.filter(Boolean) : []);
+      const ehSemMov = Boolean(semMovimento || tipos.length === 0);
+      const vencPrevisto = dataVencimentoCustom || this.calcularDataSegundoMesSubsequente(t.competencia, 18);
+
+      t.status = 'EM_ANDAMENTO';
+      t.data_entrega = null;
+      t.modalidade_entrega = null;
+      t.icms_apuracao_definida = true;
+      t.icms_sem_movimento = ehSemMov;
+      t.icms_apuracao_tipos = tipos;
+      t.icms_vencimento_previsto = vencPrevisto;
+      t.protocolo_observacao = ehSemMov
+        ? 'Apurado: Sem Movimento (pronto p/ transmitir)'
+        : `Apurado p/ transmitir: ${tipos.join(', ')}`;
+      if (user) t.responsavel_nome = user.nome;
+
+      this.saveLocalData();
+      this.registrarLog('APURACAO_ICMS_ANDAMENTO', 'Tarefas', `Apuração ICMS/DeSTDA salva em andamento (${t.competencia}): ${t.protocolo_observacao}`);
+      return t;
+    }
+
     registrarConclusaoApuracaoICMS(tarefaId, tiposSelecionados = [], dataVencimentoCustom = null) {
       const idx = (this.data.tarefas || []).findIndex(t => t.id === tarefaId);
       if (idx === -1) throw new Error('Tarefa não encontrada.');
@@ -1515,6 +1545,9 @@
       if (tipos.length === 0) {
         t.data_entrega = hoje;
         t.modalidade_entrega = 'SEM_MOVIMENTO';
+        t.icms_apuracao_definida = true;
+        t.icms_sem_movimento = true;
+        t.icms_apuracao_tipos = [];
         t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
         t.protocolo_observacao = 'DeSTDA / ICMS transmitida Sem Movimento.';
         if (user) t.responsavel_nome = user.nome;
@@ -1525,6 +1558,9 @@
 
       t.data_entrega = hoje;
       t.modalidade_entrega = 'NORMAL';
+      t.icms_apuracao_definida = true;
+      t.icms_sem_movimento = false;
+      t.icms_apuracao_tipos = [...tipos];
       t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
       t.protocolo_observacao = `Com movimento: ${tipos.join(', ')}`;
       if (user) t.responsavel_nome = user.nome;
@@ -1782,6 +1818,28 @@
 
       this.saveLocalData();
       this.registrarLog('ARQUIVAMENTO_PROTOCOLO', 'Guias/Protocolos', `Protocolo ${prot.codigo} confirmado como assinado e arquivado.`);
+      return prot;
+    }
+
+    excluirProtocoloOfficeBoy(protocoloId) {
+      const prot = (this.data.protocolos_guias || []).find(p => p.id === protocoloId);
+      if (!prot) throw new Error('Protocolo não encontrado.');
+
+      // Restaura as guias vinculadas para GERADA_AGUARDANDO_ENVIO
+      (prot.guia_ids || []).forEach(gid => {
+        const g = (this.data.guias_impostos || []).find(x => x.id === gid);
+        if (g && g.protocolo_id === protocoloId) {
+          g.protocolo_id = null;
+          g.protocolo_codigo = null;
+          g.status_envio = 'GERADA_AGUARDANDO_ENVIO';
+          g.canal_envio = '';
+          g.data_envio = null;
+        }
+      });
+
+      this.data.protocolos_guias = (this.data.protocolos_guias || []).filter(p => p.id !== protocoloId);
+      this.saveLocalData();
+      this.registrarLog('EXCLUSAO_PROTOCOLO', 'Guias/Protocolos', `Protocolo ${prot.codigo} excluído do arquivo.`);
       return prot;
     }
 

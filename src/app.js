@@ -1066,10 +1066,27 @@ window.ZGestorApp = {
   marcarEtapaRapida(tarefaId, acao) {
     try {
       const tarefaAlvo = (window.zgestorDB.data.tarefas || []).find(item => item.id === tarefaId);
-      if (tarefaAlvo && acao === 'ENTREGUE_NORMAL') {
+      if (tarefaAlvo) {
         const tit = (tarefaAlvo.titulo || '').toLowerCase();
-        if (tit.includes('destda') || (tit.includes('icms') && !tit.includes('simples'))) {
-          this.openModalApuracaoICMS(tarefaId);
+        const ehIcmsOuDestda = tit.includes('destda') || (tit.includes('icms') && !tit.includes('simples'));
+        if (ehIcmsOuDestda && acao === 'EM_ANDAMENTO') {
+          this.openModalApuracaoICMS(tarefaId, 'EM_ANDAMENTO');
+          return;
+        }
+        if (ehIcmsOuDestda && acao === 'ENTREGUE_NORMAL') {
+          if (tarefaAlvo.icms_apuracao_definida) {
+            const tipos = tarefaAlvo.icms_sem_movimento ? [] : (tarefaAlvo.icms_apuracao_tipos || []);
+            const res = window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, tipos, tarefaAlvo.icms_vencimento_previsto || null);
+            this.showToast(
+              res.guiasCriadas > 0
+                ? `DeSTDA / ICMS transmitida! ${res.guiasCriadas} guia(s) enviada(s) para o Controle de Guias.`
+                : 'DeSTDA / ICMS transmitida Sem Movimento!',
+              res.guiasCriadas > 0 ? 'success' : 'info'
+            );
+            this.renderAll();
+            return res.tarefa;
+          }
+          this.openModalApuracaoICMS(tarefaId, 'TRANSMITIR');
           return;
         }
       }
@@ -6242,12 +6259,14 @@ window.ZGestorApp = {
     }
   },
 
-  openModalApuracaoICMS(tarefaId) {
+  openModalApuracaoICMS(tarefaId, modo = 'EM_ANDAMENTO') {
     const db = window.zgestorDB;
     const t = (db.data.tarefas || []).find(item => item.id === tarefaId);
     if (!t) return;
     const emp = db.data.empresas.find(e => e.id === t.empresa_id);
-    const vencPadrao = db.calcularDataSegundoMesSubsequente(t.competencia, 18);
+    const vencPadrao = t.icms_vencimento_previsto || db.calcularDataSegundoMesSubsequente(t.competencia, 18);
+    const tiposSalvos = Array.isArray(t.icms_apuracao_tipos) ? t.icms_apuracao_tipos : [];
+    const ehModoAndamento = modo === 'EM_ANDAMENTO';
     const modal = document.getElementById('modal-root');
     if (!modal) return;
 
@@ -6256,34 +6275,38 @@ window.ZGestorApp = {
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
             <div>
-              <h3 class="text-base font-bold text-slate-900">Apuração DeSTDA / ICMS</h3>
+              <h3 class="text-base font-bold text-slate-900">
+                ${ehModoAndamento ? 'Apuração DeSTDA / ICMS (Em Andamento)' : 'Transmitir DeSTDA / ICMS'}
+              </h3>
               <p class="text-xs text-slate-500">${emp ? emp.nome_fantasia : 'Empresa'} • Comp. ${t.competencia}</p>
             </div>
             <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
           </div>
 
-          <form onsubmit="ZGestorApp.submitApuracaoICMS(event, '${t.id}')" class="space-y-4 mt-4 text-xs">
+          <form onsubmit="ZGestorApp.submitApuracaoICMS(event, '${t.id}', '${modo}')" class="space-y-4 mt-4 text-xs">
             <div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
-              Selecione abaixo quais tipos de ICMS tiveram movimento nesta competência (pode marcar 1, 2 ou os 3 juntos). As guias selecionadas serão geradas com vencimento no <strong>2º mês subsequente</strong> para entrar no próximo protocolo junto ao Simples.
+              ${ehModoAndamento
+                ? 'Informe os tipos de ICMS apurados (ou marque Sem Movimento). A tarefa ficará sinalizada em <strong>Em Andamento</strong> para facilitar a transmissão e <strong>só irá para o Protocolo após Transmitir</strong>.'
+                : 'Confirme os tipos de ICMS com movimento para concluir a transmissão e gerar as guias no Controle de Guias / Protocolo (vencimento no <strong>2º mês subsequente</strong>).'}
             </div>
 
             <div class="space-y-2">
               <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
-                <input type="checkbox" name="f-icms-tipo" value="ICMS DIFAL" class="w-4 h-4 rounded text-indigo-600" />
+                <input type="checkbox" name="f-icms-tipo" value="ICMS DIFAL" ${tiposSalvos.includes('ICMS DIFAL') ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
                 <div>
                   <div class="font-bold text-slate-900">ICMS DIFAL</div>
                   <div class="text-[10px] text-slate-500">Diferencial de Alíquota interestadual</div>
                 </div>
               </label>
               <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
-                <input type="checkbox" name="f-icms-tipo" value="ICMS Antecipação" class="w-4 h-4 rounded text-indigo-600" />
+                <input type="checkbox" name="f-icms-tipo" value="ICMS Antecipação" ${tiposSalvos.includes('ICMS Antecipação') ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
                 <div>
                   <div class="font-bold text-slate-900">ICMS Antecipação</div>
                   <div class="text-[10px] text-slate-500">Recolhimento antecipado de entrada</div>
                 </div>
               </label>
               <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
-                <input type="checkbox" name="f-icms-tipo" value="ICMS Antecipação ST" class="w-4 h-4 rounded text-indigo-600" />
+                <input type="checkbox" name="f-icms-tipo" value="ICMS Antecipação ST" ${tiposSalvos.includes('ICMS Antecipação ST') ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
                 <div>
                   <div class="font-bold text-slate-900">ICMS Antecipação ST</div>
                   <div class="text-[10px] text-slate-500">Substituição Tributária nas entradas</div>
@@ -6299,14 +6322,14 @@ window.ZGestorApp = {
             <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
               <button
                 type="button"
-                onclick="ZGestorApp.concluirICMSSemMovimento('${t.id}')"
+                onclick="ZGestorApp.concluirICMSSemMovimento('${t.id}', '${modo}')"
                 class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
-                Transmitida Sem Movimento
+                ${ehModoAndamento ? 'Apurado Sem Movimento' : 'Transmitida Sem Movimento'}
               </button>
               <button
                 type="submit"
                 class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm transition cursor-pointer">
-                Confirmar e Gerar Guias
+                ${ehModoAndamento ? 'Salvar Apuração (Em Andamento)' : 'Transmitir e Gerar Guias'}
               </button>
             </div>
           </form>
@@ -6315,29 +6338,42 @@ window.ZGestorApp = {
     `;
   },
 
-  concluirICMSSemMovimento(tarefaId) {
+  concluirICMSSemMovimento(tarefaId, modo = 'TRANSMITIR') {
     try {
-      window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, []);
-      this.closeModal();
-      this.showToast('DeSTDA / ICMS concluída Sem Movimento (nenhuma guia gerada).', 'info');
+      const venc = document.getElementById('f-icms-venc')?.value || null;
+      if (modo === 'EM_ANDAMENTO') {
+        window.zgestorDB.salvarApuracaoICMSEmAndamento(tarefaId, [], true, venc);
+        this.closeModal();
+        this.showToast('Apurado como Sem Movimento (em andamento p/ transmitir).', 'info');
+      } else {
+        window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, [], venc);
+        this.closeModal();
+        this.showToast('DeSTDA / ICMS transmitida Sem Movimento (nenhuma guia gerada).', 'info');
+      }
       this.renderAll();
     } catch (err) {
       this.showToast(err.message, 'error');
     }
   },
 
-  submitApuracaoICMS(e, tarefaId) {
+  submitApuracaoICMS(e, tarefaId, modo = 'TRANSMITIR') {
     e.preventDefault();
     try {
       const selecionados = Array.from(document.querySelectorAll('input[name="f-icms-tipo"]:checked')).map(cb => cb.value);
       const venc = document.getElementById('f-icms-venc')?.value || null;
       if (selecionados.length === 0) {
-        this.showToast('Marque ao menos um tipo de ICMS ou clique em "Transmitida Sem Movimento".', 'error');
+        this.showToast('Marque ao menos um tipo de ICMS ou clique no botão de Sem Movimento.', 'error');
         return;
       }
-      const res = window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, selecionados, venc);
-      this.closeModal();
-      this.showToast(`Apuração concluída! ${res.guiasCriadas} guia(s) gerada(s) para vencimento em ${venc}.`, 'success');
+      if (modo === 'EM_ANDAMENTO') {
+        window.zgestorDB.salvarApuracaoICMSEmAndamento(tarefaId, selecionados, false, venc);
+        this.closeModal();
+        this.showToast(`Apuração salva em andamento (${selecionados.join(', ')}). Aguardando transmissão!`, 'success');
+      } else {
+        const res = window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, selecionados, venc);
+        this.closeModal();
+        this.showToast(`Transmissão concluída! ${res.guiasCriadas} guia(s) gerada(s) para o Controle de Guias.`, 'success');
+      }
       this.renderAll();
     } catch (err) {
       this.showToast(err.message, 'error');
@@ -6431,6 +6467,65 @@ window.ZGestorApp = {
     try {
       const prot = window.zgestorDB.arquivarProtocoloAssinado(protocoloId);
       this.showToast(`Protocolo ${prot.codigo} arquivado como assinado!`, 'success');
+      this.renderContentOnly();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  openModalExcluirProtocolo(protocoloId) {
+    const db = window.zgestorDB;
+    const prot = (db.data.protocolos_guias || []).find(p => p.id === protocoloId);
+    if (!prot) return;
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-rose-200">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div class="flex items-center gap-2 text-rose-700">
+              <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+              <h3 class="text-base font-bold">Excluir Protocolo — ${prot.codigo}</h3>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.confirmarExclusaoProtocolo(event, '${prot.id}')" class="space-y-4 mt-4 text-xs">
+            <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 space-y-1">
+              <div class="font-bold">Atenção! Confirmação de Segurança Obrigatória:</div>
+              <p>Este protocolo possui <strong>${(prot.guia_ids || []).length} guia(s)</strong> vinculada(s). Ao excluir, ele será removido do arquivo e as guias voltarão para o status <strong>Pendente de Envio</strong>.</p>
+            </div>
+
+            <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+              <input id="f-conf-exc-prot" type="checkbox" required class="w-4 h-4 mt-0.5 rounded text-rose-600" />
+              <span class="font-bold text-slate-800">Sim, tenho certeza de que desejo excluir o protocolo ${prot.codigo}.</span>
+            </label>
+
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-200">
+              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+              <button type="submit" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-sm cursor-pointer">
+                Confirmar Exclusão
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    if (window.lucide) window.lucide.createIcons();
+  },
+
+  confirmarExclusaoProtocolo(e, protocoloId) {
+    e.preventDefault();
+    const cb = document.getElementById('f-conf-exc-prot');
+    if (!cb || !cb.checked) {
+      this.showToast('Marque a caixa de confirmação para excluir o protocolo.', 'error');
+      return;
+    }
+    try {
+      const prot = window.zgestorDB.excluirProtocoloOfficeBoy(protocoloId);
+      this.closeModal();
+      this.showToast(`Protocolo ${prot.codigo} excluído com sucesso.`, 'info');
       this.renderContentOnly();
     } catch (err) {
       this.showToast(err.message, 'error');
