@@ -5557,9 +5557,9 @@ window.ZGestorViews = {
                 <div>
                   <label class="block font-bold text-slate-700 mb-1">Modelo Gemini</label>
                   <select id="f-ia-modelo" class="w-full rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold">
-                    <option value="gemini-1.5-flash" ${(iaConfig.gemini_modelo || 'gemini-1.5-flash') === 'gemini-1.5-flash' ? 'selected' : ''}>gemini-1.5-flash (Gratuito & Rápido)</option>
-                    <option value="gemini-2.0-flash" ${iaConfig.gemini_modelo === 'gemini-2.0-flash' ? 'selected' : ''}>gemini-2.0-flash (Nova Geração)</option>
-                    <option value="gemini-1.5-pro" ${iaConfig.gemini_modelo === 'gemini-1.5-pro' ? 'selected' : ''}>gemini-1.5-pro (Raciocínio Avançado)</option>
+                    <option value="gemini-2.5-flash" ${(!iaConfig.gemini_modelo || iaConfig.gemini_modelo.startsWith('gemini-1.5-') || iaConfig.gemini_modelo === 'gemini-2.5-flash') ? 'selected' : ''}>gemini-2.5-flash (Recomendado — Rápido)</option>
+                    <option value="gemini-2.0-flash" ${iaConfig.gemini_modelo === 'gemini-2.0-flash' ? 'selected' : ''}>gemini-2.0-flash (Estável & Veloz)</option>
+                    <option value="gemini-2.5-pro" ${iaConfig.gemini_modelo === 'gemini-2.5-pro' ? 'selected' : ''}>gemini-2.5-pro (Raciocínio Avançado)</option>
                   </select>
                 </div>
 
@@ -5808,7 +5808,7 @@ window.ZGestorViews = {
                       ${m.role === 'user' ? 'Você (Contador)' : 'Assistente Z-IA'}
                     </div>
                     <div class="whitespace-pre-line leading-relaxed text-xs">
-                      ${m.content}
+                      ${this.escapeHtml(m.content || '')}
                     </div>
                   </div>
                   ${m.role === 'user' ? `
@@ -5920,7 +5920,7 @@ window.ZGestorViews = {
                 id="f-comunicado-resultado"
                 rows="8"
                 placeholder="Selecione os parâmetros e clique em 'Redigir Mensagem com IA' para gerar o texto automaticamente..."
-                class="w-full rounded-2xl border border-slate-300 p-3.5 font-mono text-xs text-slate-800 bg-slate-50 focus:bg-white focus:border-indigo-600 focus:outline-none"></textarea>
+                class="w-full rounded-2xl border border-slate-300 p-3.5 font-mono text-xs text-slate-800 bg-slate-50 focus:bg-white focus:border-indigo-600 focus:outline-none">${this.escapeHtml(appState.comunicadoIAGerado?.texto || '')}</textarea>
             </div>
           </div>
         ` : `

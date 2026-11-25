@@ -69,9 +69,9 @@ window.ZGestorApp = {
     modoSimulacaoCliente: null,
     // Inteligência Artificial & Z-IA
     subTabIA: 'diagnostico',
-    chatIAHistorico: [],
+    iaChatHistorico: [],
     comunicadoIAGerado: null,
-    diagnosticoIAResultado: null
+    iaDiagnosticoResultado: null
   },
 
   init() {
@@ -6603,7 +6603,7 @@ window.ZGestorApp = {
   salvarChaveIA(e) {
     if (e && e.preventDefault) e.preventDefault();
     const input = document.getElementById('f-ia-apikey');
-    const modelo = document.getElementById('f-ia-modelo')?.value || 'gemini-1.5-flash';
+    const modelo = document.getElementById('f-ia-modelo')?.value || 'gemini-2.5-flash';
     const chave = input ? input.value.trim() : '';
     if (!chave) {
       this.showToast('Informe uma chave de API Google Gemini válida para salvar.', 'error');
@@ -6698,15 +6698,21 @@ window.ZGestorApp = {
       this.showToast('Cadastre uma chave de API Gemini antes de testar a conexão.', 'error');
       return;
     }
-    this.showToast('Testando conexão com a Google Gemini API...', 'info');
+    const rawModelo = esc.ia_config?.gemini_modelo || 'gemini-2.5-flash';
+    const modelo = rawModelo.startsWith('gemini-1.5-') ? 'gemini-2.5-flash' : rawModelo;
+    this.showToast(`Testando conexão com a Google Gemini API (${modelo})...`, 'info');
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      const tentarModelo = async (m) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: 'Responda apenas: OK' }] }]
         })
       });
+      let res = await tentarModelo(modelo);
+      if (res.status === 404 && modelo !== 'gemini-2.0-flash') {
+        res = await tentarModelo('gemini-2.0-flash');
+      }
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error?.message || `Erro HTTP ${res.status}`);
@@ -6755,17 +6761,25 @@ window.ZGestorApp = {
     const esc = db.getEscritorioConfig();
     const apiKey = (esc.ia_config && (esc.ia_config.gemini_api_key || esc.ia_config.api_key)) ? (esc.ia_config.gemini_api_key || esc.ia_config.api_key).trim() : '';
     if (!apiKey) return null;
-    const modelo = esc.ia_config.gemini_modelo || 'gemini-1.5-flash';
+    const rawModelo = esc.ia_config?.gemini_modelo || 'gemini-2.5-flash';
+    const modelo = rawModelo.startsWith('gemini-1.5-') ? 'gemini-2.5-flash' : rawModelo;
 
     try {
       const body = { contents: [{ parts: [{ text: prompt }] }] };
       if (systemInstruction) body.systemInstruction = { parts: [{ text: systemInstruction }] };
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`, {
+      const enviar = async (m) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let res = await enviar(modelo);
+      if (res.status === 404 && modelo !== 'gemini-2.0-flash') {
+        res = await enviar('gemini-2.0-flash');
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error?.message || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
     } catch (e) {
@@ -6871,11 +6885,45 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
         `4. **Conformidade Trabalhista**: Fechamento tempestivo do eSocial e DCTFWeb antes do dia 15 para emissão do DARF Previdenciário.`;
     }
 
-    this.state.diagnosticoIAResultado = {
-      data_geracao: new Date().toISOString(),
-      competencia: comp,
-      conteudo: recomendacaoIA
-    };
+    const esc = db.getEscritorioConfig();
+    const viaApiReal = Boolean(
+      (esc.ia_config?.gemini_api_key || esc.ia_config?.api_key || esc.ia_config?.openai_api_key) && respostaIA
+    );
+    const geradoEm = new Date().toLocaleString('pt-BR');
+
+    const escHtml = (v) => window.ZGestorViews.escapeHtml(v);
+    this.state.iaDiagnosticoResultado = `
+      <div class="p-4 rounded-2xl border border-indigo-200 bg-indigo-50/40 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-indigo-100">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${viaApiReal ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'}">
+              ${viaApiReal ? 'Análise via API IA em Tempo Real' : 'Diagnóstico Inteligente Z-IA'}
+            </span>
+            <span class="text-[11px] font-bold text-slate-700">Competência ${escHtml(comp)} (${escHtml(sub.label)})</span>
+          </div>
+          <span class="text-[11px] text-slate-500">Gerado em ${escHtml(geradoEm)}</span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+          <div class="p-2 rounded-xl bg-white border border-slate-200">
+            <div class="text-[10px] font-bold text-slate-500 uppercase">Tarefas Pendentes</div>
+            <div class="text-sm font-black text-slate-900">${pendentes.length} / ${tarefasComp.length}</div>
+          </div>
+          <div class="p-2 rounded-xl bg-white border border-slate-200">
+            <div class="text-[10px] font-bold text-slate-500 uppercase">CNDs em Alerta</div>
+            <div class="text-sm font-black text-amber-700">${cndsAlertas.length}</div>
+          </div>
+          <div class="p-2 rounded-xl bg-white border border-slate-200">
+            <div class="text-[10px] font-bold text-slate-500 uppercase">Alvarás em Alerta</div>
+            <div class="text-sm font-black text-rose-700">${alvarasAlertas.length}</div>
+          </div>
+          <div class="p-2 rounded-xl bg-white border border-slate-200">
+            <div class="text-[10px] font-bold text-slate-500 uppercase">Honorários Abertos</div>
+            <div class="text-sm font-black text-indigo-700">R$ ${totalAberto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+        <div class="p-3.5 rounded-xl bg-white border border-slate-200 whitespace-pre-line leading-relaxed text-xs text-slate-800">${escHtml(recomendacaoIA)}</div>
+      </div>
+    `;
 
     this.showToast('Diagnóstico executivo gerado com sucesso!', 'success');
     this.renderContentOnly();
@@ -6883,21 +6931,23 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
 
   async enviarMensagemChatIA(e) {
     if (e && e.preventDefault) e.preventDefault();
-    const input = document.getElementById('chat-ia-input');
+    const input = document.getElementById('f-chat-ia-input');
     const texto = input ? input.value.trim() : '';
     if (!texto) return;
 
-    if (!Array.isArray(this.state.chatIAHistorico)) {
-      this.state.chatIAHistorico = [];
+    if (!Array.isArray(this.state.iaChatHistorico)) {
+      this.state.iaChatHistorico = [];
     }
 
-    this.state.chatIAHistorico.push({
-      autor: 'usuario',
-      texto,
+    this.state.iaChatHistorico.push({
+      role: 'user',
+      content: texto,
       hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     });
     if (input) input.value = '';
     this.renderContentOnly();
+    const box = document.getElementById('chat-ia-mensagens');
+    if (box) box.scrollTop = box.scrollHeight;
 
     let resposta = '';
     const respostaIA = await this.chamarIA(texto, 'Você é o Consultor Tributário e Contábil Inteligente da Zioto Contabilidade (Z-IA). Forneça orientações precisas, fundamentadas na legislação brasileira (Simples Nacional, Lucro Presumido, CLT, IRPJ/CSLL, DCTFWeb, eSocial, PGDAS e Licenciamento/Alvarás) com clareza executiva.');
@@ -6919,30 +6969,32 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
       }
     }
 
-    this.state.chatIAHistorico.push({
-      autor: 'ia',
-      texto: resposta,
+    this.state.iaChatHistorico.push({
+      role: 'assistant',
+      content: resposta,
       hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     });
     this.renderContentOnly();
+    const boxPos = document.getElementById('chat-ia-mensagens');
+    if (boxPos) boxPos.scrollTop = boxPos.scrollHeight;
   },
 
   enviarPerguntaSugeridaIA(texto) {
-    const input = document.getElementById('chat-ia-input');
+    const input = document.getElementById('f-chat-ia-input');
     if (input) input.value = texto;
     this.enviarMensagemChatIA();
   },
 
   limparChatIA() {
-    this.state.chatIAHistorico = [];
+    this.state.iaChatHistorico = [];
     this.renderContentOnly();
   },
 
   gerarComunicadoIA() {
-    const tipo = document.getElementById('comunicado-tipo')?.value || 'COBRANCA';
-    const tom = document.getElementById('comunicado-tom')?.value || 'CORDIAL';
-    const empId = document.getElementById('comunicado-empresa')?.value || '';
-    const canal = document.getElementById('comunicado-canal')?.value || 'WHATSAPP';
+    const tipo = document.getElementById('f-comunicado-tipo')?.value || 'COBRANCA';
+    const tom = document.getElementById('f-comunicado-tom')?.value || 'CORDIAL';
+    const empId = document.getElementById('f-comunicado-empresa')?.value || '';
+    const canal = document.getElementById('f-comunicado-canal')?.value || 'WHATSAPP';
     const db = window.zgestorDB;
     const emp = db.data.empresas.find(e => e.id === empId) || db.data.empresas[0];
     const esc = db.getEscritorioConfig();
@@ -6956,9 +7008,11 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
       const valorHon = emp ? Number(emp.valor_honorario_padrao || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00';
       msg = `Olá, ${clienteNome}! Tudo bem?\n\nPassando para lembrar que a fatura de honorários contábeis da *${empresaNome}* ref. a este mês já está disponível para pagamento no valor de *R$ ${valorHon}*.\n\nPara facilitar, você pode pagar direto via Chave PIX:\n🔑 *${chavePix}*\n\nQualquer dúvida estamos à disposição!\nEquipe ${esc.nome_escritorio}.`;
     } else if (tipo === 'GUIAS') {
-      msg = `Prezado(a) ${clienteNome},\n\nInformamos que as guias de impostos (DAS / DARF / FGTS) da empresa *${empresaNome}* relativas à competência atual já foram apuradas e estão disponíveis no seu Portal do Cliente.\n\nLembramos que o vencimento ocorre nos próximos dias. Evite juros e multas efetuando o pagamento até a data limite.\n\nAtenciosamente,\n${esc.nome_escritorio}`;
+      msg = `Prezado(a) ${clienteNome},\n\nInformamos que as guias de impostos (DAS / DARF / FGTS) da empresa *${empresaNome}* relativas à competência atual já foram apuradas e disponibilizadas.\n\nLembramos que o vencimento ocorre nos próximos dias. Evite juros e multas efetuando o pagamento até a data limite.\n\nAtenciosamente,\n${esc.nome_escritorio}`;
+    } else if (tipo === 'CND') {
+      msg = `Prezado(a) ${clienteNome},\n\nInformamos que realizamos a verificação e atualização das Certidões Negativas de Débitos (CNDs) da empresa *${empresaNome}*.\n\nCaso precise dos arquivos em PDF para licitações, bancos ou fornecedores, estamos à disposição para encaminhar imediatamente.\n\nAtenciosamente,\n${esc.nome_escritorio}`;
     } else {
-      msg = `Olá, ${clienteNome}!\n\nEstamos realizando o fechamento contábil e fiscal do mês da *${empresaNome}*.\n\nPedimos a gentileza de nos enviar através do Portal do Cliente ou por aqui os extratos bancários (em formato .OFX ou .PDF) e os comprovantes de pagamento do período.\n\nMuito obrigado pela colaboração!\nEquipe ${esc.nome_escritorio}`;
+      msg = `Olá, ${clienteNome}!\n\nEstamos realizando o fechamento contábil e fiscal do mês da *${empresaNome}*.\n\nPedimos a gentileza de nos enviar por aqui os extratos bancários (em formato .OFX ou .PDF), notas fiscais e comprovantes de pagamento do período.\n\nMuito obrigado pela colaboração!\nEquipe ${esc.nome_escritorio}`;
     }
 
     this.state.comunicadoIAGerado = {
@@ -6972,23 +7026,27 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
   },
 
   copiarTextoComunicadoIA() {
-    if (!this.state.comunicadoIAGerado || !this.state.comunicadoIAGerado.texto) {
+    const txtArea = document.getElementById('f-comunicado-resultado');
+    const texto = (txtArea && txtArea.value.trim()) ? txtArea.value : (this.state.comunicadoIAGerado?.texto || '');
+    if (!texto) {
       this.showToast('Nenhum comunicado gerado para copiar.', 'error');
       return;
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(this.state.comunicadoIAGerado.texto);
+      navigator.clipboard.writeText(texto);
     }
     this.showToast('Texto do comunicado copiado para a área de transferência!', 'success');
   },
 
   abrirWhatsAppComunicadoIA() {
-    if (!this.state.comunicadoIAGerado || !this.state.comunicadoIAGerado.texto) {
+    const txtArea = document.getElementById('f-comunicado-resultado');
+    const texto = (txtArea && txtArea.value.trim()) ? txtArea.value : (this.state.comunicadoIAGerado?.texto || '');
+    if (!texto) {
       this.showToast('Gere o comunicado antes de abrir no WhatsApp.', 'error');
       return;
     }
-    const tel = (this.state.comunicadoIAGerado.telefone || '').replace(/\D/g, '');
-    const url = tel ? `https://wa.me/55${tel}?text=${encodeURIComponent(this.state.comunicadoIAGerado.texto)}` : `https://wa.me/?text=${encodeURIComponent(this.state.comunicadoIAGerado.texto)}`;
+    const tel = (this.state.comunicadoIAGerado?.telefone || '').replace(/\D/g, '');
+    const url = tel ? `https://wa.me/55${tel}?text=${encodeURIComponent(texto)}` : `https://wa.me/?text=${encodeURIComponent(texto)}`;
     window.open(url, '_blank');
   },
 
