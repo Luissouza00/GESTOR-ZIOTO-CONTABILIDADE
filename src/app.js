@@ -617,8 +617,9 @@ window.ZGestorApp = {
             id: 'central_cliente',
             label: 'Portal do Cliente',
             icon: 'globe',
-            badge: chamadosPendentes > 0 ? chamadosPendentes : null,
-            badgeCls: 'bg-amber-500 text-white'
+            emBreve: true,
+            badge: 'Em breve',
+            badgeCls: 'bg-slate-700 text-slate-300 border border-slate-600'
           }
         ]
       },
@@ -678,6 +679,21 @@ window.ZGestorApp = {
           `}
           ${b.itens.map(it => {
             const active = tab === it.id;
+            if (it.emBreve) {
+              return `
+                <button
+                  type="button"
+                  onclick="ZGestorApp.showToast('Portal do Cliente estará disponível em breve!', 'info')"
+                  title="${it.label} (Em breve)"
+                  class="w-full flex items-center ${collapsed ? 'justify-center p-2.5 relative' : 'justify-between px-3 py-2'} rounded-xl text-xs font-semibold transition cursor-not-allowed opacity-60 text-slate-400 hover:bg-slate-800/50">
+                  <span class="flex items-center gap-2.5 truncate">
+                    <i data-lucide="${it.icon}" class="${collapsed ? 'w-5 h-5' : 'w-4 h-4'} shrink-0"></i>
+                    ${!collapsed ? `<span class="truncate">${it.label}</span>` : ''}
+                  </span>
+                  ${!collapsed ? `<span class="px-1.5 py-0.5 rounded-full text-[9px] font-bold shrink-0 ${it.badgeCls}">${it.badge}</span>` : ''}
+                </button>
+              `;
+            }
             return `
               <button
                 onclick="ZGestorApp.navigate('${it.id}')"
@@ -982,7 +998,22 @@ window.ZGestorApp = {
     const V = window.ZGestorViews;
 
     if (t === 'dashboard') main.innerHTML = V.renderDashboard(this.state);
-    else if (t === 'central_cliente') main.innerHTML = V.renderCentralCliente(this.state);
+    else if (t === 'central_cliente') {
+      if (user && user.cargo === 'CLIENTE') {
+        main.innerHTML = V.renderCentralCliente(this.state);
+      } else {
+        main.innerHTML = `
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 text-center max-w-lg mx-auto my-8 space-y-3">
+            <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
+              <i data-lucide="globe" class="w-6 h-6"></i>
+            </div>
+            <span class="inline-block px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">Em breve</span>
+            <h2 class="text-lg font-extrabold text-slate-900">Portal do Cliente</h2>
+            <p class="text-xs text-slate-500">Este módulo ficará disponível em uma próxima etapa. Por enquanto, utilize o Gestor de Tarefas, Rotinas, Guias e Alvarás.</p>
+          </div>
+        `;
+      }
+    }
     else if (t === 'tarefas') main.innerHTML = V.renderTarefas(this.state);
     else if (t === 'parcelamentos') main.innerHTML = V.renderParcelamentos(this.state);
     else if (t === 'cnds') main.innerHTML = V.renderCNDs(this.state);

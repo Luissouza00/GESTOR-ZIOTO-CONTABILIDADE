@@ -819,12 +819,6 @@ window.ZGestorViews = {
               <span>+ Guia Imposto</span>
             </button>
             <button
-              onclick="ZGestorApp.openModalTarefa('AVULSA')"
-              class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition">
-              <i data-lucide="message-square-plus" class="w-3.5 h-3.5"></i>
-              <span>+ Solicitação Avulsa</span>
-            </button>
-            <button
               onclick="ZGestorApp.openModalTarefa('MENSAL')"
               class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm transition">
               <i data-lucide="plus" class="w-3.5 h-3.5"></i>
@@ -2041,12 +2035,9 @@ window.ZGestorViews = {
                       <option value="ARQUIVADA_ASSINADA" ${fGuiaStatus === 'ARQUIVADA_ASSINADA' ? 'selected' : ''}>📁 Assinadas e Arquivadas</option>
                     </select>
                   </div>
-                  <div class="flex items-end gap-1.5">
-                    <button onclick="ZGestorApp.openModalUploadLoteGuias()" class="flex-1 py-1.5 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer">
-                      <i data-lucide="layers" class="w-3.5 h-3.5"></i> Lote PDF
-                    </button>
-                    <button onclick="ZGestorApp.openModalGuiaImposto()" class="flex-1 py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer">
-                      <i data-lucide="plus" class="w-3.5 h-3.5"></i> + Guia
+                  <div class="flex items-end">
+                    <button onclick="ZGestorApp.openModalGuiaImposto()" class="w-full py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nova Guia
                     </button>
                   </div>
                 </div>
