@@ -2311,8 +2311,23 @@ window.ZGestorViews = {
       if (!fBuscaParc) return true;
       return `${nome} ${doc} ${orgao} ${mod}`.toLowerCase().includes(fBuscaParc);
     };
-    const matchStatusParc = (parc) => {
+    const matchStatusParc = (parc, guia = null) => {
       if (fStatusParc === 'TODOS') return true;
+      if (fStatusParc === 'PENDENTES_EMISSAO') {
+        if (guia) return !guia.status_guia || guia.status_guia === 'PENDENTE_EMISSAO';
+        const gParc = parc ? guiasMes.find(gm => gm.parcelamento_id === parc.id) : null;
+        return !gParc || !gParc.status_guia || gParc.status_guia === 'PENDENTE_EMISSAO';
+      }
+      if (fStatusParc === 'EMITIDAS') {
+        if (guia) return guia.status_guia === 'EMITIDA';
+        const gParc = parc ? guiasMes.find(gm => gm.parcelamento_id === parc.id) : null;
+        return Boolean(gParc && gParc.status_guia === 'EMITIDA');
+      }
+      if (fStatusParc === 'ENVIADAS') {
+        if (guia) return guia.status_guia === 'ENVIADA_CLIENTE';
+        const gParc = parc ? guiasMes.find(gm => gm.parcelamento_id === parc.id) : null;
+        return Boolean(gParc && gParc.status_guia === 'ENVIADA_CLIENTE');
+      }
       if (fStatusParc === 'ATIVOS') return parc && (parc.status === 'ATIVO' || parc.status === 'EM_ATRASO');
       if (fStatusParc === 'EM_ATRASO') return parc && parc.status === 'EM_ATRASO';
       if (fStatusParc === 'ENCERRADOS') return parc && (parc.status === 'ENCERRADO_FALTA_PAGAMENTO' || parc.status === 'ENCERRADO_OPCAO');
@@ -2324,7 +2339,7 @@ window.ZGestorViews = {
       const parc = parcelamentos.find(p => p.id === g.parcelamento_id);
       const nome = emp ? emp.nome_fantasia : (parc?.nome_cliente || g.nome_cliente || '');
       const doc = emp ? emp.cnpj : (parc?.documento || g.documento || '');
-      return matchStatusParc(parc) && matchBuscaParc(nome, doc, parc?.orgao || '', parc?.modalidade || '');
+      return matchStatusParc(parc, g) && matchBuscaParc(nome, doc, parc?.orgao || '', parc?.modalidade || '');
     });
 
     const parcelamentosFiltrados = parcelamentos.filter(p => {
@@ -2444,9 +2459,12 @@ window.ZGestorViews = {
               onchange="ZGestorApp.setFiltro('filtroParcelamentoStatus', this.value)"
               class="rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white">
               <option value="TODOS" ${fStatusParc === 'TODOS' ? 'selected' : ''}>Todos os Status</option>
-              <option value="ATIVOS" ${fStatusParc === 'ATIVOS' ? 'selected' : ''}>Somente Ativos (No Protocolo)</option>
-              <option value="EM_ATRASO" ${fStatusParc === 'EM_ATRASO' ? 'selected' : ''}>Somente Em Atraso</option>
-              <option value="ENCERRADOS" ${fStatusParc === 'ENCERRADOS' ? 'selected' : ''}>Encerrados / Quitados</option>
+              <option value="PENDENTES_EMISSAO" ${fStatusParc === 'PENDENTES_EMISSAO' ? 'selected' : ''}>⏳ Pendentes de Emissão</option>
+              <option value="EMITIDAS" ${fStatusParc === 'EMITIDAS' ? 'selected' : ''}>📄 1. Guia Emitida</option>
+              <option value="ENVIADAS" ${fStatusParc === 'ENVIADAS' ? 'selected' : ''}>✅ 2. Enviada ao Cliente</option>
+              <option value="ATIVOS" ${fStatusParc === 'ATIVOS' ? 'selected' : ''}>🟢 Somente Ativos (No Protocolo)</option>
+              <option value="EM_ATRASO" ${fStatusParc === 'EM_ATRASO' ? 'selected' : ''}>🔴 Somente Em Atraso</option>
+              <option value="ENCERRADOS" ${fStatusParc === 'ENCERRADOS' ? 'selected' : ''}>⚪ Encerrados / Quitados</option>
             </select>
           </div>
         </div>
@@ -2481,7 +2499,7 @@ window.ZGestorViews = {
               <thead>
                 <tr class="border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500 bg-white">
                   <th class="py-3 px-3 w-[18%]">Cliente</th>
-                  <th class="py-3 px-2.5 w-[18%]">Órgão & Parcela</th>
+                  <th class="py-3 px-2.5 w-[18%]">Órgão & Modalidade</th>
                   <th class="py-3 px-2.5 w-[18%]">Histórico / Comp. Anterior</th>
                   <th class="py-3 px-2.5 w-[11%]">Venc. & Valor</th>
                   <th class="py-3 px-2.5 w-[18%]">Status do Parcelamento</th>
@@ -2509,9 +2527,6 @@ window.ZGestorViews = {
                       <td class="py-3 px-2.5">
                         <div class="font-bold text-slate-800">${parc ? parc.orgao : '—'}</div>
                         <div class="text-[11px] text-slate-500">${parc ? parc.modalidade : ''}</div>
-                        <span class="inline-block mt-1 px-2 py-0.5 rounded bg-slate-100 font-bold text-slate-800 text-[11px]">
-                          Parcela ${g.numero_parcela}/${parc ? parc.total_parcelas : '?'}
-                        </span>
                       </td>
                       <td class="py-3 px-2.5">
                         ${temPendenciaAnt ? `

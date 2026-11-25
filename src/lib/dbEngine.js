@@ -1947,7 +1947,7 @@
         const idxExist = this.data.guias_impostos.findIndex(gi => gi.parcelamento_guia_id === g.id);
 
         if (ativo) {
-          const tipoLabel = `Parcelamento — ${parc.orgao || 'Tributário'} (${g.numero_parcela}/${parc.total_parcelas || '?'})`;
+          const tipoLabel = `Parcelamento — ${parc.orgao || 'Tributário'}`;
           const obsLabel = `${parc.modalidade || ''}${parc.status === 'EM_ATRASO' ? ' • ATIVO EM ATRASO' : ''}`.trim();
           if (idxExist === -1) {
             this.data.guias_impostos.push({
@@ -1966,11 +1966,13 @@
               origem: 'PARCELAMENTO',
               observacoes: obsLabel
             });
-          } else if (!enviados.includes(this.data.guias_impostos[idxExist].status_envio)) {
+          } else {
             this.data.guias_impostos[idxExist].tipo_guia = tipoLabel;
-            this.data.guias_impostos[idxExist].data_vencimento = g.data_vencimento;
-            this.data.guias_impostos[idxExist].valor = Number(g.valor_guia || 0);
-            this.data.guias_impostos[idxExist].observacoes = obsLabel;
+            if (!enviados.includes(this.data.guias_impostos[idxExist].status_envio)) {
+              this.data.guias_impostos[idxExist].data_vencimento = g.data_vencimento;
+              this.data.guias_impostos[idxExist].valor = Number(g.valor_guia || 0);
+              this.data.guias_impostos[idxExist].observacoes = obsLabel;
+            }
           }
         } else if (idxExist !== -1 && !enviados.includes(this.data.guias_impostos[idxExist].status_envio)) {
           this.data.guias_impostos.splice(idxExist, 1);
