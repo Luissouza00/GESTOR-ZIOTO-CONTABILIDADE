@@ -527,6 +527,14 @@ window.ZGestorApp = {
     const tab = this.state.currentTab;
     const collapsed = Boolean(this.state.sidebarCollapsed);
 
+    const esc = db.getEscritorioConfig();
+    const brandTitleEl = document.getElementById('sidebar-brand-title');
+    const brandSubEl = document.getElementById('sidebar-brand-subtitle');
+    const brandLogoEl = document.getElementById('sidebar-brand-logo');
+    if (brandTitleEl) brandTitleEl.textContent = esc.marca_titulo || 'ZIOTO';
+    if (brandSubEl) brandSubEl.textContent = esc.marca_subtitulo || 'CONTABILIDADE';
+    if (brandLogoEl) brandLogoEl.src = esc.logo_customizada || './assets/logo-contabil.svg';
+
     // Ajusta a largura e classes visuais da Sidebar
     const sidebarEl = document.getElementById('main-sidebar');
     const brandTexts = (typeof document.querySelectorAll === 'function') ? document.querySelectorAll('.sidebar-brand-text') : [];
@@ -5006,6 +5014,8 @@ window.ZGestorApp = {
 
     const dadosAtualizados = {
       ...atual,
+      marca_titulo: (document.getElementById('f-esc-marca-titulo')?.value || atual.marca_titulo || 'ZIOTO').trim(),
+      marca_subtitulo: (document.getElementById('f-esc-marca-subtitulo')?.value || atual.marca_subtitulo || 'CONTABILIDADE').trim(),
       razao_social: (document.getElementById('f-esc-razao')?.value || atual.razao_social || atual.nome_escritorio).trim(),
       nome_escritorio: (document.getElementById('f-esc-razao')?.value || atual.razao_social || atual.nome_escritorio).trim(),
       nome_fantasia: (document.getElementById('f-esc-fantasia')?.value || atual.nome_fantasia || 'ZIOTO CONTABILIDADE').trim(),

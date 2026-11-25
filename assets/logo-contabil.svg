@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="26" fill="url(#bgGrad)"/>
+  <!-- Livro / Razao Contabil estilizado -->
+  <path d="M28 34 C28 30 31 27 35 27 L58 27 L58 88 L35 88 C31 88 28 85 28 81 Z" fill="#1e293b" stroke="#60a5fa" stroke-width="2.5"/>
+  <path d="M92 34 C92 30 89 27 85 27 L62 27 L62 88 L85 88 C89 88 92 85 92 81 Z" fill="#1e293b" stroke="#60a5fa" stroke-width="2.5"/>
+  <!-- Linhas de lancamento contabil -->
+  <line x1="36" y1="42" x2="50" y2="42" stroke="#93c5fd" stroke-width="3" stroke-linecap="round"/>
+  <line x1="36" y1="53" x2="50" y2="53" stroke="#93c5fd" stroke-width="3" stroke-linecap="round"/>
+  <line x1="36" y1="64" x2="46" y2="64" stroke="#93c5fd" stroke-width="3" stroke-linecap="round"/>
+  <!-- Barras de balanco / crescimento contabil -->
+  <rect x="68" y="60" width="5" height="16" rx="2" fill="#34d399"/>
+  <rect x="76" y="51" width="5" height="25" rx="2" fill="#34d399"/>
+  <rect x="84" y="40" width="5" height="36" rx="2" fill="url(#goldGrad)"/>
+  <!-- Seta ascendente dourada -->
+  <path d="M35 76 L58 63 L72 52 L87 35" stroke="url(#goldGrad)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M78 35 L87 35 L87 44" stroke="url(#goldGrad)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

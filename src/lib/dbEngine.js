@@ -442,6 +442,8 @@
         this.saveLocalData();
       } else {
         const padrao = window.ZGESTOR_MODELS.escritorioPadrao;
+        if (!this.data.escritorio.marca_titulo) this.data.escritorio.marca_titulo = 'ZIOTO';
+        if (!this.data.escritorio.marca_subtitulo) this.data.escritorio.marca_subtitulo = 'CONTABILIDADE';
         if (!this.data.escritorio.pix_principal && padrao.pix_principal) {
           this.data.escritorio.pix_principal = JSON.parse(JSON.stringify(padrao.pix_principal));
         }

@@ -4450,7 +4450,7 @@ window.ZGestorViews = {
           <div class="text-center mb-6">
             <div class="p-3 bg-[#012147] rounded-2xl border border-slate-800 shadow-xl inline-block max-w-[260px] w-full mx-auto">
               <img
-                src="./assets/logo-zioto.png"
+                src="${esc.logo_customizada || './assets/logo-contabil.svg'}"
                 alt="Zioto Contabilidade"
                 class="h-16 w-auto mx-auto object-contain drop-shadow-md"
                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
@@ -4638,8 +4638,8 @@ window.ZGestorViews = {
             </div>
 
             <div class="flex flex-col sm:flex-row items-center gap-4">
-              <div id="preview-box-logo" class="w-36 h-24 rounded-2xl bg-[#012147] border border-slate-300 flex items-center justify-center p-2 overflow-hidden shrink-0 shadow-sm">
-                <img src="${esc.logo_customizada || './assets/logo-zioto.png'}" class="max-w-full max-h-full object-contain" alt="Logo Escritório" />
+              <div id="preview-box-logo" class="w-36 h-24 rounded-2xl bg-[#0f172a] border border-slate-300 flex items-center justify-center p-2 overflow-hidden shrink-0 shadow-sm">
+                <img src="${esc.logo_customizada || './assets/logo-contabil.svg'}" class="max-w-full max-h-full object-contain" alt="Logo Escritório" />
               </div>
               <div class="space-y-2 flex-1 text-xs">
                 <p class="text-slate-600">
@@ -4657,6 +4657,17 @@ window.ZGestorViews = {
                     </button>
                   ` : ''}
                 </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100 text-xs">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Título da Barra Lateral (Linha 1)</label>
+                <input id="f-esc-marca-titulo" type="text" value="${this.escapeHtml(esc.marca_titulo || 'ZIOTO')}" placeholder="Ex: ZIOTO ou ZGESTOR" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-black text-slate-900" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Subtítulo da Barra Lateral (Linha 2)</label>
+                <input id="f-esc-marca-subtitulo" type="text" value="${this.escapeHtml(esc.marca_subtitulo || 'CONTABILIDADE')}" placeholder="Ex: CONTABILIDADE ou GESTÃO CONTÁBIL" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold text-amber-700 uppercase" />
               </div>
             </div>
           </div>
