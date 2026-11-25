@@ -474,3 +474,61 @@ CREATE POLICY "Registrar logs de auditoria" ON public.audit_logs
 
 CREATE POLICY "Visualizar logs apenas Administrador" ON public.audit_logs
   FOR SELECT TO authenticated USING (public.is_admin());
+
+-- =============================================================================
+-- 13. SINCRONIZAÇÃO EM NUVEM MULTI-DISPOSITIVO ZGESTOR (JSONB + STORAGE)
+-- =============================================================================
+-- Tabelas flexíveis utilizadas pelo motor híbrido (dbEngine.js) para sincronizar
+-- todas as coleções (empresas, tarefas, protocolos, parcelamentos, CNDs, alvarás,
+-- honorários, rotinas e configurações) entre vários computadores e celulares.
+
+CREATE TABLE IF NOT EXISTS public.zgestor_registros (
+  colecao TEXT NOT NULL,
+  id TEXT NOT NULL,
+  dados JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (colecao, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_zgestor_registros_colecao ON public.zgestor_registros(colecao);
+
+CREATE TABLE IF NOT EXISTS public.zgestor_config (
+  chave TEXT PRIMARY KEY,
+  dados JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.zgestor_registros ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.zgestor_config ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "zgestor_registros_acesso_total" ON public.zgestor_registros;
+CREATE POLICY "zgestor_registros_acesso_total" ON public.zgestor_registros
+  FOR ALL TO anon, authenticated
+  USING (true)
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "zgestor_config_acesso_total" ON public.zgestor_config;
+CREATE POLICY "zgestor_config_acesso_total" ON public.zgestor_config
+  FOR ALL TO anon, authenticated
+  USING (true)
+  WITH CHECK (true);
+
+-- Bucket de Storage para arquivos PDF (CNDs, Alvarás, Guias, Documentos)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('zgestor-documentos', 'zgestor-documentos', true)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "zgestor_storage_leitura" ON storage.objects;
+CREATE POLICY "zgestor_storage_leitura" ON storage.objects
+  FOR SELECT TO anon, authenticated
+  USING (bucket_id = 'zgestor-documentos');
+
+DROP POLICY IF EXISTS "zgestor_storage_escrita" ON storage.objects;
+CREATE POLICY "zgestor_storage_escrita" ON storage.objects
+  FOR INSERT TO anon, authenticated
+  WITH CHECK (bucket_id = 'zgestor-documentos');
+
+DROP POLICY IF EXISTS "zgestor_storage_update" ON storage.objects;
+CREATE POLICY "zgestor_storage_update" ON storage.objects
+  FOR UPDATE TO anon, authenticated
+  USING (bucket_id = 'zgestor-documentos');

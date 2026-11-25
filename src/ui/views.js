@@ -4641,7 +4641,9 @@ window.ZGestorViews = {
               <i data-lucide="database" class="w-4 h-4 text-slate-600"></i>
               Integração com Supabase (PostgreSQL Nuvem) & Backup
             </div>
-            <span class="text-[10px] text-slate-500">Configuração de sincronização em nuvem</span>
+            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${db.statusNuvem === 'CONECTADO' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : db.statusNuvem === 'ERRO' ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-amber-100 text-amber-800 border border-amber-300'}">
+              ${db.statusNuvem === 'CONECTADO' ? '🟢 Nuvem Ativa' : db.statusNuvem === 'ERRO' ? '🔴 Verifique o SQL no Supabase' : (db.supabaseConnected ? '🟡 Pronto p/ Sincronizar' : '⚪ Modo Local')}
+            </span>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
@@ -4659,6 +4661,12 @@ window.ZGestorViews = {
             <button onclick="ZGestorApp.salvarConfigSupabase()" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-2xs cursor-pointer">
               Salvar & Conectar
             </button>
+            <button onclick="ZGestorApp.enviarTudoParaNuvem()" class="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-2xs cursor-pointer">
+              ⬆ Enviar Dados Locais p/ Nuvem
+            </button>
+            <button onclick="ZGestorApp.baixarTudoDaNuvem()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shadow-2xs cursor-pointer">
+              ⬇ Baixar Dados da Nuvem
+            </button>
             <button onclick="ZGestorApp.exportarBackupJSON()" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs cursor-pointer">
               ⬇ Exportar Backup (.JSON)
             </button>
@@ -4667,9 +4675,14 @@ window.ZGestorViews = {
               <input type="file" accept=".json" onchange="ZGestorApp.importarBackupJSON(event)" class="hidden" />
             </label>
           </div>
+          ${db.ultimoErroNuvem ? `
+            <div class="mt-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px]">
+              <strong>Último aviso da nuvem:</strong> ${this.escapeHtml(db.ultimoErroNuvem)}
+            </div>
+          ` : ''}
           <div class="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
-            <div><strong>Como funciona a proteção dos seus dados:</strong> Tudo o que você cadastra e anexa fica salvo localmente no navegador (<code class="px-1 bg-white rounded border">zgestor_db_v6</code>) e <strong>não é apagado</strong> quando liberamos atualizações do sistema.</div>
-            <div><strong>Recomendação diária:</strong> Clique em <strong>Exportar Backup (.JSON)</strong> ao final do expediente ou antes de grandes importações para manter uma cópia de segurança fora do navegador.</div>
+            <div><strong>Modo Nuvem Ativo:</strong> Toda alteração feita por qualquer colaborador sincroniza automaticamente com o Supabase (quando as tabelas <code class="px-1 bg-white rounded border">zgestor_registros</code> e <code class="px-1 bg-white rounded border">zgestor_config</code> estiverem criadas no SQL Editor do Supabase).</div>
+            <div><strong>Primeira ativação:</strong> Após rodar o <code class="px-1 bg-white rounded border">supabase/schema.sql</code> no Supabase, clique em <strong>⬆ Enviar Dados Locais p/ Nuvem</strong> no seu computador principal. Nos demais computadores, basta abrir o sistema (ou clicar em <strong>⬇ Baixar Dados da Nuvem</strong>).</div>
           </div>
         </div>
       </div>

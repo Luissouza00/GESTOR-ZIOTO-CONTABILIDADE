@@ -346,6 +346,9 @@
           window.ZGestorApp.showToast('Atenção: limite de armazenamento do navegador atingido! Exporte um Backup (.JSON) e evite anexar arquivos muito grandes.', 'error');
         }
       }
+      if (!this._suppressCloudSync && this.supabaseConnected && this.supabase && this.supabaseConfig?.autoSync !== false) {
+        this._agendarSyncNuvem();
+      }
     }
 
     restaurarBackupJSON(backupData) {
@@ -689,20 +692,176 @@
       return false;
     }
 
-    async syncFromSupabase() {
-      if (!this.supabaseConnected || !this.supabase) return { ok: false, message: 'Supabase não configurado.' };
+    _getCloudCollections() {
+      return [
+        'profiles', 'empresas', 'onboarding_itens', 'tarefas', 'guias_impostos',
+        'protocolos_guias', 'parcelamentos', 'parcelamento_guias', 'cnds', 'alvaras',
+        'portal_arquivos', 'central_cliente_registros', 'honorarios', 'honorario_pagamentos',
+        'encerramentos_exercicio', 'convites', 'audit_logs'
+      ];
+    }
+
+    _agendarSyncNuvem() {
+      if (this._cloudSyncTimer) clearTimeout(this._cloudSyncTimer);
+      this.statusNuvem = 'SINCRONIZANDO';
+      this._cloudSyncTimer = setTimeout(() => {
+        this.pushToSupabase({ silent: true }).catch(() => {});
+      }, 1200);
+    }
+
+    async pushToSupabase(opts = {}) {
+      if (!this.supabaseConnected || !this.supabase) {
+        this.statusNuvem = 'LOCAL';
+        return { ok: false, message: 'Supabase não conectado.' };
+      }
       try {
-        const tables = ['profiles', 'empresas', 'onboarding_itens', 'tarefas', 'guias_impostos', 'parcelamentos', 'parcelamento_guias', 'cnds', 'portal_arquivos', 'central_cliente_registros', 'honorarios', 'honorario_pagamentos', 'audit_logs'];
-        for (const t of tables) {
-          const { data, error } = await this.supabase.from(t).select('*');
-          if (!error && Array.isArray(data) && data.length > 0) {
-            this.data[t] = data;
+        this.statusNuvem = 'SINCRONIZANDO';
+        const colecoes = this._getCloudCollections();
+        const agora = new Date().toISOString();
+
+        for (const col of colecoes) {
+          const arr = Array.isArray(this.data[col]) ? this.data[col] : [];
+          const rows = arr
+            .filter(item => item && item.id)
+            .map(item => ({
+              colecao: col,
+              id: String(item.id),
+              dados: item,
+              updated_at: agora
+            }));
+
+          // Upsert em lotes de 100 registros
+          for (let i = 0; i < rows.length; i += 100) {
+            const chunk = rows.slice(i, i + 100);
+            const { error } = await this.supabase
+              .from('zgestor_registros')
+              .upsert(chunk, { onConflict: 'colecao,id' });
+            if (error) throw new Error(error.message || 'Erro ao enviar ' + col);
+          }
+
+          // Remove registros excluídos localmente que ainda estejam na nuvem
+          const { data: existentes } = await this.supabase
+            .from('zgestor_registros')
+            .select('id')
+            .eq('colecao', col);
+          if (Array.isArray(existentes) && existentes.length > 0) {
+            const idsLocais = new Set(rows.map(r => r.id));
+            const idsRemover = existentes.map(x => x.id).filter(id => !idsLocais.has(id));
+            if (idsRemover.length > 0) {
+              await this.supabase
+                .from('zgestor_registros')
+                .delete()
+                .eq('colecao', col)
+                .in('id', idsRemover);
+            }
           }
         }
-        this.saveLocalData();
-        return { ok: true, message: 'Sincronizado com Supabase PostgreSQL com sucesso!' };
+
+        const configs = [
+          { chave: 'escritorio', dados: this.data.escritorio || {}, updated_at: agora },
+          { chave: 'modelos_tarefas', dados: this.data.modelos_tarefas || [], updated_at: agora }
+        ];
+        const { error: errCfg } = await this.supabase
+          .from('zgestor_config')
+          .upsert(configs, { onConflict: 'chave' });
+        if (errCfg) throw new Error(errCfg.message);
+
+        this.statusNuvem = 'CONECTADO';
+        this.ultimaSyncNuvem = agora;
+        this.ultimoErroNuvem = '';
+        return { ok: true, message: 'Todos os dados foram sincronizados com a nuvem Supabase!' };
       } catch (e) {
+        this.statusNuvem = 'ERRO';
+        this.ultimoErroNuvem = e.message || String(e);
+        if (!opts.silent) console.warn('Erro pushToSupabase:', e);
+        return { ok: false, message: 'Falha ao enviar para o Supabase: ' + (e.message || e) };
+      }
+    }
+
+    async syncFromSupabase() {
+      if (!this.supabaseConnected || !this.supabase) {
+        this.statusNuvem = 'LOCAL';
+        return { ok: false, message: 'Supabase não configurado.' };
+      }
+      try {
+        const { data: registros, error } = await this.supabase
+          .from('zgestor_registros')
+          .select('colecao, id, dados');
+        if (error) throw new Error(error.message);
+
+        const { data: configs, error: errCfg } = await this.supabase
+          .from('zgestor_config')
+          .select('chave, dados');
+        if (errCfg) throw new Error(errCfg.message);
+
+        let atualizado = false;
+        if (Array.isArray(registros) && registros.length > 0) {
+          const porColecao = {};
+          registros.forEach(r => {
+            if (!porColecao[r.colecao]) porColecao[r.colecao] = [];
+            if (r.dados) porColecao[r.colecao].push(r.dados);
+          });
+          this._getCloudCollections().forEach(col => {
+            if (Array.isArray(porColecao[col])) {
+              this.data[col] = porColecao[col];
+              atualizado = true;
+            }
+          });
+        }
+
+        if (Array.isArray(configs) && configs.length > 0) {
+          configs.forEach(c => {
+            if (c.chave === 'escritorio' && c.dados) {
+              this.data.escritorio = c.dados;
+              atualizado = true;
+            }
+            if (c.chave === 'modelos_tarefas' && Array.isArray(c.dados)) {
+              this.data.modelos_tarefas = c.dados;
+              atualizado = true;
+            }
+          });
+        }
+
+        if (atualizado) {
+          this._suppressCloudSync = true;
+          try { this.saveLocalData(); } finally { this._suppressCloudSync = false; }
+        }
+        this.statusNuvem = 'CONECTADO';
+        this.ultimaSyncNuvem = new Date().toISOString();
+        this.ultimoErroNuvem = '';
+        return {
+          ok: true,
+          atualizado,
+          message: atualizado
+            ? 'Dados atualizados diretamente da nuvem Supabase!'
+            : 'Conectado ao Supabase! Clique em "Enviar Dados Locais p/ Nuvem" para subir a base inicial.'
+        };
+      } catch (e) {
+        this.statusNuvem = 'ERRO';
+        this.ultimoErroNuvem = e.message || String(e);
         return { ok: false, message: 'Falha ao sincronizar com Supabase: ' + e.message };
+      }
+    }
+
+    async uploadArquivoParaNuvem(nomeArquivo, base64DataUrl, pasta = 'anexos') {
+      if (!this.supabaseConnected || !this.supabase || !base64DataUrl) return { ok: false };
+      try {
+        const parts = String(base64DataUrl).split(',');
+        if (parts.length < 2) return { ok: false };
+        const mimeMatch = parts[0].match(/data:([^;]+);base64/);
+        const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+        const binStr = atob(parts[1]);
+        const bytes = new Uint8Array(binStr.length);
+        for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+        const safeName = `${pasta}/${Date.now()}_${String(nomeArquivo || 'arquivo.pdf').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const { error } = await this.supabase.storage
+          .from('zgestor-documentos')
+          .upload(safeName, bytes, { contentType: mime, upsert: true });
+        if (error) return { ok: false, error: error.message };
+        const { data: pub } = this.supabase.storage.from('zgestor-documentos').getPublicUrl(safeName);
+        return { ok: true, path: safeName, url: pub?.publicUrl || '' };
+      } catch (e) {
+        return { ok: false, error: e.message };
       }
     }
 

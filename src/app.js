@@ -123,6 +123,13 @@ window.ZGestorApp = {
       }
     });
     this.renderAll();
+    if (db.supabaseConnected && db.supabaseConfig?.autoSync !== false) {
+      db.syncFromSupabase().then(res => {
+        if (res && res.ok && res.atualizado) {
+          this.renderAll();
+        }
+      }).catch(() => {});
+    }
   },
 
   navigate(tab) {
@@ -6139,6 +6146,30 @@ window.ZGestorApp = {
     } else {
       this.showToast('Modo local ativo.', 'info');
     }
+    this.renderAll();
+  },
+
+  async enviarTudoParaNuvem() {
+    const db = window.zgestorDB;
+    if (!db.supabaseConnected) {
+      this.showToast('Configure e conecte o Supabase antes de enviar os dados.', 'warning');
+      return;
+    }
+    this.showToast('Enviando todos os dados para a nuvem Supabase...', 'info');
+    const res = await db.pushToSupabase();
+    this.showToast(res.message, res.ok ? 'success' : 'error');
+    this.renderAll();
+  },
+
+  async baixarTudoDaNuvem() {
+    const db = window.zgestorDB;
+    if (!db.supabaseConnected) {
+      this.showToast('Configure e conecte o Supabase antes de baixar os dados.', 'warning');
+      return;
+    }
+    this.showToast('Sincronizando dados da nuvem Supabase...', 'info');
+    const res = await db.syncFromSupabase();
+    this.showToast(res.message, res.ok ? 'success' : 'error');
     this.renderAll();
   },
 
