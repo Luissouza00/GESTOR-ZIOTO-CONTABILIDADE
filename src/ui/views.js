@@ -1022,7 +1022,7 @@ window.ZGestorViews = {
                     id="input-filtro-empresa"
                     autocomplete="off"
                     placeholder="🏢 Digite nome ou código da empresa..."
-                    value="${fCliente !== 'TODOS' ? (db.data.empresas.find(e => e.id === fCliente) ? `#${db.data.empresas.find(e => e.id === fCliente).codigo_interno} - ${db.data.empresas.find(e => e.id === fCliente).nome_fantasia}` : '') : ''}"
+                    value="${fCliente !== 'TODOS' ? (db.data.empresas.find(e => e.id === fCliente) ? ` - ${db.data.empresas.find(e => e.id === fCliente).nome_fantasia}` : '') : ''}"
                     onfocus="ZGestorApp.abrirDropdownEmpresaFiltro()"
                     onclick="ZGestorApp.abrirDropdownEmpresaFiltro()"
                     oninput="ZGestorApp.aoDigitarFiltroEmpresaLista(this.value)"
@@ -1177,7 +1177,7 @@ window.ZGestorViews = {
 
                                     <div>
                                       <div class="text-[11px] font-bold text-indigo-700 truncate" title="${emp ? emp.razao_social : ''}">
-                                        #${emp ? emp.codigo_interno : '—'} • ${emp ? emp.nome_fantasia : 'Empresa'}
+                                         • ${emp ? emp.nome_fantasia : 'Empresa'}
                                       </div>
                                       <div class="text-xs font-extrabold text-slate-900 leading-snug mt-0.5">
                                         ${this.escapeHtml(t.titulo)}
@@ -1357,7 +1357,7 @@ window.ZGestorViews = {
                                       <div class="pt-0.5 shrink-0">${renderNotionStatusPill(t)}</div>
                                       <div class="min-w-0 flex-1">
                                         <div class="flex items-center gap-2 flex-wrap">
-                                          <span class="text-xs font-extrabold text-slate-900">${emp ? `#${emp.codigo_interno} — ${emp.nome_fantasia}` : 'Empresa'}</span>
+                                          <span class="text-xs font-extrabold text-slate-900">${emp ? ` — ${emp.nome_fantasia}` : 'Empresa'}</span>
                                           ${badgeSetor(t.departamento)}
                                           ${badgeRegime(emp)}
                                           <span class="text-[11px] font-bold ${atrasada ? 'text-rose-600' : 'text-slate-400'}">• Prazo: ${this.formatDate(t.prazo_entrega)}</span>
@@ -1427,7 +1427,7 @@ window.ZGestorViews = {
                     <span class="text-slate-500 flex items-center gap-1.5 font-mono text-[11px]">
                       <span>=</span> COD
                     </span>
-                    <span class="font-mono font-bold text-slate-800">#${sidePeekEmpresa.codigo_interno}</span>
+                    <span class="font-mono font-bold text-slate-800"></span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span class="text-slate-500 flex items-center gap-1.5 font-mono text-[11px]">
@@ -1756,7 +1756,7 @@ window.ZGestorViews = {
                   class="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800">
                   <option value="TODOS" ${fCliente === 'TODOS' ? 'selected' : ''}>Todas as Empresas</option>
                   ${db.data.empresas.map(e => `
-                    <option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}>#${e.codigo_interno} - ${e.nome_fantasia}</option>
+                    <option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}> - ${e.nome_fantasia}</option>
                   `).join('')}
                 </select>
               </div>
@@ -1867,7 +1867,7 @@ window.ZGestorViews = {
                       <tr class="hover:bg-slate-50">
                         <td class="py-2.5 px-2.5">
                           <div class="font-bold text-slate-900">${emp.nome_fantasia}</div>
-                          <div class="text-[10px] text-slate-500">#${emp.codigo_interno} • ${emp.regime_tributario}</div>
+                          <div class="text-[10px] text-slate-500"> • ${emp.regime_tributario}</div>
                         </td>
                         ${celulasHtml}
                         <td class="py-2.5 px-2 text-center">
@@ -2017,7 +2017,7 @@ window.ZGestorViews = {
                     <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Empresa</label>
                     <select onchange="ZGestorApp.setFiltro('filtroTarefaCliente', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
                       <option value="TODOS" ${fCliente === 'TODOS' ? 'selected' : ''}>Todas as Empresas</option>
-                      ${db.data.empresas.map(e => `<option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}>#${e.codigo_interno} - ${e.nome_fantasia}</option>`).join('')}
+                      ${db.data.empresas.map(e => `<option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}> - ${e.nome_fantasia}</option>`).join('')}
                     </select>
                   </div>
                   <div>
@@ -2124,7 +2124,7 @@ window.ZGestorViews = {
                               </td>
                               <td class="py-3 px-3">
                                 <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-                                  <span>${emp ? `#${emp.codigo_interno} — ${emp.nome_fantasia}` : this.escapeHtml(g.nome_cliente || 'Cliente Avulso')}</span>
+                                  <span>${emp ? ` — ${emp.nome_fantasia}` : this.escapeHtml(g.nome_cliente || 'Cliente Avulso')}</span>
                                   ${!emp && g.cliente_avulso ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Avulso</span>` : ''}
                                 </div>
                                 <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : this.escapeHtml(g.documento || 'Parcelamento Avulso')}</div>
@@ -2261,7 +2261,7 @@ window.ZGestorViews = {
                           <div class="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-50">
                             <div class="flex items-center gap-2 flex-wrap">
                               <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-300">✓ Arquivada</span>
-                              <span class="font-bold text-slate-900">${emp ? `#${emp.codigo_interno} — ${emp.nome_fantasia}` : '—'}</span>
+                              <span class="font-bold text-slate-900">${emp ? ` — ${emp.nome_fantasia}` : '—'}</span>
                               <span class="text-slate-600">• ${this.escapeHtml(g.tipo_guia || '')}</span>
                               <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-mono">Comp. ${g.competencia}</span>
                             </div>
@@ -3018,7 +3018,7 @@ window.ZGestorViews = {
                 <div class="w-full rounded-xl border border-emerald-400 bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-950 flex items-center justify-between shadow-2xs">
                   <div class="flex items-center gap-1.5 truncate">
                     <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span class="truncate">#${emp.codigo_interno} — ${emp.nome_fantasia} (${emp.cnpj})</span>
+                    <span class="truncate"> — ${emp.nome_fantasia} (${emp.cnpj})</span>
                   </div>
                   <span class="text-[10px] bg-emerald-200/80 text-emerald-900 px-1.5 py-0.5 rounded font-black shrink-0">RLS Isolado</span>
                 </div>
@@ -3028,7 +3028,7 @@ window.ZGestorViews = {
                 class="w-full rounded-xl border-2 border-indigo-500 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900 focus:outline-none">
                 ${empresas.map(e => `
                   <option value="${e.id}" ${e.id === emp.id ? 'selected' : ''}>
-                    #${e.codigo_interno} — ${e.nome_fantasia} (${e.razao_social} • ${e.cnpj})
+                     — ${e.nome_fantasia} (${e.razao_social} • ${e.cnpj})
                   </option>
                 `).join('')}
               </select>
@@ -3720,7 +3720,7 @@ window.ZGestorViews = {
                   <tr class="hover:bg-slate-50">
                     <td class="py-3 px-3">
                       <div class="flex items-center gap-1.5">
-                        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-bold">#${e.codigo_interno || '000'}</span>
+                        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-bold"></span>
                         <span class="font-bold text-slate-900">${e.razao_social}</span>
                       </div>
                       <div class="text-[11px] text-slate-500 mt-0.5">Fantasia: ${e.nome_fantasia || '—'}</div>
@@ -4496,7 +4496,7 @@ window.ZGestorViews = {
                         </td>
                         <td class="py-3 px-2.5">
                           ${emp ? `
-                            <div class="font-bold text-slate-900">#${emp.codigo_interno} — ${emp.nome_fantasia}</div>
+                            <div class="font-bold text-slate-900"> — ${emp.nome_fantasia}</div>
                             <div class="text-[10px] text-slate-500 font-mono">${emp.cnpj} • ${emp.regime_tributario}</div>
                           ` : '<span class="italic text-rose-500 font-semibold">Sem empresa vinculada</span>'}
                         </td>
@@ -5443,7 +5443,7 @@ window.ZGestorViews = {
                 <option value="TODAS" ${fEmpresa === 'TODAS' ? 'selected' : ''}>Todas as Empresas (${empresas.length})</option>
                 ${empresas.map(e => `
                   <option value="${e.id}" ${fEmpresa === e.id ? 'selected' : ''}>
-                    #${e.codigo_interno} — ${e.nome_fantasia}
+                     — ${e.nome_fantasia}
                   </option>
                 `).join('')}
               </select>
@@ -6126,7 +6126,7 @@ window.ZGestorViews = {
                 <label class="block font-bold text-slate-700 mb-1">Empresa Destinatária *</label>
                 <select id="f-comunicado-empresa" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-semibold text-slate-800 bg-white">
                   ${empresas.map(e => `
-                    <option value="${e.id}">#${e.codigo_interno} — ${e.nome_fantasia} (${e.regime_tributario})</option>
+                    <option value="${e.id}"> — ${e.nome_fantasia} (${e.regime_tributario})</option>
                   `).join('')}
                 </select>
               </div>

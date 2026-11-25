@@ -261,16 +261,23 @@
               parsed.honorario_pagamentos = keepNonDemo(parsed.honorario_pagamentos);
               parsed.convites = (parsed.convites || []).filter(c => !demoEmpIds.includes(c.empresa_id) && c.id !== 'conv-101' && c.id !== 'conv-102');
             }
-            if (!parsed._importacao_reais_v1 && Array.isArray(window.ZGESTOR_INITIAL_DB?.empresas) && window.ZGESTOR_INITIAL_DB.empresas.length > 0) {
-              const cnpjsExistentes = new Set((parsed.empresas || []).map(e => (e.cnpj || '').replace(/\D/g, '')));
-              window.ZGESTOR_INITIAL_DB.empresas.forEach(empSeed => {
-                const cnpjLimpo = (empSeed.cnpj || '').replace(/\D/g, '');
-                if (cnpjLimpo && !cnpjsExistentes.has(cnpjLimpo)) {
-                  parsed.empresas.push(JSON.parse(JSON.stringify(empSeed)));
-                  cnpjsExistentes.add(cnpjLimpo);
-                }
-              });
-              parsed._importacao_reais_v1 = true;
+            if (!parsed._limpeza_empresas_v1 && parsed._importacao_reais_v1) {
+              parsed.empresas = [];
+              parsed.onboarding_itens = [];
+              parsed.tarefas = [];
+              parsed.guias_impostos = [];
+              parsed.protocolos_guias = [];
+              parsed.parcelamentos = [];
+              parsed.parcelamento_guias = [];
+              parsed.alvaras = [];
+              parsed.cnds = [];
+              parsed.portal_arquivos = [];
+              parsed.central_cliente_registros = [];
+              parsed.honorarios = [];
+              parsed.honorario_pagamentos = [];
+              parsed.encerramentos_exercicio = [];
+              parsed.convites = [];
+              parsed._limpeza_empresas_v1 = true;
             }
             if (!parsed._rotinas_v2_migrated && window.ZGESTOR_MODELS?.modelosTarefasMensais) {
               parsed.modelos_tarefas = JSON.parse(JSON.stringify(window.ZGESTOR_MODELS.modelosTarefasMensais));

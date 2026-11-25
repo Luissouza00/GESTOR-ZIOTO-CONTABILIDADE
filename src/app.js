@@ -1851,7 +1851,7 @@ window.ZGestorApp = {
     const termo = input ? input.value : '';
     const db = window.zgestorDB;
     const empAtual = db.data.empresas.find(e => e.id === this.state.filtroTarefaCliente);
-    const textoEmpAtual = empAtual ? `#${empAtual.codigo_interno} - ${empAtual.nome_fantasia}` : '';
+    const textoEmpAtual = empAtual ? ` - ${empAtual.nome_fantasia}` : '';
     // Se o texto no input for o nome da empresa já selecionada, lista todas as opções para fácil seleção de outra
     const termoBusca = (termo === textoEmpAtual) ? '' : termo;
     this.renderizarListaOpcoesEmpresas(termoBusca);
@@ -1868,7 +1868,7 @@ window.ZGestorApp = {
       const db = window.zgestorDB;
       const fCliente = this.state.filtroTarefaCliente || 'TODOS';
       const emp = db.data.empresas.find(e => e.id === fCliente);
-      input.value = emp ? `#${emp.codigo_interno} - ${emp.nome_fantasia}` : '';
+      input.value = emp ? ` - ${emp.nome_fantasia}` : '';
     }
   },
 
@@ -1955,7 +1955,7 @@ window.ZGestorApp = {
             class="px-3 py-2 cursor-pointer transition ${selecionada ? 'bg-indigo-50 font-bold text-indigo-950 border-l-4 border-indigo-600' : 'hover:bg-slate-50 text-slate-800'}">
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5 truncate">
-                <span class="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">#${e.codigo_interno}</span>
+                <span class="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-700"></span>
                 <span class="font-bold truncate">${e.nome_fantasia}</span>
               </div>
               <span class="text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${e.regime_tributario === 'Simples Nacional' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}">
@@ -3315,7 +3315,7 @@ window.ZGestorApp = {
                 <label class="item-emp-grade-cnd flex items-center gap-3 p-2.5 hover:bg-slate-50 cursor-pointer" data-search="${(e.codigo_interno + ' ' + e.nome_fantasia + ' ' + e.cnpj).toLowerCase()}">
                   <input type="checkbox" name="grade-cnd-emp" value="${e.id}" class="w-4 h-4 rounded text-teal-600 cursor-pointer shrink-0" />
                   <div class="min-w-0 flex-1">
-                    <div class="font-bold text-slate-900 truncate">#${e.codigo_interno} — ${e.nome_fantasia}</div>
+                    <div class="font-bold text-slate-900 truncate"> — ${e.nome_fantasia}</div>
                     <div class="text-[11px] text-slate-500 font-mono">${e.cnpj} • ${e.regime_tributario}</div>
                   </div>
                 </label>
@@ -5653,7 +5653,7 @@ window.ZGestorApp = {
               <select id="f-cli-empresa" required class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
                 <option value="">Selecione a empresa...</option>
                 ${empresas.map(e => `
-                  <option value="${e.id}">#${e.codigo_interno} — ${e.nome_fantasia} (CNPJ: ${e.cnpj})</option>
+                  <option value="${e.id}"> — ${e.nome_fantasia} (CNPJ: ${e.cnpj})</option>
                 `).join('')}
               </select>
             </div>
@@ -6022,7 +6022,7 @@ window.ZGestorApp = {
                 <label class="block font-bold text-slate-700 mb-1">Empresa Vinculada (Isolamento RLS) *</label>
                 <select id="f-edit-empresa" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
                   ${empresas.map(e => `
-                    <option value="${e.id}" ${e.id === prof.empresa_id ? 'selected' : ''}>#${e.codigo_interno} — ${e.nome_fantasia} (${e.cnpj})</option>
+                    <option value="${e.id}" ${e.id === prof.empresa_id ? 'selected' : ''}> — ${e.nome_fantasia} (${e.cnpj})</option>
                   `).join('')}
                 </select>
               </div>
@@ -7393,7 +7393,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
                 <option value="">Selecione a empresa...</option>
                 ${empresas.map(e => `
                   <option value="${e.id}" ${e.id === empPadrao ? 'selected' : ''}>
-                    #${e.codigo_interno} — ${e.nome_fantasia} (CNPJ: ${e.cnpj})
+                     — ${e.nome_fantasia} (CNPJ: ${e.cnpj})
                   </option>
                 `).join('')}
               </select>

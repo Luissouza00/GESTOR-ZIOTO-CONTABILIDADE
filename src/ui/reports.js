@@ -760,7 +760,7 @@ window.ZGestorReports = {
           <tbody class="divide-y divide-slate-200">
             ${emps.map(e => `
               <tr>
-                <td class="py-2 px-2 font-mono font-bold">#${e.codigo_interno}</td>
+                <td class="py-2 px-2 font-mono font-bold"></td>
                 <td class="py-2 px-2"><strong>${e.razao_social}</strong><br/><span class="text-slate-500">${e.nome_fantasia}</span></td>
                 <td class="py-2 px-2 font-mono">${e.cnpj}</td>
                 <td class="py-2 px-2 font-semibold">${e.regime_tributario}</td>
