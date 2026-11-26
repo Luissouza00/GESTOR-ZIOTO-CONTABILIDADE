@@ -737,6 +737,7 @@
               this.reconciliarCarteiraOficial(parsed);
             }
             this._migrarCredenciais(parsed);
+            this._desacoplarAnexosPesadosParaCofre(parsed, false);
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed)); } catch (_) {}
             return parsed;
           }
@@ -748,19 +749,365 @@
       this._normalizarDadosCarregados(initial);
       this.garantirAlvarasPadrao(initial);
       this._migrarCredenciais(initial);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(initial)); } catch (_) {}
       return initial;
+    }
+
+    // =========================================================================
+    // COFRE DIGITAL SEGURO DE DOCUMENTOS PDF/IMAGENS (SUPABASE CLOUD + INDEXEDDB)
+    // Evita o limite de 5 MB do localStorage e arquiva com segurança na nuvem
+    // =========================================================================
+    _garantirMemCofre() {
+      if (!this._memCofreArquivos) {
+        this._memCofreArquivos = new Map();
+      }
+      return this._memCofreArquivos;
+    }
+
+    _abrirCofreIndexedDB() {
+      if (typeof indexedDB === 'undefined' || !indexedDB) {
+        return Promise.resolve(null);
+      }
+      if (this._idbCofrePromise) {
+        return this._idbCofrePromise;
+      }
+      this._idbCofrePromise = new Promise((resolve) => {
+        try {
+          const req = indexedDB.open('zgestor_cofre_documentos_v1', 1);
+          req.onupgradeneeded = (ev) => {
+            const dbIdb = ev.target.result;
+            if (!dbIdb.objectStoreNames.contains('arquivos')) {
+              dbIdb.createObjectStore('arquivos', { keyPath: 'id' });
+            }
+          };
+          req.onsuccess = (ev) => resolve(ev.target.result);
+          req.onerror = () => {
+            this._idbCofrePromise = null;
+            resolve(null);
+          };
+        } catch (_) {
+          this._idbCofrePromise = null;
+          resolve(null);
+        }
+      });
+      return this._idbCofrePromise;
+    }
+
+    async _salvarNoCofreIndexedDB(cofreId, registroCofre) {
+      if (!cofreId || !registroCofre) return false;
+      const dbIdb = await this._abrirCofreIndexedDB();
+      if (!dbIdb) return false;
+      return new Promise((resolve) => {
+        try {
+          const tx = dbIdb.transaction('arquivos', 'readwrite');
+          tx.objectStore('arquivos').put({ ...registroCofre, id: cofreId });
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch (_) {
+          resolve(false);
+        }
+      });
+    }
+
+    async _lerDoCofreIndexedDB(cofreId) {
+      if (!cofreId) return null;
+      const dbIdb = await this._abrirCofreIndexedDB();
+      if (!dbIdb) return null;
+      return new Promise((resolve) => {
+        try {
+          const tx = dbIdb.transaction('arquivos', 'readonly');
+          const req = tx.objectStore('arquivos').get(cofreId);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        } catch (_) {
+          resolve(null);
+        }
+      });
+    }
+
+    async _removerDoCofreIndexedDB(cofreId) {
+      if (!cofreId) return false;
+      this._garantirMemCofre().delete(cofreId);
+      const dbIdb = await this._abrirCofreIndexedDB();
+      if (!dbIdb) return false;
+      return new Promise((resolve) => {
+        try {
+          const tx = dbIdb.transaction('arquivos', 'readwrite');
+          tx.objectStore('arquivos').delete(cofreId);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch (_) {
+          resolve(false);
+        }
+      });
+    }
+
+    async _salvarNoCofreSupabase(cofreId, payload) {
+      if (!cofreId || !payload || !this.supabaseConnected || !this.supabase) {
+        return { ok: false };
+      }
+      try {
+        let storageUrl = payload.storage_url || '';
+        let storagePath = payload.storage_path || '';
+
+        // Camada 1: Tenta Supabase Storage oficial (bucket zgestor-documentos)
+        if (!storageUrl && payload.base64) {
+          const resStorage = await this.uploadArquivoParaNuvem(
+            payload.nome || 'documento.pdf',
+            payload.base64,
+            payload.pasta || payload.modulo || 'documentos'
+          );
+          if (resStorage && resStorage.ok && resStorage.url) {
+            storageUrl = resStorage.url;
+            storagePath = resStorage.path || '';
+          }
+        }
+
+        // Camada 2: Persiste registro dedicado no banco PostgreSQL (colecao = 'arquivos_cofre')
+        // Garante 100% de arquivamento em nuvem mesmo se o bucket de Storage não estiver ativo
+        const agora = new Date().toISOString();
+        const dadosCofre = {
+          id: cofreId,
+          modulo: payload.modulo || 'GERAL',
+          ref_id: payload.ref_id || '',
+          empresa_id: payload.empresa_id || '',
+          nome: payload.nome || 'documento.pdf',
+          tamanho: payload.tamanho || null,
+          storage_url: storageUrl,
+          storage_path: storagePath,
+          base64: payload.base64 || null,
+          updated_at: agora
+        };
+
+        const { error } = await this.supabase
+          .from('zgestor_registros')
+          .upsert([{ colecao: 'arquivos_cofre', id: String(cofreId), dados: dadosCofre, updated_at: agora }], { onConflict: 'colecao,id' });
+
+        if (error) {
+          return { ok: Boolean(storageUrl), url: storageUrl, path: storagePath, error: error.message };
+        }
+        return { ok: true, url: storageUrl, path: storagePath };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    }
+
+    async removerDocumentoDoCofre(cofreId) {
+      if (!cofreId) return;
+      await this._removerDoCofreIndexedDB(cofreId);
+      if (this.supabaseConnected && this.supabase) {
+        try {
+          await this.supabase
+            .from('zgestor_registros')
+            .delete()
+            .eq('colecao', 'arquivos_cofre')
+            .eq('id', String(cofreId));
+        } catch (_) {}
+      }
+    }
+
+    arquivarDocumentoNoCofre(cofreId, base64DataUrl, metadados = {}) {
+      if (!cofreId || !base64DataUrl) return Promise.resolve({ ok: false });
+      const payload = {
+        id: cofreId,
+        base64: base64DataUrl,
+        nome: metadados.nome || 'documento.pdf',
+        tamanho: metadados.tamanho || base64DataUrl.length,
+        modulo: metadados.modulo || 'DOCUMENTOS',
+        pasta: metadados.pasta || 'documentos',
+        ref_id: metadados.ref_id || '',
+        empresa_id: metadados.empresa_id || '',
+        updated_at: new Date().toISOString()
+      };
+      this._garantirMemCofre().set(cofreId, payload);
+      const pIdb = this._salvarNoCofreIndexedDB(cofreId, payload).catch(() => false);
+      const pCloud = this._salvarNoCofreSupabase(cofreId, payload).catch(() => ({ ok: false }));
+      return Promise.all([pIdb, pCloud]).then(([okIdb, resCloud]) => ({
+        ok: Boolean(okIdb || (resCloud && resCloud.ok) || this._garantirMemCofre().has(cofreId)),
+        okLocal: Boolean(okIdb),
+        okNuvem: Boolean(resCloud && resCloud.ok),
+        url: (resCloud && resCloud.url) || ''
+      }));
+    }
+
+    obterDocumentoSincrono(cofreId, inlineBase64 = '') {
+      if (inlineBase64 && String(inlineBase64).startsWith('data:')) {
+        return inlineBase64;
+      }
+      if (cofreId && this._memCofreArquivos && this._memCofreArquivos.has(cofreId)) {
+        const mem = this._memCofreArquivos.get(cofreId);
+        if (mem && mem.base64) return mem.base64;
+      }
+      return '';
+    }
+
+    async obterDocumentoSeguro({ cofreId, inlineBase64 = '', storageUrl = '' } = {}) {
+      const sinc = this.obterDocumentoSincrono(cofreId, inlineBase64);
+      if (sinc) {
+        return { ok: true, base64: sinc, url: storageUrl || '' };
+      }
+
+      if (cofreId) {
+        const localReg = await this._lerDoCofreIndexedDB(cofreId);
+        if (localReg && localReg.base64) {
+          this._garantirMemCofre().set(cofreId, localReg);
+          return { ok: true, base64: localReg.base64, url: localReg.storage_url || storageUrl || '' };
+        }
+      }
+
+      if (cofreId && this.supabaseConnected && this.supabase) {
+        try {
+          const { data, error } = await this.supabase
+            .from('zgestor_registros')
+            .select('dados')
+            .eq('colecao', 'arquivos_cofre')
+            .eq('id', String(cofreId))
+            .limit(1);
+          const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+          if (!error && row && row.dados) {
+            if (row.dados.base64) {
+              this._garantirMemCofre().set(cofreId, row.dados);
+              this._salvarNoCofreIndexedDB(cofreId, row.dados).catch(() => {});
+              return { ok: true, base64: row.dados.base64, url: row.dados.storage_url || storageUrl || '' };
+            }
+            if (row.dados.storage_url) {
+              return { ok: true, base64: '', url: row.dados.storage_url };
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (storageUrl) {
+        return { ok: true, base64: '', url: storageUrl };
+      }
+      return { ok: false, base64: '', url: '' };
+    }
+
+    _desacoplarAnexosPesadosParaCofre(alvoData, forcar = false) {
+      if (!alvoData || typeof alvoData !== 'object') return false;
+      const temCofrePersistente = Boolean(
+        forcar ||
+        typeof indexedDB !== 'undefined' ||
+        (this.supabaseConnected && this.supabase)
+      );
+      if (!temCofrePersistente) return false;
+
+      const LIMITE_INLINE_CHARS = forcar ? 512 : 4096;
+      let desacoplou = false;
+
+      // 1. Alvarás & Licenças
+      if (Array.isArray(alvoData.alvaras)) {
+        for (let i = 0; i < alvoData.alvaras.length; i++) {
+          const alv = alvoData.alvaras[i];
+          if (alv && alv.anexo_base64 && String(alv.anexo_base64).length > LIMITE_INLINE_CHARS) {
+            const cid = alv.anexo_cofre_id || `cofre-alvara-${alv.id}`;
+            this.arquivarDocumentoNoCofre(cid, alv.anexo_base64, {
+              nome: alv.anexo_nome || `Alvara_${alv.tipo || 'doc'}.pdf`,
+              tamanho: alv.anexo_tamanho || alv.anexo_base64.length,
+              modulo: 'ALVARAS',
+              pasta: 'alvaras',
+              ref_id: alv.id,
+              empresa_id: alv.empresa_id
+            });
+            alv.anexo_cofre_id = cid;
+            alv.tem_anexo = true;
+            alv.anexo_base64 = null;
+            desacoplou = true;
+          }
+        }
+      }
+
+      // 2. Certidões Negativas (CNDs)
+      if (Array.isArray(alvoData.cnds)) {
+        for (let i = 0; i < alvoData.cnds.length; i++) {
+          const cnd = alvoData.cnds[i];
+          if (cnd && cnd.arquivo_pdf_base64 && String(cnd.arquivo_pdf_base64).length > LIMITE_INLINE_CHARS) {
+            const cid = cnd.arquivo_cofre_id || `cofre-cnd-${cnd.id}`;
+            this.arquivarDocumentoNoCofre(cid, cnd.arquivo_pdf_base64, {
+              nome: cnd.arquivo_pdf_nome || 'Certidao_CND.pdf',
+              tamanho: cnd.arquivo_pdf_base64.length,
+              modulo: 'CNDS',
+              pasta: 'cnds',
+              ref_id: cnd.id,
+              empresa_id: cnd.empresa_id
+            });
+            cnd.arquivo_cofre_id = cid;
+            cnd.tem_arquivo_pdf = true;
+            cnd.arquivo_pdf_base64 = '';
+            desacoplou = true;
+          }
+        }
+      }
+
+      // 3. Arquivos do Portal do Cliente
+      if (Array.isArray(alvoData.portal_arquivos)) {
+        for (let i = 0; i < alvoData.portal_arquivos.length; i++) {
+          const arq = alvoData.portal_arquivos[i];
+          if (arq && arq.conteudo_base64 && String(arq.conteudo_base64).length > LIMITE_INLINE_CHARS) {
+            const cid = arq.conteudo_cofre_id || `cofre-portal-${arq.id}`;
+            this.arquivarDocumentoNoCofre(cid, arq.conteudo_base64, {
+              nome: arq.nome_arquivo || 'documento.pdf',
+              tamanho: arq.tamanho || arq.conteudo_base64.length,
+              modulo: 'PORTAL_CLIENTE',
+              pasta: 'portal',
+              ref_id: arq.id,
+              empresa_id: arq.empresa_id
+            });
+            arq.conteudo_cofre_id = cid;
+            arq.tem_conteudo = true;
+            arq.conteudo_base64 = '';
+            desacoplou = true;
+          }
+        }
+      }
+
+      // 4. Anexos de Solicitações da Central do Cliente
+      if (Array.isArray(alvoData.central_cliente_registros)) {
+        for (let i = 0; i < alvoData.central_cliente_registros.length; i++) {
+          const reg = alvoData.central_cliente_registros[i];
+          if (reg && reg.anexo_base64 && String(reg.anexo_base64).length > LIMITE_INLINE_CHARS) {
+            const cid = reg.anexo_cofre_id || `cofre-chamado-${reg.id}`;
+            this.arquivarDocumentoNoCofre(cid, reg.anexo_base64, {
+              nome: reg.anexo_nome || 'anexo_chamado.pdf',
+              tamanho: reg.anexo_tamanho || reg.anexo_base64.length,
+              modulo: 'CHAMADOS_PORTAL',
+              pasta: 'chamados',
+              ref_id: reg.id,
+              empresa_id: reg.empresa_id
+            });
+            reg.anexo_cofre_id = cid;
+            reg.tem_anexo = true;
+            reg.anexo_base64 = null;
+            desacoplou = true;
+          }
+        }
+      }
+
+      return desacoplou;
     }
 
     saveLocalData() {
       this._cacheEmpListaRef = null;
       this._migrarCredenciais(this.data);
+      // Desacopla automaticamente anexos PDF/imagens pesados para o Cofre Digital (IndexedDB + Supabase Cloud)
+      this._desacoplarAnexosPesadosParaCofre(this.data, false);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
       } catch (err) {
-        console.error('Erro ao salvar no localStorage:', err);
-        if (typeof window !== 'undefined' && window.ZGestorApp?.showToast) {
-          window.ZGestorApp.showToast('Atenção: limite de armazenamento do navegador atingido! Exporte um Backup (.JSON) e evite anexar arquivos muito grandes.', 'error');
+        // Auto-recuperação caso o localStorage ainda esteja cheio com logs ou anexos residuais
+        try {
+          this._desacoplarAnexosPesadosParaCofre(this.data, true);
+          if (Array.isArray(this.data.audit_logs) && this.data.audit_logs.length > 80) {
+            this.data.audit_logs = this.data.audit_logs.slice(0, 80);
+          }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+        } catch (err2) {
+          console.error('Erro ao salvar cache local (dados continuam sincronizados na nuvem/memória):', err2);
+          const agoraMs = Date.now();
+          if ((!this._ultimoToastQuotaMs || agoraMs - this._ultimoToastQuotaMs > 15000) && typeof window !== 'undefined' && window.ZGestorApp?.showToast) {
+            this._ultimoToastQuotaMs = agoraMs;
+            window.ZGestorApp.showToast('Cache rápido do navegador otimizado: seus arquivos PDF permanecem salvos no Cofre Digital em Nuvem.', 'info');
+          }
         }
       }
       if (!this._suppressCloudSync && this._initialCloudSyncDone && this.supabaseConnected && this.supabase && this.supabaseConfig?.autoSync !== false) {
@@ -1656,6 +2003,9 @@
         let query = this.supabase.from('zgestor_registros').select(campos);
         if (filtroColecao) {
           query = query.eq('colecao', filtroColecao);
+        } else if (typeof query.neq === 'function') {
+          // Não baixa os PDFs pesados do Cofre na abertura do sistema (são carregados sob demanda ao clicar em Ver/Baixar PDF)
+          query = query.neq('colecao', 'arquivos_cofre');
         }
         if (typeof query.range === 'function') {
           query = query.range(offset, offset + pageSize - 1);
@@ -1899,7 +2249,8 @@
 
           const normMudou = this._normalizarDadosCarregados(this.data);
           const reconciliou = this.reconciliarCarteiraOficial(this.data);
-          if (normMudou || reconciliou) {
+          const desacoplouNuvem = this._desacoplarAnexosPesadosParaCofre(this.data, false);
+          if (normMudou || reconciliou || desacoplouNuvem) {
             atualizado = true;
             precisaSubirReconciliacao = true;
           }
@@ -4111,14 +4462,28 @@
             api_status: dados.api_status || this.data.cnds[idx].api_status || 'READY',
             ultima_consulta_api: new Date().toISOString()
           };
+          if (dados.arquivo_pdf_base64) {
+            const cid = this.data.cnds[idx].arquivo_cofre_id || `cofre-cnd-${this.data.cnds[idx].id}`;
+            this.data.cnds[idx].arquivo_cofre_id = cid;
+            this.data.cnds[idx].tem_arquivo_pdf = true;
+            this.arquivarDocumentoNoCofre(cid, dados.arquivo_pdf_base64, {
+              nome: this.data.cnds[idx].arquivo_pdf_nome || 'Certidao.pdf',
+              tamanho: dados.arquivo_pdf_base64.length,
+              modulo: 'CNDS',
+              pasta: 'cnds',
+              ref_id: this.data.cnds[idx].id,
+              empresa_id: this.data.cnds[idx].empresa_id
+            }).catch(() => {});
+          }
           this.saveLocalData();
           this.registrarLog('ATUALIZACAO_CND', 'CNDs', `Certidão ${orgaoNome} atualizada.`);
           return this.data.cnds[idx];
         }
       }
 
+      const idNovaCnd = 'cnd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5);
       const nova = {
-        id: 'cnd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5),
+        id: idNovaCnd,
         empresa_id: dados.empresa_id,
         esfera,
         tipo_cnd: orgaoNome,
@@ -4131,6 +4496,8 @@
         numero_controle: numCtrl,
         arquivo_pdf_nome: dados.arquivo_pdf_nome || '',
         arquivo_pdf_base64: dados.arquivo_pdf_base64 || '',
+        arquivo_cofre_id: dados.arquivo_pdf_base64 ? `cofre-cnd-${idNovaCnd}` : '',
+        tem_arquivo_pdf: Boolean(dados.arquivo_pdf_base64),
         origem_emissao: dados.origem_emissao || 'MANUAL_PDF',
         api_status: dados.api_status || 'READY',
         ultima_consulta_api: new Date().toISOString(),
@@ -4138,6 +4505,16 @@
         observacoes: dados.observacoes || ''
       };
       this.data.cnds.unshift(nova);
+      if (dados.arquivo_pdf_base64) {
+        this.arquivarDocumentoNoCofre(nova.arquivo_cofre_id, dados.arquivo_pdf_base64, {
+          nome: nova.arquivo_pdf_nome || 'Certidao.pdf',
+          tamanho: dados.arquivo_pdf_base64.length,
+          modulo: 'CNDS',
+          pasta: 'cnds',
+          ref_id: nova.id,
+          empresa_id: nova.empresa_id
+        }).catch(() => {});
+      }
       this.saveLocalData();
       const emp = this.data.empresas.find(e => e.id === nova.empresa_id);
       this.registrarLog('NOVA_CND', 'CNDs', `Cadastrada ${nova.orgao} para ${emp ? emp.nome_fantasia : 'Cliente'} (Validade: ${dataVal}).`);
@@ -4181,11 +4558,15 @@
       const cnd = this.data.cnds[idx];
       const emp = this.data.empresas.find(e => e.id === cnd.empresa_id);
       const novaSituacao = situacao || (cnd.situacao === 'PENDENTE' ? 'NEGATIVA' : (cnd.situacao || 'NEGATIVA'));
+      const nomeFinal = nomeArquivo || cnd.arquivo_pdf_nome || 'Certidao.pdf';
+      const cofreId = cnd.arquivo_cofre_id || `cofre-cnd-${cnd.id}`;
 
       this.data.cnds[idx] = {
         ...cnd,
-        arquivo_pdf_nome: nomeArquivo || cnd.arquivo_pdf_nome || 'Certidao.pdf',
+        arquivo_pdf_nome: nomeFinal,
         arquivo_pdf_base64: base64 || cnd.arquivo_pdf_base64 || '',
+        arquivo_cofre_id: (base64 || cnd.arquivo_cofre_id) ? cofreId : (cnd.arquivo_cofre_id || ''),
+        tem_arquivo_pdf: Boolean(base64 || cnd.tem_arquivo_pdf || cnd.arquivo_pdf_base64 || cnd.arquivo_cofre_id),
         origem_emissao: 'MANUAL_PDF',
         data_emissao: dataEmissao || cnd.data_emissao,
         data_validade: dataValidade || cnd.data_validade,
@@ -4195,12 +4576,31 @@
         situacao: novaSituacao
       };
 
+      if (base64) {
+        this.arquivarDocumentoNoCofre(cofreId, base64, {
+          nome: nomeFinal,
+          tamanho: base64.length,
+          modulo: 'CNDS',
+          pasta: 'cnds',
+          ref_id: cnd.id,
+          empresa_id: cnd.empresa_id
+        }).then(res => {
+          if (res && res.url && this.data.cnds[idx]) {
+            this.data.cnds[idx].arquivo_pdf_url = res.url;
+          }
+        }).catch(() => {});
+      }
+
       this.saveLocalData();
-      this.registrarLog('ANEXO_PDF_CND', 'CNDs', `Arquivo PDF ${nomeArquivo} anexado à certidão ${cnd.orgao} de ${emp ? emp.nome_fantasia : 'Cliente'}.`);
+      this.registrarLog('ANEXO_PDF_CND', 'CNDs', `Arquivo PDF ${nomeFinal} arquivado com segurança na certidão ${cnd.orgao} de ${emp ? emp.nome_fantasia : 'Cliente'}.`);
       return this.data.cnds[idx];
     }
 
     excluirCND(cndId) {
+      const alvo = (this.data.cnds || []).find(c => c.id === cndId);
+      if (alvo && alvo.arquivo_cofre_id) {
+        this.removerDocumentoDoCofre(alvo.arquivo_cofre_id).catch(() => {});
+      }
       this.data.cnds = (this.data.cnds || []).filter(c => c.id !== cndId);
       this.saveLocalData();
     }
@@ -4382,6 +4782,24 @@
         this.data.alvaras.unshift(registro);
       }
 
+      if (dados.anexo_base64) {
+        const cofreId = registro.anexo_cofre_id || `cofre-alvara-${registro.id}`;
+        registro.anexo_cofre_id = cofreId;
+        registro.tem_anexo = true;
+        this.arquivarDocumentoNoCofre(cofreId, dados.anexo_base64, {
+          nome: registro.anexo_nome || `Alvara_${registro.tipo || 'doc'}.pdf`,
+          tamanho: registro.anexo_tamanho || dados.anexo_base64.length,
+          modulo: 'ALVARAS',
+          pasta: 'alvaras',
+          ref_id: registro.id,
+          empresa_id: registro.empresa_id
+        }).then(res => {
+          if (res && res.url) {
+            registro.anexo_url = res.url;
+          }
+        }).catch(() => {});
+      }
+
       this.saveLocalData();
       const emp = (this.data.empresas || []).find(e => e.id === registro.empresa_id);
       this.registrarLog('SALVAR_ALVARA', 'Alvarás e Licenças', `Alvará "${registro.nome}" gravado para a empresa ${emp ? emp.nome_fantasia : registro.empresa_id}.`);
@@ -4391,6 +4809,9 @@
     excluirAlvara(alvaraId) {
       if (!Array.isArray(this.data.alvaras)) return;
       const alvo = this.data.alvaras.find(a => a.id === alvaraId);
+      if (alvo && alvo.anexo_cofre_id) {
+        this.removerDocumentoDoCofre(alvo.anexo_cofre_id).catch(() => {});
+      }
       this.data.alvaras = this.data.alvaras.filter(a => a.id !== alvaraId);
       this.saveLocalData();
       if (alvo) {

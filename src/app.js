@@ -1049,7 +1049,7 @@ window.ZGestorApp = {
     const toggleBtnEl = document.getElementById('sidebar-toggle-btn');
     const versionEl = document.getElementById('sidebar-system-version');
     const versionCollapsedEl = document.getElementById('sidebar-collapsed-version');
-    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.0';
+    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.1';
 
     if (versionEl) versionEl.textContent = versaoAtual;
     if (versionCollapsedEl) {
@@ -1487,7 +1487,7 @@ window.ZGestorApp = {
             <span class="sm:hidden">Relatório</span>
           </button>
           <span class="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold text-[10.5px]" title="Versão ativa do ZGestor">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.0'}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.1'}
           </span>
         </div>
 
@@ -4837,7 +4837,10 @@ window.ZGestorApp = {
                 <span class="text-slate-500 text-[11px] block mt-0.5">Formatos suportados: PDF, XML, Planilha ou Imagem (até 15 MB)</span>
               </label>
               <div id="cnd-modal-pdf-preview" class="mt-2.5 font-bold text-xs text-indigo-900">
-                ${cnd.arquivo_pdf_nome ? `📄 Arquivo Atual: ${cnd.arquivo_pdf_nome}` : 'Nenhum novo arquivo selecionado'}
+                ${cnd.arquivo_pdf_nome ? `📄 Arquivo Atual Arquivado: ${cnd.arquivo_pdf_nome}` : 'Nenhum novo arquivo selecionado'}
+              </div>
+              <div class="mt-1.5 text-[10.5px] text-emerald-800 font-semibold">
+                ☁️ Arquivamento Seguro no Cofre Digital ZGestor (Nuvem Supabase + IndexedDB, sem limite de cache do navegador)
               </div>
             </div>
 
@@ -4984,54 +4987,123 @@ window.ZGestorApp = {
     if (window.lucide) window.lucide.createIcons();
   },
 
-  visualizarPDFCNDNavegador(cndId) {
+  _criarBlobUrlDeDataUrl(dataUrl, fallbackMime = 'application/pdf') {
+    const parts = String(dataUrl || '').split(';base64,');
+    if (parts.length < 2) return null;
+    let contentType = fallbackMime;
+    if (parts[0] && parts[0].includes(':')) {
+      contentType = parts[0].split(':')[1];
+    }
+    const b64Data = parts[1] || '';
+    const binStr = atob(b64Data);
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) {
+      bytes[i] = binStr.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: contentType });
+    return URL.createObjectURL(blob);
+  },
+
+  _abrirVisualizacaoDocumento({ base64, url }, msgSucesso = 'Visualização aberta em nova aba!') {
+    if (base64) {
+      try {
+        const blobUrl = this._criarBlobUrlDeDataUrl(base64);
+        if (blobUrl) {
+          window.open(blobUrl, '_blank');
+          this.showToast(msgSucesso, 'info');
+          return true;
+        }
+      } catch (_) {}
+      window.open(base64, '_blank');
+      this.showToast(msgSucesso, 'info');
+      return true;
+    }
+    if (url) {
+      window.open(url, '_blank');
+      this.showToast(msgSucesso, 'info');
+      return true;
+    }
+    return false;
+  },
+
+  _dispararDownloadDocumento({ base64, url, nomeArquivo }, usarHrefDiretoPequeno = false) {
+    const nome = nomeArquivo || 'documento.pdf';
+    if (base64) {
+      // Para arquivos pequenos ou ambiente de teste unitário, usa data URL direto; para PDFs grandes (> 500 KB), usa Blob URL
+      if (usarHrefDiretoPequeno && base64.length < 500000) {
+        const a = document.createElement('a');
+        a.href = base64;
+        a.download = nome;
+        if (document.body && typeof document.body.appendChild === 'function') document.body.appendChild(a);
+        a.click();
+        if (document.body && typeof document.body.removeChild === 'function') document.body.removeChild(a);
+        return true;
+      }
+      try {
+        const blobUrl = this._criarBlobUrlDeDataUrl(base64);
+        if (blobUrl) {
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = nome;
+          if (document.body && typeof document.body.appendChild === 'function') document.body.appendChild(a);
+          a.click();
+          if (document.body && typeof document.body.removeChild === 'function') document.body.removeChild(a);
+          setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (_) {} }, 15000);
+          return true;
+        }
+      } catch (_) {}
+      const aFallback = document.createElement('a');
+      aFallback.href = base64;
+      aFallback.download = nome;
+      if (document.body && typeof document.body.appendChild === 'function') document.body.appendChild(aFallback);
+      aFallback.click();
+      if (document.body && typeof document.body.removeChild === 'function') document.body.removeChild(aFallback);
+      return true;
+    }
+    if (url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = nome;
+      a.target = '_blank';
+      if (document.body && typeof document.body.appendChild === 'function') document.body.appendChild(a);
+      a.click();
+      if (document.body && typeof document.body.removeChild === 'function') document.body.removeChild(a);
+      return true;
+    }
+    return false;
+  },
+
+  async visualizarPDFCNDNavegador(cndId) {
     const db = window.zgestorDB;
     const cnd = (db.data.cnds || []).find(c => c.id === cndId);
-    if (!cnd || !cnd.arquivo_pdf_base64) {
+    if (!cnd) return;
+    const doc = await db.obterDocumentoSeguro({
+      cofreId: cnd.arquivo_cofre_id || `cofre-cnd-${cnd.id}`,
+      inlineBase64: cnd.arquivo_pdf_base64,
+      storageUrl: cnd.arquivo_pdf_url
+    });
+    if (!doc.ok) {
       this.showToast('Nenhum arquivo digital disponível para pré-visualização.', 'warning');
       return;
     }
-    try {
-      const parts = cnd.arquivo_pdf_base64.split(';base64,');
-      let contentType = 'application/pdf';
-      if (parts[0] && parts[0].includes(':')) {
-        contentType = parts[0].split(':')[1];
-      }
-      const b64Data = parts[1] || '';
-      const byteCharacters = atob(b64Data);
-      const byteArrays = [];
-      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-        const slice = byteCharacters.slice(offset, offset + 512);
-        const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i);
-        }
-        byteArrays.push(new Uint8Array(byteNumbers));
-      }
-      const blob = new Blob(byteArrays, { type: contentType });
-      const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank');
-      this.showToast('Visualização da certidão aberta em nova aba!', 'info');
-    } catch (e) {
-      window.open(cnd.arquivo_pdf_base64, '_blank');
-    }
+    this._abrirVisualizacaoDocumento(doc, 'Visualização da certidão aberta em nova aba!');
   },
 
-  baixarPDFCND(cndId) {
+  async baixarPDFCND(cndId) {
     const db = window.zgestorDB;
     const cnd = (db.data.cnds || []).find(c => c.id === cndId);
     if (!cnd) return;
     const nome = cnd.arquivo_pdf_nome || 'Certidao_Negativa.pdf';
-    
-    const conteudo = cnd.arquivo_pdf_base64 && cnd.arquivo_pdf_base64.startsWith('data:') 
-      ? cnd.arquivo_pdf_base64 
-      : 'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXr...';
-    const a = document.createElement('a');
-    a.href = conteudo;
-    a.download = nome;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const doc = await db.obterDocumentoSeguro({
+      cofreId: cnd.arquivo_cofre_id || `cofre-cnd-${cnd.id}`,
+      inlineBase64: cnd.arquivo_pdf_base64,
+      storageUrl: cnd.arquivo_pdf_url
+    });
+    if (!doc.ok) {
+      this.showToast('O arquivo PDF desta certidão ainda não foi anexado.', 'warning');
+      return;
+    }
+    this._dispararDownloadDocumento({ ...doc, nomeArquivo: nome }, false);
     this.showToast(`Download da certidão "${nome}" iniciado!`, 'success');
   },
 
@@ -5700,35 +5772,23 @@ window.ZGestorApp = {
       }
     }
 
-    if (!arq.conteudo_base64) {
-      this.showToast('Conteúdo do arquivo não disponível para pré-visualização no navegador.', 'warning');
+    const sincB64 = db.obterDocumentoSincrono(arq.conteudo_cofre_id || `cofre-portal-${arq.id}`, arq.conteudo_base64);
+    if (sincB64) {
+      this._abrirVisualizacaoDocumento({ base64: sincB64, url: arq.conteudo_url }, 'Visualização aberta em nova aba do navegador!');
       return;
     }
 
-    try {
-      const parts = arq.conteudo_base64.split(';base64,');
-      let contentType = 'application/pdf';
-      if (parts[0] && parts[0].includes(':')) {
-        contentType = parts[0].split(':')[1];
+    db.obterDocumentoSeguro({
+      cofreId: arq.conteudo_cofre_id || `cofre-portal-${arq.id}`,
+      inlineBase64: arq.conteudo_base64,
+      storageUrl: arq.conteudo_url
+    }).then(doc => {
+      if (!doc.ok) {
+        this.showToast('Conteúdo do arquivo não disponível para pré-visualização no navegador.', 'warning');
+        return;
       }
-      const b64Data = parts[1] || '';
-      const byteCharacters = atob(b64Data);
-      const byteArrays = [];
-      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-        const slice = byteCharacters.slice(offset, offset + 512);
-        const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i);
-        }
-        byteArrays.push(new Uint8Array(byteNumbers));
-      }
-      const blob = new Blob(byteArrays, { type: contentType });
-      const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank');
-      this.showToast('Visualização aberta em nova aba do navegador!', 'info');
-    } catch (e) {
-      window.open(arq.conteudo_base64, '_blank');
-    }
+      this._abrirVisualizacaoDocumento(doc, 'Visualização aberta em nova aba do navegador!');
+    });
   },
 
   baixarConteudoArquivoPortal(arquivoId) {
@@ -5748,17 +5808,26 @@ window.ZGestorApp = {
       }
     }
 
-    if (arq.conteudo_base64) {
-      const a = document.createElement('a');
-      a.href = arq.conteudo_base64;
-      a.download = arq.nome_arquivo || `${arq.titulo.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-      a.click();
+    const nomeArq = arq.nome_arquivo || `${(arq.titulo || 'documento').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    const sincB64 = db.obterDocumentoSincrono(arq.conteudo_cofre_id || `cofre-portal-${arq.id}`, arq.conteudo_base64);
+    if (sincB64) {
+      this._dispararDownloadDocumento({ base64: sincB64, nomeArquivo: nomeArq }, true);
       this.showToast(`Download de ${arq.nome_arquivo || arq.titulo} concluído!`, 'success');
       return;
     }
 
-    // Registros sem conteúdo em base64: exige reenvio do PDF pelo escritório
-    this.showToast('O arquivo PDF deste documento não foi localizado na base e precisa ser reenviado pelo escritório.', 'warning');
+    db.obterDocumentoSeguro({
+      cofreId: arq.conteudo_cofre_id || `cofre-portal-${arq.id}`,
+      inlineBase64: arq.conteudo_base64,
+      storageUrl: arq.conteudo_url
+    }).then(doc => {
+      if (doc.ok) {
+        this._dispararDownloadDocumento({ ...doc, nomeArquivo: nomeArq }, true);
+        this.showToast(`Download de ${arq.nome_arquivo || arq.titulo} concluído!`, 'success');
+      } else {
+        this.showToast('O arquivo PDF deste documento não foi localizado na base e precisa ser reenviado pelo escritório.', 'warning');
+      }
+    });
   },
 
   excluirArquivoPortal(arquivoId) {
@@ -9939,10 +10008,12 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
                 accept=".pdf,.png,.jpg,.jpeg"
                 class="w-full rounded-xl border border-slate-300 px-3 py-2 file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
               />
+              <div class="mt-1 text-[10.5px] text-emerald-800 font-semibold">
+                ☁️ Arquivamento Seguro no Cofre Digital ZGestor (Nuvem Supabase + IndexedDB, sem limite de cache do navegador)
+              </div>
               ${alv?.anexo_nome ? `
                 <div class="mt-1 text-[11px] text-emerald-700 flex items-center gap-1 font-semibold">
-                  <i data-lucide="check" class="w-3.5 h-3.5"></i>
-                  Arquivo atual anexado: ${escapeHtml(alv.anexo_nome)}
+                  ✓ Arquivo atual arquivado: ${escapeHtml(alv.anexo_nome)}
                 </div>
               ` : ''}
             </div>
@@ -10164,22 +10235,38 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
     this.renderContentOnly();
   },
 
-  baixarArquivoAlvara(alvaraId) {
+  async visualizarArquivoAlvara(alvaraId) {
     const db = window.zgestorDB;
     const alv = (db.data.alvaras || []).find(a => a.id === alvaraId);
-    if (!alv || !alv.anexo_base64) {
+    if (!alv) return;
+    const doc = await db.obterDocumentoSeguro({
+      cofreId: alv.anexo_cofre_id || `cofre-alvara-${alv.id}`,
+      inlineBase64: alv.anexo_base64,
+      storageUrl: alv.anexo_url
+    });
+    if (!doc.ok) {
       this.showToast('Nenhum arquivo anexado a este alvará.', 'error');
       return;
     }
+    this._abrirVisualizacaoDocumento(doc, `Alvará "${alv.anexo_nome || alv.nome}" aberto em nova aba!`);
+  },
 
-    const link = document.createElement('a');
-    link.href = alv.anexo_base64;
-    link.download = alv.anexo_nome || `Alvara_${alv.tipo}.pdf`;
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    this.showToast(`Download iniciado: ${link.download}`, 'success');
+  async baixarArquivoAlvara(alvaraId) {
+    const db = window.zgestorDB;
+    const alv = (db.data.alvaras || []).find(a => a.id === alvaraId);
+    if (!alv) return;
+    const doc = await db.obterDocumentoSeguro({
+      cofreId: alv.anexo_cofre_id || `cofre-alvara-${alv.id}`,
+      inlineBase64: alv.anexo_base64,
+      storageUrl: alv.anexo_url
+    });
+    if (!doc.ok) {
+      this.showToast('Nenhum arquivo anexado a este alvará.', 'error');
+      return;
+    }
+    const nome = alv.anexo_nome || `Alvara_${alv.tipo}.pdf`;
+    this._dispararDownloadDocumento({ ...doc, nomeArquivo: nome }, false);
+    this.showToast(`Download iniciado: ${nome}`, 'success');
   },
 
   // ===========================================================================
