@@ -1165,7 +1165,8 @@ window.ZGestorViews = {
                 <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5"></i>
                 <input
                   type="text"
-                  value="${appState.filtroTarefaBusca || ''}"
+                  id="input-filtro-tarefa-busca"
+                  value="${this.escapeHtml(appState.filtroTarefaBusca || '')}"
                   oninput="ZGestorApp.setFiltro('filtroTarefaBusca', this.value)"
                   placeholder="Buscar empresa, obrigação, responsável..."
                   class="w-full rounded-xl bg-slate-50 border border-slate-200 pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
@@ -2089,7 +2090,8 @@ window.ZGestorViews = {
                 </select>
                 <input
                   type="text"
-                  value="${appState.filtroTarefaBusca || ''}"
+                  id="input-filtro-fechamento-busca"
+                  value="${this.escapeHtml(appState.filtroTarefaBusca || '')}"
                   oninput="ZGestorApp.setFiltro('filtroTarefaBusca', this.value)"
                   placeholder="Filtrar por empresa, mês ou observação..."
                   class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
@@ -2659,6 +2661,7 @@ window.ZGestorViews = {
           <div class="flex flex-wrap items-center gap-2">
             <input
               type="text"
+              id="input-filtro-parcelamento-busca"
               value="${this.escapeHtml(appState.filtroParcelamentoBusca || '')}"
               oninput="ZGestorApp.setFiltro('filtroParcelamentoBusca', this.value)"
               placeholder="Buscar empresa, órgão ou modalidade..."
@@ -3888,10 +3891,12 @@ window.ZGestorViews = {
             <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Buscar por Razão Social, Nome Fantasia, Código ou CNPJ</label>
             <input
               type="text"
-              value="${appState.filtroEmpresaBusca || ''}"
+              id="input-filtro-empresa-busca"
+              autocomplete="off"
+              value="${this.escapeHtml(appState.filtroEmpresaBusca || '')}"
               oninput="ZGestorApp.setFiltro('filtroEmpresaBusca', this.value)"
               placeholder="Ex: TechNova, 34.512.890/0001-45..."
-              class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs text-slate-800"
+              class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400"
             />
           </div>
           <div>
@@ -5062,18 +5067,19 @@ window.ZGestorViews = {
   renderLogin(appState) {
     const db = window.zgestorDB;
     const esc = db.getEscritorioConfig() || {};
-    const colaboradores = (db.data.profiles || []).filter(p => p.cargo !== 'CLIENTE' && p.ativo);
 
     return `
-      <div class="w-full max-w-md mx-auto my-auto animate-in fade-in zoom-in duration-200">
-        <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200">
+      <div class="zg-auth-wrap w-full max-w-md mx-auto my-auto animate-in fade-in zoom-in duration-200">
+        <div class="zg-auth-card bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200">
           <!-- Logo Oficial do Escritório & Cabeçalho -->
-          <div class="text-center mb-6">
-            <div class="p-3 bg-[#012147] rounded-2xl border border-slate-800 shadow-xl inline-block max-w-[260px] w-full mx-auto">
+          <div class="zg-auth-header text-center mb-6">
+            <div class="zg-auth-logo-box p-3 bg-[#012147] rounded-2xl border border-slate-800 shadow-xl inline-block max-w-[260px] w-full mx-auto">
               <img
-                src="${esc.logo_customizada || './assets/logo-contabil.svg'}"
+                src="${esc.logo_customizada || './assets/logo-zioto.png'}"
                 alt="Zioto Contabilidade"
-                class="h-16 w-auto mx-auto object-contain drop-shadow-md"
+                height="64"
+                style="height:64px;max-height:64px;width:auto;max-width:210px;display:block;margin:0 auto;object-fit:contain;"
+                class="zg-auth-logo-img h-16 w-auto mx-auto object-contain drop-shadow-md"
                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
               />
               <div style="display:none;" class="flex flex-col items-center justify-center py-2 text-white">
@@ -5081,21 +5087,21 @@ window.ZGestorViews = {
                 <span class="text-[10px] tracking-widest text-slate-300 font-bold uppercase">Contabilidade</span>
               </div>
             </div>
-            <h1 class="text-xl font-black text-slate-900 tracking-tight mt-3">Portal & Gestão Contábil</h1>
-            <p class="text-xs text-slate-500 font-medium mt-0.5">Acesso Exclusivo para Clientes e Equipe do Escritório</p>
-            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 mt-2.5">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <h1 class="zg-auth-title text-xl font-black text-slate-900 tracking-tight mt-3">Portal & Gestão Contábil</h1>
+            <p class="zg-auth-subtitle text-xs text-slate-500 font-medium mt-0.5">Acesso Exclusivo para Clientes e Equipe do Escritório</p>
+            <div class="zg-auth-badge inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 mt-2.5">
+              <span class="zg-auth-dot w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               Ambiente Seguro com Isolamento RLS
             </div>
           </div>
 
           <!-- Formulário de Login -->
-          <form onsubmit="ZGestorApp.submitLogin(event)" class="space-y-4 text-xs">
+          <form onsubmit="ZGestorApp.submitLogin(event)" class="zg-auth-form space-y-4 text-xs">
             <div>
-              <label class="block font-bold text-slate-700 mb-1">E-mail de Acesso *</label>
-              <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <i data-lucide="mail" class="w-4 h-4"></i>
+              <label for="login-email" class="zg-auth-label block font-bold text-slate-700 mb-1">E-mail de Acesso *</label>
+              <div class="zg-auth-input-wrap relative">
+                <div class="zg-auth-icon-left absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                 </div>
                 <input
                   id="login-email"
@@ -5103,21 +5109,21 @@ window.ZGestorViews = {
                   required
                   placeholder="seu.email@ziotocontabilidade.com.br"
                   value=""
-                  class="w-full rounded-xl bg-slate-50 border border-slate-300 pl-9 pr-3 py-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-600 focus:bg-white transition"
+                  class="zg-auth-input w-full rounded-xl bg-slate-50 border border-slate-300 pl-9 pr-3 py-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-600 focus:bg-white transition"
                 />
               </div>
             </div>
 
             <div>
-              <div class="flex items-center justify-between mb-1">
-                <label class="block font-bold text-slate-700">Senha *</label>
-                <span class="text-[11px] text-slate-400 font-medium">
+              <div class="zg-auth-label-row flex items-center justify-between mb-1">
+                <label for="login-senha" class="zg-auth-label block font-bold text-slate-700" style="margin-bottom:0;">Senha *</label>
+                <span class="text-[11px] text-slate-400 font-medium" style="font-size:11px;color:#94a3b8;">
                   Digite sua senha
                 </span>
               </div>
-              <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <i data-lucide="lock" class="w-4 h-4"></i>
+              <div class="zg-auth-input-wrap relative">
+                <div class="zg-auth-icon-left absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 </div>
                 <input
                   id="login-senha"
@@ -5125,12 +5131,14 @@ window.ZGestorViews = {
                   required
                   placeholder="••••••••"
                   value=""
-                  class="w-full rounded-xl bg-slate-50 border border-slate-300 pl-9 pr-10 py-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-600 focus:bg-white transition font-mono"
+                  style="padding-right:2.5rem;"
+                  class="zg-auth-input w-full rounded-xl bg-slate-50 border border-slate-300 pl-9 pr-10 py-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-600 focus:bg-white transition font-mono"
                 />
                 <button
                   type="button"
                   onclick="ZGestorApp.toggleVerSenha()"
-                  class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition">
+                  title="Mostrar ou ocultar senha"
+                  class="zg-auth-eye-btn absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition">
                   <i id="icon-ver-senha" data-lucide="eye" class="w-4 h-4"></i>
                 </button>
               </div>
@@ -5138,27 +5146,27 @@ window.ZGestorViews = {
 
             <button
               type="submit"
-              class="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm shadow-md shadow-indigo-600/20 transition flex items-center justify-center gap-2 mt-3">
+              class="zg-auth-submit w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm shadow-md shadow-indigo-600/20 transition flex items-center justify-center gap-2 mt-3">
               <span>Entrar no Sistema</span>
-              <i data-lucide="arrow-right" class="w-4 h-4"></i>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
             </button>
           </form>
 
           <!-- Link para Ativação de Convite com Cadastro de Senha -->
-          <div class="mt-6 pt-5 border-t border-slate-100 text-center text-xs text-slate-500">
+          <div class="zg-auth-invite mt-6 pt-5 border-t border-slate-100 text-center text-xs text-slate-500">
             Recebeu um convite de acesso?
             <button
               type="button"
               onclick="ZGestorApp.abrirPromptAtivacao()"
-              class="font-bold text-indigo-600 hover:underline ml-1">
+              class="zg-auth-link-btn font-bold text-indigo-600 hover:underline ml-1">
               Ativar conta e cadastrar senha
             </button>
           </div>
 
-          <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+          <div class="zg-auth-footer mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
-            <span class="inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> v1.4.0
+            <span class="zg-auth-version inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> v1.4.5
             </span>
           </div>
         </div>
@@ -5851,6 +5859,7 @@ window.ZGestorViews = {
                 <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
                 <input
                   type="text"
+                  id="input-filtro-alvara-busca"
                   placeholder="Nome, órgão ou nº do alvará..."
                   value="${this.escapeHtml(appState.filtroAlvaraBusca || '')}"
                   oninput="ZGestorApp.setFiltroAlvaraBusca(this.value)"

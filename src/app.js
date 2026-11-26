@@ -310,9 +310,13 @@ window.ZGestorApp = {
     const bannerContainer = document.getElementById('simulacao-portal-banner');
 
     if (!user) {
-      if (authWrapper) authWrapper.classList.add('hidden');
+      if (authWrapper) {
+        authWrapper.hidden = true;
+        authWrapper.classList.add('hidden');
+      }
       if (bannerContainer) bannerContainer.innerHTML = '';
       if (authScreen) {
+        authScreen.hidden = false;
         authScreen.classList.remove('hidden');
         authScreen.innerHTML = window.ZGestorViews.renderLogin(this.state);
         if (window.lucide) window.lucide.createIcons();
@@ -320,8 +324,15 @@ window.ZGestorApp = {
       return;
     }
 
-    if (authScreen) authScreen.classList.add('hidden');
-    if (authWrapper) authWrapper.classList.remove('hidden');
+    if (authScreen) {
+      authScreen.hidden = true;
+      authScreen.classList.add('hidden');
+      authScreen.innerHTML = '';
+    }
+    if (authWrapper) {
+      authWrapper.hidden = false;
+      authWrapper.classList.remove('hidden');
+    }
 
     const isCliente = user.cargo === 'CLIENTE';
     const isSimulacao = Boolean(this.state.modoSimulacaoCliente && this.state.modoSimulacaoCliente.ativo);
@@ -1468,13 +1479,46 @@ window.ZGestorApp = {
     if (window.lucide) window.lucide.createIcons();
   },
 
+  _sincronizarDomPreservandoInput(oldParent, newParent, activeEl) {
+    if (!oldParent || !newParent || !activeEl) return false;
+    const oldChildren = Array.from(oldParent.children || []);
+    const newChildren = Array.from(newParent.children || []);
+    if (oldChildren.length !== newChildren.length) {
+      return false;
+    }
+    for (let i = 0; i < oldChildren.length; i++) {
+      const oc = oldChildren[i];
+      const nc = newChildren[i];
+      if (oc === activeEl) {
+        continue;
+      }
+      if (typeof oc.contains === 'function' && oc.contains(activeEl)) {
+        if (oc.tagName !== nc.tagName || !this._sincronizarDomPreservandoInput(oc, nc, activeEl)) {
+          return false;
+        }
+      } else if (typeof oc.replaceWith === 'function') {
+        oc.replaceWith(nc);
+      } else {
+        return false;
+      }
+    }
+    return true;
+  },
+
   renderContentOnly() {
     const main = document.getElementById('main-view');
     if (!main) return;
 
-    // Preserva foco e posição do cursor caso o usuário esteja digitando em um input (ex: filtros de busca)
+    // Preserva foco contínuo, composição de acentos (IME) e posição do cursor ao digitar em campos de busca
     const activeEl = document.activeElement;
+    const isTypingInMain = Boolean(
+      activeEl &&
+      (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') &&
+      typeof main.contains === 'function' &&
+      main.contains(activeEl)
+    );
     const activeId = activeEl && activeEl.id ? activeEl.id : null;
+    const activeOnInput = activeEl && typeof activeEl.getAttribute === 'function' ? activeEl.getAttribute('oninput') : null;
     const selStart = activeEl && typeof activeEl.selectionStart === 'number' ? activeEl.selectionStart : null;
     const selEnd = activeEl && typeof activeEl.selectionEnd === 'number' ? activeEl.selectionEnd : null;
 
@@ -1487,12 +1531,13 @@ window.ZGestorApp = {
     }
     const V = window.ZGestorViews;
 
-    if (t === 'dashboard') main.innerHTML = V.renderDashboard(this.state);
+    let novoHtml = '';
+    if (t === 'dashboard') novoHtml = V.renderDashboard(this.state);
     else if (t === 'central_cliente') {
       if (user && user.cargo === 'CLIENTE') {
-        main.innerHTML = V.renderCentralCliente(this.state);
+        novoHtml = V.renderCentralCliente(this.state);
       } else {
-        main.innerHTML = `
+        novoHtml = `
           <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 text-center max-w-lg mx-auto my-8 space-y-3">
             <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
               <i data-lucide="globe" class="w-6 h-6"></i>
@@ -1504,23 +1549,45 @@ window.ZGestorApp = {
         `;
       }
     }
-    else if (t === 'tarefas') main.innerHTML = V.renderTarefas(this.state);
-    else if (t === 'parcelamentos') main.innerHTML = V.renderParcelamentos(this.state);
-    else if (t === 'cnds') main.innerHTML = V.renderCNDs(this.state);
-    else if (t === 'alvaras') main.innerHTML = V.renderAlvaras(this.state);
-    else if (t === 'empresas') main.innerHTML = V.renderEmpresas(this.state);
-    else if (t === 'onboarding') main.innerHTML = V.renderOnboarding(this.state);
-    else if (t === 'honorarios') main.innerHTML = V.renderHonorarios(this.state);
-    else if (t === 'escritorio') main.innerHTML = V.renderEscritorio(this.state);
-    else if (t === 'seguranca') main.innerHTML = V.renderSeguranca(this.state);
-    else if (t === 'inteligencia_ia') main.innerHTML = V.renderInteligenciaIA(this.state);
+    else if (t === 'tarefas') novoHtml = V.renderTarefas(this.state);
+    else if (t === 'parcelamentos') novoHtml = V.renderParcelamentos(this.state);
+    else if (t === 'cnds') novoHtml = V.renderCNDs(this.state);
+    else if (t === 'alvaras') novoHtml = V.renderAlvaras(this.state);
+    else if (t === 'empresas') novoHtml = V.renderEmpresas(this.state);
+    else if (t === 'onboarding') novoHtml = V.renderOnboarding(this.state);
+    else if (t === 'honorarios') novoHtml = V.renderHonorarios(this.state);
+    else if (t === 'escritorio') novoHtml = V.renderEscritorio(this.state);
+    else if (t === 'seguranca') novoHtml = V.renderSeguranca(this.state);
+    else if (t === 'inteligencia_ia') novoHtml = V.renderInteligenciaIA(this.state);
+
+    let inputPreservadoIntacto = false;
+    if (isTypingInMain && main.children && main.children.length > 0 && typeof document.createElement === 'function') {
+      try {
+        const tempContainer = document.createElement('div');
+        tempContainer.innerHTML = novoHtml;
+        if (tempContainer.children && tempContainer.children.length > 0) {
+          inputPreservadoIntacto = this._sincronizarDomPreservandoInput(main, tempContainer, activeEl);
+        }
+      } catch (_) {
+        inputPreservadoIntacto = false;
+      }
+    }
+
+    if (!inputPreservadoIntacto) {
+      main.innerHTML = novoHtml;
+    }
 
     if (window.lucide) window.lucide.createIcons();
 
-    if (activeId) {
-      const restoredEl = document.getElementById(activeId);
+    if (!inputPreservadoIntacto && (activeId || activeOnInput)) {
+      let restoredEl = activeId ? document.getElementById(activeId) : null;
+      if (!restoredEl && activeOnInput && typeof main.querySelectorAll === 'function') {
+        restoredEl = Array.from(main.querySelectorAll('input, textarea')).find(
+          el => typeof el.getAttribute === 'function' && el.getAttribute('oninput') === activeOnInput
+        ) || null;
+      }
       if (restoredEl && typeof restoredEl.focus === 'function') {
-        restoredEl.focus();
+        try { restoredEl.focus({ preventScroll: true }); } catch (_) { restoredEl.focus(); }
         if (selStart !== null && selEnd !== null && typeof restoredEl.setSelectionRange === 'function') {
           try { restoredEl.setSelectionRange(selStart, selEnd); } catch (_) {}
         }
