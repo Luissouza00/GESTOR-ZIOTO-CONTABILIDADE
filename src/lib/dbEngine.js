@@ -259,6 +259,70 @@
         });
       }
 
+      // Migração fiscal Lucro Presumido / Real:
+      // 1) IRPJ/CSLL passa a ser TRIMESTRAL (Mar/Jun/Set/Dez)
+      // 2) Apuração ICMS de Lucro Presumido/Real (dia 08) antecipa prazo se cair em fim de semana/feriado
+      if (Array.isArray(target.modelos_tarefas) && target.modelos_tarefas.length > 0) {
+        const jaMigrouModelos = Boolean(target.escritorio && target.escritorio._regras_presumido_v1);
+        if (!jaMigrouModelos) {
+          target.modelos_tarefas.forEach(m => {
+            if (!m) return;
+            const tit = String(m.titulo || '').toLowerCase();
+            const ehPresumidoReal = Array.isArray(m.regimes_aplicaveis) && (m.regimes_aplicaveis.includes('Lucro Presumido') || m.regimes_aplicaveis.includes('Lucro Real'));
+            if (m.id === 'mod-fis-pr-irpj' || (ehPresumidoReal && (tit.includes('irpj') || tit.includes('csll')))) {
+              if (m.periodicidade !== 'TRIMESTRAL') {
+                m.periodicidade = 'TRIMESTRAL';
+                mudou = true;
+              }
+              m.antecipar_dia_util = true;
+            }
+            if (ehPresumidoReal && tit.includes('icms') && !tit.startsWith('transmissão efd') && !tit.startsWith('transmissao efd')) {
+              m.antecipar_dia_util = true;
+              if (!m.dia_prazo_padrao || m.dia_prazo_padrao === 15) {
+                m.dia_prazo_padrao = 8;
+                mudou = true;
+              }
+            }
+            if (ehPresumidoReal && (tit.includes('pis') || tit.includes('cofins')) && !tit.startsWith('transmissão efd') && !tit.startsWith('transmissao efd')) {
+              m.antecipar_dia_util = true;
+            }
+          });
+
+          if (Array.isArray(target.tarefas)) {
+            const empMap = new Map((target.empresas || []).map(e => [e.id, e]));
+            const antesLen = target.tarefas.length;
+            target.tarefas = target.tarefas.filter(t => {
+              if (!t) return false;
+              const tit = String(t.titulo || '').toLowerCase();
+              const compMes = String(t.competencia || '').split('/')[0];
+              // Remove tarefas mensais automáticas não iniciadas de IRPJ/CSLL fora dos meses de fechamento trimestral (03, 06, 09, 12)
+              if ((tit.includes('irpj') || tit.includes('csll')) && !['03', '06', '09', '12'].includes(compMes) && t.status === 'NAO_INICIADA' && !t.data_entrega) {
+                return false;
+              }
+              return true;
+            });
+            if (target.tarefas.length !== antesLen) mudou = true;
+
+            target.tarefas.forEach(t => {
+              if (!t || t.data_entrega || !t.prazo_entrega) return;
+              const emp = empMap.get(t.empresa_id);
+              const tit = String(t.titulo || '').toLowerCase();
+              if (emp && ['Lucro Presumido', 'Lucro Real'].includes(emp.regime_tributario) && tit.includes('icms') && !tit.startsWith('transmissão efd') && !tit.startsWith('transmissao efd')) {
+                const novoPrazo = this.anteciparParaDiaUtil(t.prazo_entrega, false);
+                if (novoPrazo && novoPrazo !== t.prazo_entrega) {
+                  t.prazo_entrega = novoPrazo;
+                  mudou = true;
+                }
+              }
+            });
+          }
+
+          if (!target.escritorio) target.escritorio = {};
+          target.escritorio._regras_presumido_v1 = true;
+          mudou = true;
+        }
+      }
+
       return mudou;
     }
 
@@ -850,6 +914,159 @@
       const ultimoDiaMes = new Date(sub2.ano, sub2.mes, 0).getDate();
       const diaValido = String(Math.min(Math.max(1, Number(dia || 20)), ultimoDiaMes)).padStart(2, '0');
       return `${sub2.ano}-${sub2.mesFormatado}-${diaValido}`;
+    }
+
+    // =========================================================================
+    // CALENDÁRIO FISCAL BRASILEIRO (DIAS ÚTEIS, FERIADOS NACIONAIS E QUOTAS)
+    // =========================================================================
+    _feriadosNacionaisDoAno(ano) {
+      if (!this._cacheFeriados) this._cacheFeriados = {};
+      if (this._cacheFeriados[ano]) return this._cacheFeriados[ano];
+
+      const set = new Set([
+        `${ano}-01-01`, // Confraternização Universal
+        `${ano}-04-21`, // Tiradentes
+        `${ano}-05-01`, // Dia do Trabalho
+        `${ano}-09-07`, // Independência do Brasil
+        `${ano}-10-12`, // Nossa Senhora Aparecida
+        `${ano}-11-02`, // Finados
+        `${ano}-11-15`, // Proclamação da República
+        `${ano}-11-20`, // Dia Nacional de Zumbi e da Consciência Negra
+        `${ano}-12-25`  // Natal
+      ]);
+
+      // Cálculo da Páscoa (Meeus/Jones/Butcher) para feriados móveis
+      const a = ano % 19;
+      const b = Math.floor(ano / 100);
+      const c = ano % 100;
+      const d = Math.floor(b / 4);
+      const e = b % 4;
+      const f = Math.floor((b + 8) / 25);
+      const g = Math.floor((b - f + 1) / 3);
+      const h = (19 * a + b - d - g + 15) % 30;
+      const i = Math.floor(c / 4);
+      const k = c % 4;
+      const l = (32 + 2 * e + 2 * i - h - k) % 7;
+      const m = Math.floor((a + 11 * h + 22 * l) / 451);
+      const mesPascoa = Math.floor((h + l - 7 * m + 114) / 31);
+      const diaPascoa = ((h + l - 7 * m + 114) % 31) + 1;
+
+      const addDias = (offset) => {
+        const dt = new Date(ano, mesPascoa - 1, diaPascoa + offset);
+        const yy = dt.getFullYear();
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getDate()).padStart(2, '0');
+        return `${yy}-${mm}-${dd}`;
+      };
+
+      set.add(addDias(-48)); // Segunda de Carnaval (expediente bancário suspenso)
+      set.add(addDias(-47)); // Terça de Carnaval
+      set.add(addDias(-2));  // Sexta-Feira da Paixão
+      set.add(addDias(60));  // Corpus Christi
+
+      this._cacheFeriados[ano] = set;
+      return set;
+    }
+
+    ehDiaUtilBrasil(dateStr, considerarFechamentoBancario31Dez = false) {
+      if (!dateStr || typeof dateStr !== 'string') return true;
+      const parts = dateStr.slice(0, 10).split('-').map(Number);
+      if (parts.length !== 3 || parts.some(isNaN)) return true;
+      const [y, m, d] = parts;
+      const dt = new Date(y, m - 1, d);
+      const dow = dt.getDay();
+      if (dow === 0 || dow === 6) return false;
+      const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      if (considerarFechamentoBancario31Dez && m === 12 && d === 31) return false;
+      const feriados = this._feriadosNacionaisDoAno(y);
+      return !feriados.has(iso);
+    }
+
+    anteciparParaDiaUtil(dateStr, considerarFechamentoBancario31Dez = false) {
+      if (!dateStr || typeof dateStr !== 'string') return dateStr;
+      const parts = dateStr.slice(0, 10).split('-').map(Number);
+      if (parts.length !== 3 || parts.some(isNaN)) return dateStr;
+      let dt = new Date(parts[0], parts[1] - 1, parts[2]);
+      for (let guard = 0; guard < 12; guard++) {
+        const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        if (this.ehDiaUtilBrasil(iso, considerarFechamentoBancario31Dez)) {
+          return iso;
+        }
+        dt.setDate(dt.getDate() - 1);
+      }
+      return dateStr;
+    }
+
+    calcularDataMesSubsequenteUtil(competencia, dia = 8, antecipar = true, considerar31Dez = false) {
+      const bruta = this.calcularDataMesSubsequente(competencia, dia);
+      return antecipar ? this.anteciparParaDiaUtil(bruta, considerar31Dez) : bruta;
+    }
+
+    obterTrimestreDeCompetencia(competencia) {
+      const partes = String(competencia || '09/2026').split('/');
+      const mes = parseInt(partes[0], 10) || 9;
+      const ano = parseInt(partes[1], 10) || 2026;
+      const trimestre = Math.min(4, Math.max(1, Math.ceil(mes / 3)));
+      const mesFechamento = String(trimestre * 3).padStart(2, '0');
+      return {
+        trimestre,
+        ano,
+        competenciaFechamento: `${mesFechamento}/${ano}`,
+        sigla: `${trimestre}T/${ano}`,
+        label: `${trimestre}º Trimestre/${ano}`
+      };
+    }
+
+    calcularDatasQuotasTrimestre(trimestreNum = 3, anoRef = 2026, qtdQuotas = 3) {
+      const trim = Math.min(4, Math.max(1, parseInt(trimestreNum, 10) || 3));
+      const ano = parseInt(anoRef, 10) || 2026;
+      const total = Math.min(3, Math.max(1, parseInt(qtdQuotas, 10) || 3));
+      const mesFechamento = trim * 3;
+      const compFechamento = `${String(mesFechamento).padStart(2, '0')}/${ano}`;
+
+      const quotas = [];
+      let compCursor = compFechamento;
+      for (let q = 1; q <= total; q++) {
+        const sub = this.obterMesSubsequente(compCursor);
+        const ultimoDia = new Date(sub.ano, sub.mes, 0).getDate();
+        const dataBruta = `${sub.ano}-${sub.mesFormatado}-${String(ultimoDia).padStart(2, '0')}`;
+        const dataUtil = this.anteciparParaDiaUtil(dataBruta, true);
+        quotas.push({
+          quota: q,
+          totalQuotas: total,
+          competenciaFechamento: compFechamento,
+          competenciaProtocolo: compCursor,
+          competenciaEntrega: sub.label,
+          data_vencimento: dataUtil
+        });
+        compCursor = sub.label;
+      }
+      return quotas;
+    }
+
+    identificarTipoApuracaoFiscal(tarefa, emp = null) {
+      if (!tarefa) return null;
+      const empresa = emp || this.obterEmpresaSegura(tarefa.empresa_id, tarefa);
+      const tit = String(tarefa.titulo || '').toLowerCase().trim();
+      if (tit.startsWith('transmissão efd-') || tit.startsWith('transmissao efd-')) {
+        return null;
+      }
+      if (tit.includes('irpj') || tit.includes('csll')) {
+        return 'IRPJ_CSLL';
+      }
+      if (tit.includes('pis') || tit.includes('cofins')) {
+        return 'PIS_COFINS';
+      }
+      if (tit.includes('destda')) {
+        return 'ICMS_SIMPLES';
+      }
+      if (tit.includes('icms')) {
+        if (empresa && ['Lucro Presumido', 'Lucro Real'].includes(empresa.regime_tributario)) {
+          return 'ICMS_PRESUMIDO_REAL';
+        }
+        return 'ICMS_SIMPLES';
+      }
+      return null;
     }
 
     // =========================================================================
@@ -1694,25 +1911,49 @@
       }
 
       // Integração automática com Controle de Guias e Protocolos:
-      // Se PGDAS-D ou ICMS foi concluída COM MOVIMENTO (ENTREGUE_NORMAL), garante a guia pronta para envio/impressão.
+      // Se PGDAS-D, ICMS, PIS/COFINS ou IRPJ/CSLL foi concluída COM MOVIMENTO (ENTREGUE_NORMAL), garante a guia pronta para envio/impressão.
       // Se foi concluída SEM MOVIMENTO, remove eventual guia pendente não enviada.
+      const empTarefa = this.obterEmpresaSegura(t.empresa_id, t);
+      const tipoApur = this.identificarTipoApuracaoFiscal(t, empTarefa);
       const tituloLower = (t.titulo || '').toLowerCase();
-      const ehPgdas = tituloLower.includes('pgdas') || tituloLower.includes('guia das');
-      const ehIcms = tituloLower.includes('icms') && !tituloLower.includes('destda');
-      if (ehPgdas || ehIcms) {
-        const tipoGuiaAlvo = ehPgdas
-          ? 'DAS - Simples Nacional'
-          : 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)';
+      const ehPgdas = tituloLower.includes('pgdas') || tituloLower.includes('guia das') || tituloLower.includes('simei');
+
+      if (ehPgdas) {
+        const tipoGuiaAlvo = empTarefa && empTarefa.regime_tributario === 'MEI' ? 'DAS - SIMEI (MEI)' : 'DAS - Simples Nacional';
         if (acao === 'ENTREGUE_NORMAL') {
-          this._garantirGuiaPorConclusaoTarefa(t, tipoGuiaAlvo, 20, ehIcms);
+          this._garantirGuiaPorConclusaoTarefa(t, tipoGuiaAlvo, 20, false);
         } else if (acao === 'SEM_MOVIMENTO') {
-          if (Array.isArray(this.data.guias_impostos)) {
-            this.data.guias_impostos = this.data.guias_impostos.filter(g => {
-              const mesmoAlvo = g.empresa_id === t.empresa_id && g.competencia === t.competencia && g.tipo_guia === tipoGuiaAlvo;
-              const aindaPendente = g.status_envio === 'PENDENTE_GERACAO' || g.status_envio === 'GERADA_AGUARDANDO_ENVIO' || g.status_envio === 'PENDENTE_ENVIO';
-              return !(mesmoAlvo && aindaPendente);
-            });
-          }
+          this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && g.tipo_guia === tipoGuiaAlvo);
+        }
+      } else if (tipoApur === 'ICMS_PRESUMIDO_REAL') {
+        const vencDia8Util = this.calcularDataMesSubsequenteUtil(t.competencia, 8, true);
+        if (acao === 'ENTREGUE_NORMAL') {
+          this._garantirGuiaPorConclusaoTarefa(t, 'DAE / DARE - ICMS Mensal (Normal)', 8, false, vencDia8Util);
+        } else if (acao === 'SEM_MOVIMENTO') {
+          this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && String(g.tipo_guia || '').toLowerCase().includes('icms'));
+        }
+      } else if (tipoApur === 'ICMS_SIMPLES' && !tituloLower.includes('destda')) {
+        if (acao === 'ENTREGUE_NORMAL') {
+          this._garantirGuiaPorConclusaoTarefa(t, 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)', 20, true);
+        } else if (acao === 'SEM_MOVIMENTO') {
+          this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && String(g.tipo_guia || '').toLowerCase().includes('icms'));
+        }
+      } else if (tipoApur === 'PIS_COFINS') {
+        const vencDia25Util = this.calcularDataMesSubsequenteUtil(t.competencia, 25, true);
+        if (acao === 'ENTREGUE_NORMAL') {
+          this._garantirGuiaPorConclusaoTarefa(t, 'DARF - PIS', 25, false, vencDia25Util);
+          this._garantirGuiaPorConclusaoTarefa(t, 'DARF - COFINS', 25, false, vencDia25Util);
+        } else if (acao === 'SEM_MOVIMENTO') {
+          this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && (String(g.tipo_guia || '').includes('PIS') || String(g.tipo_guia || '').includes('COFINS')));
+        }
+      } else if (tipoApur === 'IRPJ_CSLL') {
+        const infoTrim = this.obterTrimestreDeCompetencia(t.competencia);
+        if (acao === 'ENTREGUE_NORMAL') {
+          const [qUnica] = this.calcularDatasQuotasTrimestre(infoTrim.trimestre, infoTrim.ano, 1);
+          this._garantirGuiaPorConclusaoTarefa(t, `DARF - IRPJ (Quota Única - ${infoTrim.label})`, 30, false, qUnica.data_vencimento);
+          this._garantirGuiaPorConclusaoTarefa(t, `DARF - CSLL (Quota Única - ${infoTrim.label})`, 30, false, qUnica.data_vencimento);
+        } else if (acao === 'SEM_MOVIMENTO') {
+          this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && (g.competencia === t.competencia || g.trimestre_ref === infoTrim.sigla) && (String(g.tipo_guia || '').includes('IRPJ') || String(g.tipo_guia || '').includes('CSLL')));
         }
       }
 
@@ -1722,15 +1963,22 @@
       return t;
     }
 
-    _garantirGuiaPorConclusaoTarefa(tarefa, tipoGuia, dia = 20, segundoMesSubsequente = false) {
+    _removerGuiasPendentesPorFiltro(predicado) {
+      if (!Array.isArray(this.data.guias_impostos)) return;
+      this.data.guias_impostos = this.data.guias_impostos.filter(g => {
+        const aindaPendente = g.status_envio === 'PENDENTE_GERACAO' || g.status_envio === 'GERADA_AGUARDANDO_ENVIO' || g.status_envio === 'PENDENTE_ENVIO';
+        return !(predicado(g) && aindaPendente);
+      });
+    }
+
+    _garantirGuiaPorConclusaoTarefa(tarefa, tipoGuia, dia = 20, segundoMesSubsequente = false, dataVencimentoCustom = null) {
       if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
       const existente = this.data.guias_impostos.find(
-        g => g.empresa_id === tarefa.empresa_id && g.competencia === tarefa.competencia &&
-        (g.tipo_guia === tipoGuia || (tipoGuia.includes('DAS') && g.tipo_guia.includes('DAS')) || (tipoGuia.includes('ICMS') && g.tipo_guia.includes('ICMS')))
+        g => g.empresa_id === tarefa.empresa_id && g.competencia === tarefa.competencia && g.tipo_guia === tipoGuia
       );
-      const vencimento = segundoMesSubsequente
+      const vencimento = dataVencimentoCustom || (segundoMesSubsequente
         ? this.calcularDataSegundoMesSubsequente(tarefa.competencia, dia)
-        : this.calcularDataMesSubsequente(tarefa.competencia, dia);
+        : this.calcularDataMesSubsequente(tarefa.competencia, dia));
 
       if (existente) {
         if (existente.status_envio === 'PENDENTE_GERACAO') {
@@ -2047,6 +2295,11 @@
           // Regra de Inscrição Estadual (ICMS, DeSTDA, EFD-ICMS/IPI)
           if (mod.requer_ie && !temIE) return;
 
+          // Regra de Periodicidade Trimestral (Março=03, Junho=06, Setembro=09, Dezembro=12)
+          if (mod.periodicidade === 'TRIMESTRAL') {
+            if (!['03', '06', '09', '12'].includes(compMes)) return;
+          }
+
           // Regra de Periodicidade Anual (ex: ECD Junho, ECF Julho)
           if (mod.periodicidade === 'ANUAL') {
             const mesAlvo = String(mod.mes_entrega || '06').padStart(2, '0');
@@ -2057,16 +2310,24 @@
           if ((mod.requer_funcionarios || mod.exige_funcionarios) && !temFuncionarios) return;
           if (mod.requer_pro_labore && !temProLabore && !temFuncionarios) return;
 
-          const tipoTarefa = mod.periodicidade === 'ANUAL' ? 'ANUAL' : 'MENSAL';
+          const tipoTarefa = mod.periodicidade === 'ANUAL' ? 'ANUAL' : (mod.periodicidade === 'TRIMESTRAL' ? 'TRIMESTRAL' : 'MENSAL');
           const jaExiste = this.data.tarefas.some(
             t => t.empresa_id === emp.id &&
                  t.competencia === competencia &&
                  t.titulo === mod.titulo &&
-                 (t.tipo === tipoTarefa || t.tipo === 'MENSAL' || t.tipo === 'ANUAL')
+                 ['MENSAL', 'TRIMESTRAL', 'ANUAL'].includes(t.tipo)
           );
 
           if (!jaExiste) {
-            const prazoData = this.calcularDataMesSubsequente(competencia, mod.dia_prazo_padrao);
+            const titModLower = String(mod.titulo || '').toLowerCase();
+            const ehPresumidoOuReal = ['Lucro Presumido', 'Lucro Real'].includes(emp.regime_tributario);
+            const ehIrpjMod = titModLower.includes('irpj') || titModLower.includes('csll');
+            const deveAntecipar = Boolean(
+              mod.antecipar_dia_util ||
+              (ehPresumidoOuReal && (ehIrpjMod || ((titModLower.includes('icms') || titModLower.includes('pis') || titModLower.includes('cofins')) && !titModLower.startsWith('transmissão efd') && !titModLower.startsWith('transmissao efd'))))
+            );
+            const prazoBruto = this.calcularDataMesSubsequente(competencia, mod.dia_prazo_padrao);
+            const prazoData = deveAntecipar ? this.anteciparParaDiaUtil(prazoBruto, ehIrpjMod) : prazoBruto;
             const colabSetor = this.data.profiles.find(p => p.departamento === mod.departamento && p.ativo);
 
             this.data.tarefas.push({
@@ -2077,7 +2338,7 @@
               tipo: tipoTarefa,
               titulo: mod.titulo,
               descricao: mod.descricao,
-              solicitante: mod.periodicidade === 'ANUAL' ? 'Rotina Anual Automática' : 'Rotina Mensal Automática',
+              solicitante: mod.periodicidade === 'ANUAL' ? 'Rotina Anual Automática' : (mod.periodicidade === 'TRIMESTRAL' ? 'Rotina Trimestral Automática' : 'Rotina Mensal Automática'),
               prazo_entrega: prazoData,
               data_entrega: null,
               modalidade_entrega: null,
@@ -2133,9 +2394,14 @@
         throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
       }
 
+      const emp = this.obterEmpresaSegura(t.empresa_id, t);
+      const ehPresumidoReal = Boolean(emp && ['Lucro Presumido', 'Lucro Real'].includes(emp.regime_tributario));
       const tipos = semMovimento ? [] : (Array.isArray(tiposSelecionados) ? tiposSelecionados.filter(Boolean) : []);
       const ehSemMov = Boolean(semMovimento || tipos.length === 0);
-      const vencPrevisto = dataVencimentoCustom || this.calcularDataSegundoMesSubsequente(t.competencia, 18);
+      const vencPadrao = ehPresumidoReal
+        ? this.calcularDataMesSubsequenteUtil(t.competencia, 8, true)
+        : this.calcularDataSegundoMesSubsequente(t.competencia, 18);
+      const vencPrevisto = dataVencimentoCustom || vencPadrao;
 
       t.status = 'EM_ANDAMENTO';
       t.data_entrega = null;
@@ -2146,15 +2412,15 @@
       t.icms_vencimento_previsto = vencPrevisto;
       t.protocolo_observacao = ehSemMov
         ? 'Apurado: Sem Movimento (pronto p/ transmitir)'
-        : `Apurado p/ transmitir: ${tipos.join(', ')}`;
+        : `Apurado p/ transmitir: ${tipos.join(', ')} (Venc. ${vencPrevisto.split('-').reverse().join('/')})`;
       if (user) t.responsavel_nome = user.nome;
 
       this.saveLocalData();
-      this.registrarLog('APURACAO_ICMS_ANDAMENTO', 'Tarefas', `Apuração ICMS/DeSTDA salva em andamento (${t.competencia}): ${t.protocolo_observacao}`);
+      this.registrarLog('APURACAO_ICMS_ANDAMENTO', 'Tarefas', `Apuração ICMS salva em andamento (${t.competencia}): ${t.protocolo_observacao}`);
       return t;
     }
 
-    registrarConclusaoApuracaoICMS(tarefaId, tiposSelecionados = [], dataVencimentoCustom = null) {
+    registrarConclusaoApuracaoICMS(tarefaId, tiposSelecionados = [], dataVencimentoCustom = null, valoresPorTipo = {}) {
       const idx = (this.data.tarefas || []).findIndex(t => t.id === tarefaId);
       if (idx === -1) throw new Error('Tarefa não encontrada.');
       const t = this.data.tarefas[idx];
@@ -2163,6 +2429,8 @@
         throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
       }
 
+      const emp = this.obterEmpresaSegura(t.empresa_id, t);
+      const ehPresumidoReal = Boolean(emp && ['Lucro Presumido', 'Lucro Real'].includes(emp.regime_tributario));
       const tipos = Array.isArray(tiposSelecionados) ? tiposSelecionados.filter(Boolean) : [];
       const hoje = new Date().toISOString().slice(0, 10);
 
@@ -2184,10 +2452,10 @@
         t.icms_sem_movimento = true;
         t.icms_apuracao_tipos = [];
         t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
-        t.protocolo_observacao = 'DeSTDA / ICMS transmitida Sem Movimento.';
+        t.protocolo_observacao = ehPresumidoReal ? 'ICMS mensal encerrado Sem Movimento.' : 'DeSTDA / ICMS transmitida Sem Movimento.';
         if (user) t.responsavel_nome = user.nome;
         this.saveLocalData();
-        this.registrarLog('APURACAO_ICMS_SEM_MOV', 'Tarefas/Guias', `DeSTDA / ICMS concluída Sem Movimento (${t.competencia}).`);
+        this.registrarLog('APURACAO_ICMS_SEM_MOV', 'Tarefas/Guias', `ICMS concluído Sem Movimento (${t.competencia}).`);
         return { tarefa: t, guiasCriadas: 0 };
       }
 
@@ -2197,12 +2465,18 @@
       t.icms_sem_movimento = false;
       t.icms_apuracao_tipos = [...tipos];
       t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
-      t.protocolo_observacao = `Com movimento: ${tipos.join(', ')}`;
-      if (user) t.responsavel_nome = user.nome;
 
-      const vencimentoFinal = dataVencimentoCustom || this.calcularDataSegundoMesSubsequente(t.competencia, 18);
-      const sub2 = this.obterMesSubsequente(`${this.obterMesSubsequente(t.competencia).mesFormatado}/${this.obterMesSubsequente(t.competencia).ano}`);
-      const compEntrega = `${sub2.mesFormatado}/${sub2.ano}`;
+      const sub1 = this.obterMesSubsequente(t.competencia);
+      const sub2 = this.obterMesSubsequente(`${sub1.mesFormatado}/${sub1.ano}`);
+      const vencimentoFinal = dataVencimentoCustom || (ehPresumidoReal
+        ? this.calcularDataMesSubsequenteUtil(t.competencia, 8, true)
+        : this.calcularDataSegundoMesSubsequente(t.competencia, 18));
+      const compEntrega = ehPresumidoReal
+        ? `${sub1.mesFormatado}/${sub1.ano}`
+        : `${sub2.mesFormatado}/${sub2.ano}`;
+
+      t.protocolo_observacao = `Com movimento: ${tipos.join(', ')} (Venc. ${vencimentoFinal.split('-').reverse().join('/')})`;
+      if (user) t.responsavel_nome = user.nome;
 
       let criadas = 0;
       tipos.forEach(tipoNome => {
@@ -2217,24 +2491,265 @@
             competencia_entrega: compEntrega,
             tipo_guia: tipoNome,
             departamento: 'FISCAL',
-            valor: 0.00,
+            valor: Number((valoresPorTipo && valoresPorTipo[tipoNome]) || 0),
             data_vencimento: vencimentoFinal,
-            segundo_mes_subsequente: true,
+            segundo_mes_subsequente: !ehPresumidoReal,
             status_envio: 'GERADA_AGUARDANDO_ENVIO',
             data_envio: null,
             canal_envio: '',
             protocolo_id: null,
             protocolo_codigo: null,
             responsavel_nome: t.responsavel_nome || (user ? user.nome : 'Equipe Fiscal'),
-            observacoes: `Ref. apuração ${t.competencia} (vencimento no 2º mês subsequente).`
+            observacoes: ehPresumidoReal
+              ? `ICMS mensal ref. ${t.competencia} (vencimento no mês subsequente, antecipado se não útil).`
+              : `Ref. apuração ${t.competencia} (vencimento no 2º mês subsequente).`
           });
           criadas++;
         }
       });
 
       this.saveLocalData();
-      this.registrarLog('APURACAO_ICMS_COM_MOV', 'Tarefas/Guias', `ICMS/DeSTDA concluído com movimento (${tipos.join(', ')}) para comp. ${t.competencia}, vencimento ${vencimentoFinal}.`);
+      this.registrarLog('APURACAO_ICMS_COM_MOV', 'Tarefas/Guias', `ICMS concluído com movimento (${tipos.join(', ')}) para comp. ${t.competencia}, vencimento ${vencimentoFinal}.`);
       return { tarefa: t, guiasCriadas: criadas };
+    }
+
+    // =========================================================================
+    // APURAÇÃO MENSAL DE PIS E COFINS (LUCRO PRESUMIDO / REAL -> PROTOCOLO)
+    // =========================================================================
+    salvarApuracaoPisCofins(tarefaId, opcoes = {}) {
+      const idx = (this.data.tarefas || []).findIndex(t => t.id === tarefaId);
+      if (idx === -1) throw new Error('Tarefa não encontrada.');
+      const t = this.data.tarefas[idx];
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment(t.departamento, user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
+      }
+
+      const modo = opcoes.modo === 'EM_ANDAMENTO' ? 'EM_ANDAMENTO' : 'TRANSMITIR';
+      const tributos = opcoes.semMovimento ? [] : (Array.isArray(opcoes.tributos) ? opcoes.tributos.filter(Boolean) : ['DARF - PIS', 'DARF - COFINS']);
+      const ehSemMov = Boolean(opcoes.semMovimento || tributos.length === 0);
+      const vencimentoFinal = opcoes.dataVencimento || this.calcularDataMesSubsequenteUtil(t.competencia, 25, true);
+      const valores = opcoes.valores || {};
+      const hoje = new Date().toISOString().slice(0, 10);
+
+      t.piscofins_apuracao_definida = true;
+      t.piscofins_sem_movimento = ehSemMov;
+      t.piscofins_tributos = [...tributos];
+      t.piscofins_valores = { ...valores };
+      t.piscofins_vencimento_previsto = vencimentoFinal;
+      if (user) t.responsavel_nome = user.nome;
+
+      if (modo === 'EM_ANDAMENTO') {
+        t.status = 'EM_ANDAMENTO';
+        t.data_entrega = null;
+        t.modalidade_entrega = null;
+        t.protocolo_observacao = ehSemMov
+          ? 'PIS/COFINS apurado Sem Movimento / Retido (pronto p/ concluir)'
+          : `PIS/COFINS apurado: ${tributos.join(' + ')} (Venc. ${vencimentoFinal.split('-').reverse().join('/')})`;
+        this.saveLocalData();
+        this.registrarLog('APURACAO_PISCOFINS_ANDAMENTO', 'Tarefas', `PIS/COFINS em andamento (${t.competencia}): ${t.protocolo_observacao}`);
+        return { tarefa: t, guiasCriadas: 0 };
+      }
+
+      // Remove guias PIS/COFINS ainda pendentes desta competência antes de recriar
+      this._removerGuiasPendentesPorFiltro(
+        g => g.empresa_id === t.empresa_id && g.competencia === t.competencia &&
+        (String(g.tipo_guia || '').includes('PIS') || String(g.tipo_guia || '').includes('COFINS'))
+      );
+
+      if (ehSemMov) {
+        t.data_entrega = hoje;
+        t.modalidade_entrega = 'SEM_MOVIMENTO';
+        t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+        t.protocolo_observacao = 'PIS/COFINS concluído Sem Valor a Recolher / Retido.';
+        this.saveLocalData();
+        this.registrarLog('APURACAO_PISCOFINS_SEM_MOV', 'Tarefas/Guias', `PIS/COFINS concluído sem guia a recolher (${t.competencia}).`);
+        return { tarefa: t, guiasCriadas: 0 };
+      }
+
+      t.data_entrega = hoje;
+      t.modalidade_entrega = 'NORMAL';
+      t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+      t.protocolo_observacao = `Apurado: ${tributos.join(' + ')} (Venc. ${vencimentoFinal.split('-').reverse().join('/')})`;
+
+      const sub1 = this.obterMesSubsequente(t.competencia);
+      let criadas = 0;
+      if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
+
+      tributos.forEach(tipoNome => {
+        const jaEnviada = this.data.guias_impostos.some(
+          g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && g.tipo_guia === tipoNome
+        );
+        if (!jaEnviada) {
+          this.data.guias_impostos.unshift({
+            id: `gimp-piscof-${Date.now()}-${criadas}-${Math.random().toString(36).slice(2, 5)}`,
+            empresa_id: t.empresa_id,
+            competencia: t.competencia,
+            competencia_entrega: sub1.label,
+            tipo_guia: tipoNome,
+            departamento: 'FISCAL',
+            valor: Number(valores[tipoNome] || 0),
+            data_vencimento: vencimentoFinal,
+            segundo_mes_subsequente: false,
+            status_envio: 'GERADA_AGUARDANDO_ENVIO',
+            data_envio: null,
+            canal_envio: '',
+            protocolo_id: null,
+            protocolo_codigo: null,
+            responsavel_nome: t.responsavel_nome || (user ? user.nome : 'Equipe Fiscal'),
+            observacoes: `Ref. apuração mensal ${t.competencia}.`
+          });
+          criadas++;
+        }
+      });
+
+      this.saveLocalData();
+      this.registrarLog('APURACAO_PISCOFINS_CONCLUIDA', 'Tarefas/Guias', `PIS/COFINS (${t.competencia}) concluído com ${criadas} guia(s) gerada(s) no Protocolo.`);
+      return { tarefa: t, guiasCriadas: criadas };
+    }
+
+    // =========================================================================
+    // APURAÇÃO TRIMESTRAL DE IRPJ E CSLL (ATÉ 3 QUOTAS -> PROTOCOLO POR MÊS)
+    // =========================================================================
+    salvarApuracaoIrpjCsllTrimestral(opcoes = {}) {
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment('FISCAL', user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para apurar IRPJ/CSLL.`);
+      }
+
+      const tarefa = opcoes.tarefaId
+        ? (this.data.tarefas || []).find(item => item.id === opcoes.tarefaId)
+        : null;
+      const empresaId = opcoes.empresaId || (tarefa ? tarefa.empresa_id : '');
+      if (!empresaId) throw new Error('Selecione a empresa para apurar IRPJ/CSLL.');
+
+      const trimestre = Math.min(4, Math.max(1, parseInt(opcoes.trimestre, 10) || 3));
+      const ano = parseInt(opcoes.ano, 10) || 2026;
+      const qtdQuotas = Math.min(3, Math.max(1, parseInt(opcoes.qtdQuotas, 10) || 1));
+      const compFechamento = `${String(trimestre * 3).padStart(2, '0')}/${ano}`;
+      const siglaTrim = `${trimestre}T/${ano}`;
+      const labelTrim = `${trimestre}º Trim/${ano}`;
+      const modo = opcoes.modo === 'EM_ANDAMENTO' ? 'EM_ANDAMENTO' : 'TRANSMITIR';
+      const tributos = opcoes.semMovimento ? [] : (Array.isArray(opcoes.tributos) ? opcoes.tributos.filter(Boolean) : ['IRPJ', 'CSLL']);
+      const ehSemMov = Boolean(opcoes.semMovimento || tributos.length === 0);
+      const hoje = new Date().toISOString().slice(0, 10);
+
+      const datasPadrao = this.calcularDatasQuotasTrimestre(trimestre, ano, qtdQuotas);
+      const quotasLista = datasPadrao.map((dp, i) => {
+        const custom = Array.isArray(opcoes.quotasConfig) ? opcoes.quotasConfig[i] : null;
+        return {
+          quota: dp.quota,
+          ativa: custom && custom.ativa !== undefined ? Boolean(custom.ativa) : true,
+          data_vencimento: (custom && custom.data_vencimento) ? custom.data_vencimento : dp.data_vencimento,
+          valor_irpj: Number((custom && custom.valor_irpj) || 0),
+          valor_csll: Number((custom && custom.valor_csll) || 0)
+        };
+      });
+
+      // Se existir tarefa trimestral correspondente (mesmo quando aberto pelo atalho do Protocolo), sincroniza-a também
+      const tarefaAlvo = tarefa || (this.data.tarefas || []).find(
+        item => item.empresa_id === empresaId && item.competencia === compFechamento &&
+        (String(item.titulo || '').toLowerCase().includes('irpj') || String(item.titulo || '').toLowerCase().includes('csll'))
+      );
+
+      if (tarefaAlvo) {
+        tarefaAlvo.irpj_apuracao_definida = true;
+        tarefaAlvo.irpj_sem_movimento = ehSemMov;
+        tarefaAlvo.irpj_config = { trimestre, ano, qtdQuotas, tributos, quotasLista };
+        if (user) tarefaAlvo.responsavel_nome = user.nome;
+      }
+
+      if (modo === 'EM_ANDAMENTO' && tarefaAlvo) {
+        tarefaAlvo.status = 'EM_ANDAMENTO';
+        tarefaAlvo.data_entrega = null;
+        tarefaAlvo.modalidade_entrega = null;
+        tarefaAlvo.protocolo_observacao = ehSemMov
+          ? `IRPJ/CSLL ${labelTrim} sem movimento / prejuízo (em andamento)`
+          : `IRPJ/CSLL ${labelTrim}: ${tributos.join('+')} em ${qtdQuotas} quota(s) (${quotasLista.filter(q => q.ativa).map(q => q.data_vencimento.slice(5).split('-').reverse().join('/')).join(', ')})`;
+        this.saveLocalData();
+        this.registrarLog('APURACAO_IRPJ_ANDAMENTO', 'Tarefas', `${tarefaAlvo.protocolo_observacao}`);
+        return { tarefa: tarefaAlvo, guiasCriadas: 0 };
+      }
+
+      // Remove guias pendentes anteriores deste mesmo trimestre/empresa antes de recriar as quotas
+      this._removerGuiasPendentesPorFiltro(
+        g => g.empresa_id === empresaId &&
+        (g.trimestre_ref === siglaTrim || (g.competencia === compFechamento && (String(g.tipo_guia || '').includes('IRPJ') || String(g.tipo_guia || '').includes('CSLL'))))
+      );
+
+      if (ehSemMov) {
+        if (tarefaAlvo) {
+          tarefaAlvo.data_entrega = hoje;
+          tarefaAlvo.modalidade_entrega = 'SEM_MOVIMENTO';
+          tarefaAlvo.status = this.calcularStatusTarefa(tarefaAlvo.prazo_entrega, hoje, 'ENTREGUE');
+          tarefaAlvo.protocolo_observacao = `IRPJ/CSLL ${labelTrim} encerrado Sem Valor a Recolher / Prejuízo.`;
+        }
+        this.saveLocalData();
+        this.registrarLog('APURACAO_IRPJ_SEM_MOV', 'Tarefas/Guias', `IRPJ/CSLL (${labelTrim}) concluído sem guias a recolher.`);
+        return { tarefa: tarefaAlvo, guiasCriadas: 0 };
+      }
+
+      if (tarefaAlvo) {
+        tarefaAlvo.data_entrega = hoje;
+        tarefaAlvo.modalidade_entrega = 'NORMAL';
+        tarefaAlvo.status = this.calcularStatusTarefa(tarefaAlvo.prazo_entrega, hoje, 'ENTREGUE');
+        tarefaAlvo.protocolo_observacao = `Apurado ${labelTrim}: ${tributos.join(' + ')} em ${qtdQuotas} quota(s) (${quotasLista.filter(q => q.ativa).map(q => q.data_vencimento.split('-').reverse().join('/')).join(', ')})`;
+      }
+
+      if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
+      let criadas = 0;
+
+      quotasLista.filter(q => q.ativa).forEach(qItem => {
+        const dtParts = String(qItem.data_vencimento || '').split('-');
+        const compEntrega = dtParts.length === 3 ? `${dtParts[1]}/${dtParts[0]}` : '';
+
+        tributos.forEach(trib => {
+          const descQuota = qtdQuotas === 1
+            ? `Quota Única - ${labelTrim}`
+            : `${qItem.quota}ª/${qtdQuotas} Quota - ${labelTrim}`;
+          const tipoGuia = `DARF - ${trib} (${descQuota})`;
+          const valorGuia = trib === 'IRPJ' ? qItem.valor_irpj : qItem.valor_csll;
+
+          const jaEnviada = this.data.guias_impostos.some(
+            g => g.empresa_id === empresaId && g.trimestre_ref === siglaTrim && g.numero_quota === qItem.quota && String(g.tipo_guia || '').startsWith(`DARF - ${trib}`)
+          );
+          if (!jaEnviada) {
+            this.data.guias_impostos.unshift({
+              id: `gimp-irpj-${Date.now()}-${criadas}-${Math.random().toString(36).slice(2, 5)}`,
+              empresa_id: empresaId,
+              competencia: compFechamento,
+              competencia_entrega: compEntrega,
+              trimestre_ref: siglaTrim,
+              numero_quota: qItem.quota,
+              total_quotas: qtdQuotas,
+              tipo_guia: tipoGuia,
+              departamento: 'FISCAL',
+              valor: valorGuia,
+              data_vencimento: qItem.data_vencimento,
+              segundo_mes_subsequente: qItem.quota > 1,
+              status_envio: 'GERADA_AGUARDANDO_ENVIO',
+              data_envio: null,
+              canal_envio: '',
+              protocolo_id: null,
+              protocolo_codigo: null,
+              responsavel_nome: user ? user.nome : 'Equipe Fiscal',
+              observacoes: qtdQuotas > 1
+                ? `Apuração trimestral ${labelTrim} — Quota ${qItem.quota} de ${qtdQuotas}.`
+                : `Apuração trimestral ${labelTrim} — Quota única.`
+            });
+            criadas++;
+          }
+        });
+      });
+
+      this.saveLocalData();
+      const emp = this.obterEmpresaSegura(empresaId);
+      this.registrarLog(
+        'APURACAO_IRPJ_CSLL_QUOTAS',
+        'Tarefas/Guias',
+        `IRPJ/CSLL (${labelTrim}) de ${this.nomeEmpresaPrioritario(emp)} concluído em ${qtdQuotas} quota(s) — ${criadas} guia(s) gerada(s) no Protocolo.`
+      );
+      return { tarefa: tarefaAlvo, guiasCriadas: criadas, quotas: quotasLista };
     }
 
     salvarGuiaImposto(dados) {
@@ -4016,7 +4531,10 @@
       const requerProLabore = Boolean(dadosMod.requer_pro_labore);
       const requerFunc = Boolean(dadosMod.requer_funcionarios !== undefined ? dadosMod.requer_funcionarios : dadosMod.exige_funcionarios);
       const requerIE = Boolean(dadosMod.requer_ie);
-      const periodicidade = dadosMod.periodicidade === 'ANUAL' ? 'ANUAL' : 'MENSAL';
+      const anteciparDiaUtil = Boolean(dadosMod.antecipar_dia_util);
+      const periodicidade = dadosMod.periodicidade === 'ANUAL'
+        ? 'ANUAL'
+        : (dadosMod.periodicidade === 'TRIMESTRAL' ? 'TRIMESTRAL' : 'MENSAL');
 
       if (dadosMod.id) {
         const idx = lista.findIndex(m => m.id === dadosMod.id);
@@ -4032,6 +4550,7 @@
               ? dadosMod.regimes_aplicaveis
               : ['Simples Nacional'],
             dia_prazo_padrao: Number(dadosMod.dia_prazo_padrao || 15),
+            antecipar_dia_util: anteciparDiaUtil,
             requer_pro_labore: requerProLabore,
             requer_funcionarios: requerFunc,
             requer_ie: requerIE,
@@ -4054,6 +4573,7 @@
           ? dadosMod.regimes_aplicaveis
           : ['Simples Nacional'],
         dia_prazo_padrao: Number(dadosMod.dia_prazo_padrao || 15),
+        antecipar_dia_util: anteciparDiaUtil,
         requer_pro_labore: requerProLabore,
         requer_funcionarios: requerFunc,
         requer_ie: requerIE,

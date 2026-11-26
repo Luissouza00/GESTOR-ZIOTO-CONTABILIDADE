@@ -673,7 +673,14 @@ window.ZGestorViews = {
     let listaGuiasImpostos = [...todasGuiasComp];
     if (fCliente !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.empresa_id === fCliente);
     if (fGuiaTipo !== 'TODOS') {
-      listaGuiasImpostos = listaGuiasImpostos.filter(g => fGuiaTipo === 'Parcelamento' ? (g.tipo_guia || '').startsWith('Parcelamento') : g.tipo_guia === fGuiaTipo);
+      listaGuiasImpostos = listaGuiasImpostos.filter(g => {
+        const tg = String(g.tipo_guia || '');
+        if (fGuiaTipo === 'Parcelamento') return tg.startsWith('Parcelamento');
+        if (fGuiaTipo.includes('IRPJ')) return tg.includes('IRPJ') || tg.includes('CSLL');
+        if (fGuiaTipo.includes('PIS')) return tg.includes('PIS') || tg.includes('COFINS');
+        if (fGuiaTipo.includes('ICMS')) return tg.includes('ICMS');
+        return tg === fGuiaTipo;
+      });
     }
     if (fGuiaStatus !== 'TODOS') {
       if (fGuiaStatus === 'PENDENTES') {
@@ -1259,6 +1266,7 @@ window.ZGestorViews = {
                                       <div class="flex items-center gap-1 flex-wrap">
                                         ${badgeSetor(t.departamento)}
                                         ${badgeRegime(emp)}
+                                        ${t.tipo === 'TRIMESTRAL' ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200">Trimestral</span>' : ''}
                                         ${t.modalidade_entrega === 'SEM_MOVIMENTO' ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800">Sem Mov.</span>' : ''}
                                       </div>
                                       <span class="text-[10px] font-bold whitespace-nowrap ${atrasada ? 'text-rose-600' : 'text-slate-400'}">
@@ -1762,9 +1770,14 @@ window.ZGestorViews = {
                             <div class="space-y-1">
                               <div class="flex items-center gap-2 flex-wrap">
                                 <span class="font-bold text-slate-900 text-xs">${this.escapeHtml(m.titulo)}</span>
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${m.periodicidade === 'ANUAL' ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}">
-                                  ${m.periodicidade === 'ANUAL' ? `ANUAL (Mês ${m.mes_entrega || '06'})` : 'MENSAL'}
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${m.periodicidade === 'ANUAL' ? 'bg-purple-50 text-purple-800 border-purple-200' : m.periodicidade === 'TRIMESTRAL' ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}">
+                                  ${m.periodicidade === 'ANUAL' ? `ANUAL (Mês ${m.mes_entrega || '06'})` : m.periodicidade === 'TRIMESTRAL' ? 'TRIMESTRAL (Mar/Jun/Set/Dez)' : 'MENSAL'}
                                 </span>
+                                ${m.antecipar_dia_util ? `
+                                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200">
+                                    Antecipa Dia Útil
+                                  </span>
+                                ` : ''}
                                 ${m.requer_ie ? `
                                   <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
                                     Exige Inscrição Estadual (I.E.)
@@ -2139,8 +2152,11 @@ window.ZGestorViews = {
                       <option value="ARQUIVADA_ASSINADA" ${fGuiaStatus === 'ARQUIVADA_ASSINADA' ? 'selected' : ''}>📁 Assinadas e Arquivadas</option>
                     </select>
                   </div>
-                  <div class="flex items-end">
-                    <button onclick="ZGestorApp.openModalGuiaImposto()" class="w-full py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
+                  <div class="flex items-end gap-1.5">
+                    <button onclick="ZGestorApp.openModalApuracaoIrpjCsll(null, 'TRANSMITIR')" title="Apurar IRPJ e CSLL Trimestral (Quota Única ou até 3 Quotas)" class="flex-1 py-1.5 px-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer">
+                      <i data-lucide="layers" class="w-3.5 h-3.5"></i> IRPJ/CSLL Quotas
+                    </button>
+                    <button onclick="ZGestorApp.openModalGuiaImposto()" class="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer shrink-0">
                       <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nova Guia
                     </button>
                   </div>

@@ -1385,29 +1385,99 @@ window.ZGestorApp = {
 
   marcarEtapaRapida(tarefaId, acao) {
     try {
-      const tarefaAlvo = (window.zgestorDB.data.tarefas || []).find(item => item.id === tarefaId);
+      const db = window.zgestorDB;
+      const tarefaAlvo = (db.data.tarefas || []).find(item => item.id === tarefaId);
       if (tarefaAlvo) {
-        const tit = (tarefaAlvo.titulo || '').toLowerCase();
-        const ehIcmsOuDestda = tit.includes('destda') || (tit.includes('icms') && !tit.includes('simples'));
-        if (ehIcmsOuDestda && acao === 'EM_ANDAMENTO') {
-          this.openModalApuracaoICMS(tarefaId, 'EM_ANDAMENTO');
-          return;
-        }
-        if (ehIcmsOuDestda && acao === 'ENTREGUE_NORMAL') {
-          if (tarefaAlvo.icms_apuracao_definida) {
-            const tipos = tarefaAlvo.icms_sem_movimento ? [] : (tarefaAlvo.icms_apuracao_tipos || []);
-            const res = window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, tipos, tarefaAlvo.icms_vencimento_previsto || null);
-            this.showToast(
-              res.guiasCriadas > 0
-                ? `DeSTDA / ICMS transmitida! ${res.guiasCriadas} guia(s) enviada(s) para o Controle de Guias.`
-                : 'DeSTDA / ICMS transmitida Sem Movimento!',
-              res.guiasCriadas > 0 ? 'success' : 'info'
-            );
-            this.renderAll();
-            return res.tarefa;
+        const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(tarefaAlvo.empresa_id, tarefaAlvo) : null;
+        const tipoFiscal = typeof db.identificarTipoApuracaoFiscal === 'function'
+          ? db.identificarTipoApuracaoFiscal(tarefaAlvo, emp)
+          : null;
+
+        // 1. Apuração ICMS (Simples Nacional 2º mês sub. OU Lucro Presumido/Real dia 08 útil no 1º mês sub.)
+        if (tipoFiscal === 'ICMS_PRESUMIDO_REAL' || tipoFiscal === 'ICMS_SIMPLES') {
+          if (acao === 'EM_ANDAMENTO') {
+            this.openModalApuracaoICMS(tarefaId, 'EM_ANDAMENTO');
+            return;
           }
-          this.openModalApuracaoICMS(tarefaId, 'TRANSMITIR');
-          return;
+          if (acao === 'ENTREGUE_NORMAL') {
+            if (tarefaAlvo.icms_apuracao_definida) {
+              const tipos = tarefaAlvo.icms_sem_movimento ? [] : (tarefaAlvo.icms_apuracao_tipos || []);
+              const res = db.registrarConclusaoApuracaoICMS(tarefaId, tipos, tarefaAlvo.icms_vencimento_previsto || null);
+              this.showToast(
+                res.guiasCriadas > 0
+                  ? `ICMS concluído! ${res.guiasCriadas} guia(s) enviada(s) para o Controle de Guias / Protocolo.`
+                  : 'ICMS concluído Sem Movimento!',
+                res.guiasCriadas > 0 ? 'success' : 'info'
+              );
+              this.renderAll();
+              return res.tarefa;
+            }
+            this.openModalApuracaoICMS(tarefaId, 'TRANSMITIR');
+            return;
+          }
+        }
+
+        // 2. Apuração Mensal de PIS e COFINS -> gera DARFs no Protocolo
+        if (tipoFiscal === 'PIS_COFINS') {
+          if (acao === 'EM_ANDAMENTO') {
+            this.openModalApuracaoPisCofins(tarefaId, 'EM_ANDAMENTO');
+            return;
+          }
+          if (acao === 'ENTREGUE_NORMAL') {
+            if (tarefaAlvo.piscofins_apuracao_definida) {
+              const res = db.salvarApuracaoPisCofins(tarefaId, {
+                modo: 'TRANSMITIR',
+                semMovimento: Boolean(tarefaAlvo.piscofins_sem_movimento),
+                tributos: tarefaAlvo.piscofins_tributos || ['DARF - PIS', 'DARF - COFINS'],
+                valores: tarefaAlvo.piscofins_valores || {},
+                dataVencimento: tarefaAlvo.piscofins_vencimento_previsto || null
+              });
+              this.showToast(
+                res.guiasCriadas > 0
+                  ? `PIS/COFINS concluído! ${res.guiasCriadas} guia(s) gerada(s) no Protocolo.`
+                  : 'PIS/COFINS concluído Sem Valor a Recolher!',
+                res.guiasCriadas > 0 ? 'success' : 'info'
+              );
+              this.renderAll();
+              return res.tarefa;
+            }
+            this.openModalApuracaoPisCofins(tarefaId, 'TRANSMITIR');
+            return;
+          }
+        }
+
+        // 3. Apuração Trimestral de IRPJ e CSLL (Quota Única ou até 3 Quotas no Protocolo)
+        if (tipoFiscal === 'IRPJ_CSLL') {
+          if (acao === 'EM_ANDAMENTO') {
+            this.openModalApuracaoIrpjCsll(tarefaId, 'EM_ANDAMENTO');
+            return;
+          }
+          if (acao === 'ENTREGUE_NORMAL') {
+            if (tarefaAlvo.irpj_apuracao_definida && tarefaAlvo.irpj_config) {
+              const cfg = tarefaAlvo.irpj_config;
+              const res = db.salvarApuracaoIrpjCsllTrimestral({
+                tarefaId,
+                empresaId: tarefaAlvo.empresa_id,
+                trimestre: cfg.trimestre,
+                ano: cfg.ano,
+                qtdQuotas: cfg.qtdQuotas,
+                tributos: cfg.tributos,
+                quotasConfig: cfg.quotasLista,
+                semMovimento: Boolean(tarefaAlvo.irpj_sem_movimento),
+                modo: 'TRANSMITIR'
+              });
+              this.showToast(
+                res.guiasCriadas > 0
+                  ? `IRPJ/CSLL concluído! ${res.guiasCriadas} guia(s) de quota(s) enviada(s) ao Protocolo.`
+                  : 'IRPJ/CSLL concluído Sem Valor a Recolher!',
+                res.guiasCriadas > 0 ? 'success' : 'info'
+              );
+              this.renderAll();
+              return res.tarefa;
+            }
+            this.openModalApuracaoIrpjCsll(tarefaId, 'TRANSMITIR');
+            return;
+          }
         }
       }
       const t = window.zgestorDB.marcarEtapaTarefa(tarefaId, acao);
@@ -6692,6 +6762,7 @@ window.ZGestorApp = {
                 <label class="block font-bold text-slate-700 mb-1">Periodicidade *</label>
                 <select id="f-mod-periodicidade" onchange="document.getElementById('wrap-mod-mes-entrega').classList.toggle('hidden', this.value !== 'ANUAL')" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
                   <option value="MENSAL" ${(formValues.periodicidade || 'MENSAL') === 'MENSAL' ? 'selected' : ''}>Mensal (Todos os meses)</option>
+                  <option value="TRIMESTRAL" ${formValues.periodicidade === 'TRIMESTRAL' ? 'selected' : ''}>Trimestral (Mar / Jun / Set / Dez — ex: IRPJ/CSLL)</option>
                   <option value="ANUAL" ${formValues.periodicidade === 'ANUAL' ? 'selected' : ''}>Anual (Ex: ECD / ECF)</option>
                 </select>
               </div>
@@ -6759,6 +6830,10 @@ window.ZGestorApp = {
                   <span class="font-semibold text-slate-700">Gerar somente se a empresa possuir Inscrição Estadual (I.E.)</span>
                 </label>
                 <label class="inline-flex items-center gap-2 cursor-pointer">
+                  <input id="f-mod-antecipar-util" type="checkbox" ${formValues.antecipar_dia_util ? 'checked' : ''} class="w-4 h-4 rounded text-sky-600" />
+                  <span class="font-semibold text-slate-700">Antecipar prazo para dia útil anterior se cair em fim de semana ou feriado</span>
+                </label>
+                <label class="inline-flex items-center gap-2 cursor-pointer">
                   <input id="f-mod-func" type="checkbox" ${formValues.exige_funcionarios || formValues.requer_funcionarios ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
                   <span class="font-semibold text-slate-700">Aplicar somente para empresas com Folha/Funcionários</span>
                 </label>
@@ -6803,6 +6878,7 @@ window.ZGestorApp = {
       descricao: document.getElementById('f-mod-desc').value.trim(),
       regimes_aplicaveis: regimesSelecionados,
       requer_ie: document.getElementById('f-mod-ie')?.checked || false,
+      antecipar_dia_util: document.getElementById('f-mod-antecipar-util')?.checked || false,
       exige_funcionarios: document.getElementById('f-mod-func').checked
     });
     this.showToast(idMod ? 'Rotina atualizada com sucesso!' : 'Nova rotina adicionada com sucesso!', 'success');
@@ -6865,20 +6941,38 @@ window.ZGestorApp = {
     const db = window.zgestorDB;
     const t = (db.data.tarefas || []).find(item => item.id === tarefaId);
     if (!t) return;
-    const emp = db.data.empresas.find(e => e.id === t.empresa_id);
-    const vencPadrao = t.icms_vencimento_previsto || db.calcularDataSegundoMesSubsequente(t.competencia, 18);
-    const tiposSalvos = Array.isArray(t.icms_apuracao_tipos) ? t.icms_apuracao_tipos : [];
+    const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(t.empresa_id, t) : db.data.empresas.find(e => e.id === t.empresa_id);
+    const ehPresumidoReal = Boolean(emp && ['Lucro Presumido', 'Lucro Real'].includes(emp.regime_tributario));
+    const vencPadrao = t.icms_vencimento_previsto || (ehPresumidoReal
+      ? db.calcularDataMesSubsequenteUtil(t.competencia, 8, true)
+      : db.calcularDataSegundoMesSubsequente(t.competencia, 18));
+    const tiposSalvos = Array.isArray(t.icms_apuracao_tipos) && t.icms_apuracao_tipos.length > 0
+      ? t.icms_apuracao_tipos
+      : (ehPresumidoReal && !t.icms_sem_movimento ? ['DAE / DARE - ICMS Mensal (Normal)'] : []);
     const ehModoAndamento = modo === 'EM_ANDAMENTO';
     const modal = document.getElementById('modal-root');
     if (!modal) return;
 
+    const opcoesIcms = ehPresumidoReal ? [
+      { valor: 'DAE / DARE - ICMS Mensal (Normal)', desc: 'ICMS mensal apurado até dia 08 (vence dia 08 antecipando dia não útil)' },
+      { valor: 'ICMS Antecipação ST', desc: 'Substituição Tributária nas entradas / operações' },
+      { valor: 'ICMS DIFAL', desc: 'Diferencial de Alíquota interestadual' },
+      { valor: 'ICMS Antecipação', desc: 'Recolhimento antecipado de entrada' }
+    ] : [
+      { valor: 'ICMS DIFAL', desc: 'Diferencial de Alíquota interestadual' },
+      { valor: 'ICMS Antecipação', desc: 'Recolhimento antecipado de entrada' },
+      { valor: 'ICMS Antecipação ST', desc: 'Substituição Tributária nas entradas' }
+    ];
+
     modal.innerHTML = `
       <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
             <div>
               <h3 class="text-base font-bold text-slate-900">
-                ${ehModoAndamento ? 'Apuração DeSTDA / ICMS (Em Andamento)' : 'Transmitir DeSTDA / ICMS'}
+                ${ehPresumidoReal
+                  ? (ehModoAndamento ? 'Apuração Mensal de ICMS (Em Andamento)' : 'Concluir Apuração de ICMS e Gerar Protocolo')
+                  : (ehModoAndamento ? 'Apuração DeSTDA / ICMS (Em Andamento)' : 'Transmitir DeSTDA / ICMS')}
               </h3>
               <p class="text-xs text-slate-500">${escapeHtml(emp ? (emp.razao_social || emp.nome_fantasia) : 'Cadastro não localizado')} • Comp. ${t.competencia}</p>
             </div>
@@ -6886,39 +6980,37 @@ window.ZGestorApp = {
           </div>
 
           <form onsubmit="ZGestorApp.submitApuracaoICMS(event, '${t.id}', '${modo}')" class="space-y-4 mt-4 text-xs">
-            <div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
-              ${ehModoAndamento
-                ? 'Informe os tipos de ICMS apurados (ou marque Sem Movimento). A tarefa ficará sinalizada em <strong>Em Andamento</strong> para facilitar a transmissão e <strong>só irá para o Protocolo após Transmitir</strong>.'
-                : 'Confirme os tipos de ICMS com movimento para concluir a transmissão e gerar as guias no Controle de Guias / Protocolo (vencimento no <strong>2º mês subsequente</strong>).'}
+            <div class="p-3 rounded-xl ${ehPresumidoReal ? 'bg-indigo-50 border border-indigo-200 text-indigo-950' : 'bg-amber-50 border border-amber-200 text-amber-900'} text-[11px]">
+              ${ehPresumidoReal
+                ? '<strong>Regra Lucro Presumido / Real:</strong> O ICMS mensal vence no <strong>dia 08 do mês subsequente</strong> (antecipado automaticamente caso caia em fim de semana ou feriado) e vai direto para o <strong>Protocolo</strong>.'
+                : (ehModoAndamento
+                  ? 'Informe os tipos de ICMS apurados (ou marque Sem Movimento). A tarefa ficará sinalizada em <strong>Em Andamento</strong> e <strong>só irá para o Protocolo após Transmitir</strong>.'
+                  : 'Confirme os tipos de ICMS com movimento para concluir a transmissão e gerar as guias no Controle de Guias / Protocolo (vencimento no <strong>2º mês subsequente</strong>).')}
             </div>
 
             <div class="space-y-2">
-              <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
-                <input type="checkbox" name="f-icms-tipo" value="ICMS DIFAL" ${tiposSalvos.includes('ICMS DIFAL') ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
-                <div>
-                  <div class="font-bold text-slate-900">ICMS DIFAL</div>
-                  <div class="text-[10px] text-slate-500">Diferencial de Alíquota interestadual</div>
-                </div>
-              </label>
-              <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
-                <input type="checkbox" name="f-icms-tipo" value="ICMS Antecipação" ${tiposSalvos.includes('ICMS Antecipação') ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
-                <div>
-                  <div class="font-bold text-slate-900">ICMS Antecipação</div>
-                  <div class="text-[10px] text-slate-500">Recolhimento antecipado de entrada</div>
-                </div>
-              </label>
-              <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
-                <input type="checkbox" name="f-icms-tipo" value="ICMS Antecipação ST" ${tiposSalvos.includes('ICMS Antecipação ST') ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
-                <div>
-                  <div class="font-bold text-slate-900">ICMS Antecipação ST</div>
-                  <div class="text-[10px] text-slate-500">Substituição Tributária nas entradas</div>
-                </div>
-              </label>
+              ${opcoesIcms.map(op => `
+                <label class="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 cursor-pointer bg-slate-50/50">
+                  <input type="checkbox" name="f-icms-tipo" value="${escapeHtml(op.valor)}" ${tiposSalvos.includes(op.valor) ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
+                  <div>
+                    <div class="font-bold text-slate-900">${escapeHtml(op.valor)}</div>
+                    <div class="text-[10px] text-slate-500">${escapeHtml(op.desc)}</div>
+                  </div>
+                </label>
+              `).join('')}
             </div>
 
-            <div>
-              <label class="block font-bold text-slate-700 mb-1">Data de Vencimento das Guias (2º Mês Subsequente)</label>
-              <input id="f-icms-venc" type="date" value="${vencPadrao}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">
+                  ${ehPresumidoReal ? 'Vencimento (Dia 08 útil no mês sub.)' : 'Vencimento (2º Mês Subsequente)'}
+                </label>
+                <input id="f-icms-venc" type="date" value="${vencPadrao}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Valor da Guia (R$ - Opcional)</label>
+                <input id="f-icms-valor" type="number" step="0.01" min="0" placeholder="0,00" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+              </div>
             </div>
 
             <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
@@ -6926,12 +7018,12 @@ window.ZGestorApp = {
                 type="button"
                 onclick="ZGestorApp.concluirICMSSemMovimento('${t.id}', '${modo}')"
                 class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
-                ${ehModoAndamento ? 'Apurado Sem Movimento' : 'Transmitida Sem Movimento'}
+                ${ehModoAndamento ? 'Apurado Sem Movimento' : 'Sem Movimento (Sem Guia)'}
               </button>
               <button
                 type="submit"
                 class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-sm transition cursor-pointer">
-                ${ehModoAndamento ? 'Salvar Apuração (Em Andamento)' : 'Transmitir e Gerar Guias'}
+                ${ehModoAndamento ? 'Salvar em Andamento' : 'Concluir e Gerar no Protocolo'}
               </button>
             </div>
           </form>
@@ -6946,11 +7038,11 @@ window.ZGestorApp = {
       if (modo === 'EM_ANDAMENTO') {
         window.zgestorDB.salvarApuracaoICMSEmAndamento(tarefaId, [], true, venc);
         this.closeModal();
-        this.showToast('Apurado como Sem Movimento (em andamento p/ transmitir).', 'info');
+        this.showToast('Apurado como Sem Movimento (em andamento).', 'info');
       } else {
         window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, [], venc);
         this.closeModal();
-        this.showToast('DeSTDA / ICMS transmitida Sem Movimento (nenhuma guia gerada).', 'info');
+        this.showToast('ICMS concluído Sem Movimento (nenhuma guia gerada).', 'info');
       }
       this.renderAll();
     } catch (err) {
@@ -6963,19 +7055,432 @@ window.ZGestorApp = {
     try {
       const selecionados = Array.from(document.querySelectorAll('input[name="f-icms-tipo"]:checked')).map(cb => cb.value);
       const venc = document.getElementById('f-icms-venc')?.value || null;
+      const valNum = Number(document.getElementById('f-icms-valor')?.value || 0);
       if (selecionados.length === 0) {
         this.showToast('Marque ao menos um tipo de ICMS ou clique no botão de Sem Movimento.', 'error');
         return;
       }
+      const mapVal = {};
+      if (valNum > 0 && selecionados[0]) mapVal[selecionados[0]] = valNum;
+
       if (modo === 'EM_ANDAMENTO') {
         window.zgestorDB.salvarApuracaoICMSEmAndamento(tarefaId, selecionados, false, venc);
         this.closeModal();
-        this.showToast(`Apuração salva em andamento (${selecionados.join(', ')}). Aguardando transmissão!`, 'success');
+        this.showToast(`Apuração salva em andamento (${selecionados.join(', ')}).`, 'success');
       } else {
-        const res = window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, selecionados, venc);
+        const res = window.zgestorDB.registrarConclusaoApuracaoICMS(tarefaId, selecionados, venc, mapVal);
         this.closeModal();
-        this.showToast(`Transmissão concluída! ${res.guiasCriadas} guia(s) gerada(s) para o Controle de Guias.`, 'success');
+        this.showToast(`ICMS concluído! ${res.guiasCriadas} guia(s) gerada(s) no Controle de Guias / Protocolo.`, 'success');
       }
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  // ===========================================================================
+  // MODAL DE APURAÇÃO MENSAL DE PIS E COFINS -> GERA DARFs NO PROTOCOLO
+  // ===========================================================================
+  openModalApuracaoPisCofins(tarefaId, modo = 'TRANSMITIR') {
+    const db = window.zgestorDB;
+    const t = (db.data.tarefas || []).find(item => item.id === tarefaId);
+    if (!t) return;
+    const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(t.empresa_id, t) : null;
+    const vencPadrao = t.piscofins_vencimento_previsto || db.calcularDataMesSubsequenteUtil(t.competencia, 25, true);
+    const tribSalvos = Array.isArray(t.piscofins_tributos) && t.piscofins_tributos.length > 0
+      ? t.piscofins_tributos
+      : (t.piscofins_sem_movimento ? [] : ['DARF - PIS', 'DARF - COFINS']);
+    const valoresSalvos = t.piscofins_valores || {};
+    const ehModoAndamento = modo === 'EM_ANDAMENTO';
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Lucro Presumido / Lucro Real</span>
+              <h3 class="text-base font-bold text-slate-900">
+                ${ehModoAndamento ? 'Apuração Mensal PIS / COFINS (Em Andamento)' : 'Concluir PIS / COFINS e Gerar no Protocolo'}
+              </h3>
+              <p class="text-xs text-slate-500">${escapeHtml(emp ? (emp.razao_social || emp.nome_fantasia) : 'Empresa')} • Comp. ${t.competencia}</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitApuracaoPisCofins(event, '${t.id}', '${modo}')" class="space-y-4 mt-4 text-xs">
+            <div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-[11px]">
+              Selecione as guias apuradas com valor a recolher. Ao concluir, elas serão lançadas automaticamente no <strong>Controle de Guias / Protocolo</strong> (vencimento padrão dia 25 antecipando se cair em dia não útil).
+            </div>
+
+            <div class="space-y-2.5">
+              <div class="p-3 rounded-xl border border-slate-200 bg-slate-50/70 flex items-center justify-between gap-3">
+                <label class="flex items-center gap-2.5 cursor-pointer flex-1">
+                  <input type="checkbox" name="f-piscof-trib" value="DARF - PIS" ${tribSalvos.includes('DARF - PIS') ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
+                  <div>
+                    <div class="font-bold text-slate-900">DARF - PIS</div>
+                    <div class="text-[10px] text-slate-500">PIS/PASEP Faturamento Mensal</div>
+                  </div>
+                </label>
+                <input id="f-val-pis" type="number" step="0.01" min="0" value="${valoresSalvos['DARF - PIS'] || ''}" placeholder="R$ (opcional)" class="w-28 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-bold text-right" />
+              </div>
+
+              <div class="p-3 rounded-xl border border-slate-200 bg-slate-50/70 flex items-center justify-between gap-3">
+                <label class="flex items-center gap-2.5 cursor-pointer flex-1">
+                  <input type="checkbox" name="f-piscof-trib" value="DARF - COFINS" ${tribSalvos.includes('DARF - COFINS') ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600" />
+                  <div>
+                    <div class="font-bold text-slate-900">DARF - COFINS</div>
+                    <div class="text-[10px] text-slate-500">COFINS Faturamento Mensal</div>
+                  </div>
+                </label>
+                <input id="f-val-cofins" type="number" step="0.01" min="0" value="${valoresSalvos['DARF - COFINS'] || ''}" placeholder="R$ (opcional)" class="w-28 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-bold text-right" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Data de Vencimento (Dia 25 — Antecipado se não útil) *</label>
+              <input id="f-piscof-venc" type="date" required value="${vencPadrao}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onclick="ZGestorApp.concluirPisCofinsSemMovimento('${t.id}', '${modo}')"
+                class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
+                Sem Valor / Retido
+              </button>
+              <button
+                type="submit"
+                class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm transition cursor-pointer">
+                ${ehModoAndamento ? 'Salvar em Andamento' : 'Concluir e Gerar no Protocolo'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  concluirPisCofinsSemMovimento(tarefaId, modo = 'TRANSMITIR') {
+    try {
+      const venc = document.getElementById('f-piscof-venc')?.value || null;
+      window.zgestorDB.salvarApuracaoPisCofins(tarefaId, { modo, semMovimento: true, dataVencimento: venc });
+      this.closeModal();
+      this.showToast(
+        modo === 'EM_ANDAMENTO' ? 'PIS/COFINS salvo como Sem Valor (em andamento).' : 'PIS/COFINS concluído Sem Valor a Recolher.',
+        'info'
+      );
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  submitApuracaoPisCofins(e, tarefaId, modo = 'TRANSMITIR') {
+    e.preventDefault();
+    try {
+      const selecionados = Array.from(document.querySelectorAll('input[name="f-piscof-trib"]:checked')).map(cb => cb.value);
+      if (selecionados.length === 0) {
+        this.showToast('Selecione PIS e/ou COFINS ou clique em "Sem Valor / Retido".', 'error');
+        return;
+      }
+      const venc = document.getElementById('f-piscof-venc')?.value || null;
+      const valores = {
+        'DARF - PIS': Number(document.getElementById('f-val-pis')?.value || 0),
+        'DARF - COFINS': Number(document.getElementById('f-val-cofins')?.value || 0)
+      };
+      const res = window.zgestorDB.salvarApuracaoPisCofins(tarefaId, {
+        modo,
+        semMovimento: false,
+        tributos: selecionados,
+        valores,
+        dataVencimento: venc
+      });
+      this.closeModal();
+      this.showToast(
+        modo === 'EM_ANDAMENTO'
+          ? `PIS/COFINS salvo em andamento (${selecionados.join(' + ')}).`
+          : `PIS/COFINS concluído! ${res.guiasCriadas} guia(s) enviada(s) para o Protocolo.`,
+        'success'
+      );
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  // ===========================================================================
+  // MODAL DE APURAÇÃO TRIMESTRAL DE IRPJ E CSLL (ATÉ 3 QUOTAS -> PROTOCOLO)
+  // ===========================================================================
+  openModalApuracaoIrpjCsll(tarefaId = null, modo = 'TRANSMITIR') {
+    const db = window.zgestorDB;
+    const t = tarefaId ? (db.data.tarefas || []).find(item => item.id === tarefaId) : null;
+    const empresasPR = (db.data.empresas || []).filter(e => ['Lucro Presumido', 'Lucro Real'].includes(e.regime_tributario));
+    const empDefaultId = t ? t.empresa_id : (empresasPR[0]?.id || db.data.empresas[0]?.id || '');
+    const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(empDefaultId) : null;
+
+    // Detecta o trimestre inteligente: se vier da tarefa (ex: 09/2026 -> 3º Trim), usa o da tarefa;
+    // se aberto avulso em Out/Nov (ex: 10/2026 -> pagando quotas do 3º Trim), sugere o trimestre anterior recém-fechado!
+    let trimPadrao = 3;
+    let anoPadrao = 2026;
+    if (t && t.irpj_config) {
+      trimPadrao = t.irpj_config.trimestre;
+      anoPadrao = t.irpj_config.ano;
+    } else if (t && t.competencia) {
+      const info = db.obterTrimestreDeCompetencia(t.competencia);
+      trimPadrao = info.trimestre;
+      anoPadrao = info.ano;
+    } else {
+      const [mAt, aAt] = String(this.state.competencia || '10/2026').split('/').map(Number);
+      anoPadrao = aAt || 2026;
+      if ([3, 6, 9, 12].includes(mAt)) {
+        trimPadrao = mAt / 3;
+      } else {
+        const trimAnt = Math.floor((mAt - 1) / 3);
+        if (trimAnt >= 1) {
+          trimPadrao = trimAnt;
+        } else {
+          trimPadrao = 4;
+          anoPadrao = anoPadrao - 1;
+        }
+      }
+    }
+
+    const cfgSalva = (t && t.irpj_config) ? t.irpj_config : null;
+    const qtdQuotasInicial = cfgSalva ? cfgSalva.qtdQuotas : 3;
+    const tribSalvos = cfgSalva ? cfgSalva.tributos : ['IRPJ', 'CSLL'];
+    const ehModoAndamento = modo === 'EM_ANDAMENTO' && Boolean(t);
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-teal-700">Lucro Presumido / Lucro Real — Apuração Trimestral</span>
+              <h3 class="text-base font-bold text-slate-900">
+                ${ehModoAndamento ? 'Apuração Trimestral IRPJ / CSLL (Em Andamento)' : 'Apurar IRPJ / CSLL e Gerar Quotas no Protocolo'}
+              </h3>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitApuracaoIrpjCsll(event, '${t ? t.id : ''}', '${modo}')" class="space-y-4 mt-4 text-xs">
+            ${t ? `
+              <input type="hidden" id="f-irpj-emp" value="${escapeHtml(t.empresa_id)}" />
+              <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div class="font-bold text-slate-900">${escapeHtml(emp ? (emp.razao_social || emp.nome_fantasia) : 'Empresa')}</div>
+                <div class="text-[11px] text-slate-500 font-mono">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : ''}</div>
+              </div>
+            ` : `
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Empresa (Lucro Presumido / Real) *</label>
+                ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                  uid: 'modal-irpj-emp',
+                  inputId: 'f-irpj-emp',
+                  selectedId: empDefaultId,
+                  placeholder: 'Digite código, razão social ou CNPJ...'
+                })}
+              </div>
+            `}
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-slate-700 mb-1">Trimestre de Apuração *</label>
+                <select id="f-irpj-trim" onchange="ZGestorApp.atualizarQuotasModalIrpj()" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold bg-white">
+                  <option value="1" ${trimPadrao === 1 ? 'selected' : ''}>1º Trimestre (Jan–Mar → Quotas Abr/Mai/Jun)</option>
+                  <option value="2" ${trimPadrao === 2 ? 'selected' : ''}>2º Trimestre (Abr–Jun → Quotas Jul/Ago/Set)</option>
+                  <option value="3" ${trimPadrao === 3 ? 'selected' : ''}>3º Trimestre (Jul–Set → Quotas Out/Nov/Dez)</option>
+                  <option value="4" ${trimPadrao === 4 ? 'selected' : ''}>4º Trimestre (Out–Dez → Quotas Jan/Fev/Mar)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Ano *</label>
+                <input id="f-irpj-ano" type="number" min="2024" max="2035" value="${anoPadrao}" onchange="ZGestorApp.atualizarQuotasModalIrpj()" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/70 cursor-pointer hover:border-teal-400">
+                <input type="checkbox" name="f-irpj-trib" value="IRPJ" ${tribSalvos.includes('IRPJ') ? 'checked' : ''} class="w-4 h-4 rounded text-teal-600" />
+                <div>
+                  <div class="font-bold text-slate-900">DARF - IRPJ</div>
+                  <div class="text-[10px] text-slate-500">Imposto de Renda PJ</div>
+                </div>
+              </label>
+              <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/70 cursor-pointer hover:border-teal-400">
+                <input type="checkbox" name="f-irpj-trib" value="CSLL" ${tribSalvos.includes('CSLL') ? 'checked' : ''} class="w-4 h-4 rounded text-teal-600" />
+                <div>
+                  <div class="font-bold text-slate-900">DARF - CSLL</div>
+                  <div class="text-[10px] text-slate-500">Contribuição Social</div>
+                </div>
+              </label>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1.5">Divisão do Pagamento (Quotas Trimestrais) *</label>
+              <div class="grid grid-cols-3 gap-2">
+                ${[1, 2, 3].map(n => `
+                  <label class="cursor-pointer">
+                    <input type="radio" name="f-irpj-qtd-quotas" value="${n}" ${qtdQuotasInicial === n ? 'checked' : ''} onchange="ZGestorApp.atualizarQuotasModalIrpj()" class="sr-only peer" />
+                    <div class="p-2.5 rounded-xl border-2 text-center font-bold transition peer-checked:border-teal-600 peer-checked:bg-teal-50 peer-checked:text-teal-950 border-slate-200 text-slate-600 hover:border-slate-300">
+                      ${n === 1 ? 'Quota Única (1x)' : `${n} Quotas (${n}x)`}
+                    </div>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-teal-50/60 border border-teal-200 space-y-2">
+              <div class="text-[11px] font-bold text-teal-950">
+                Vencimentos das Quotas (último dia útil bancário de cada mês subsequente):
+              </div>
+              <div id="irpj-quotas-container" class="space-y-2"></div>
+              <p class="text-[10px] text-teal-800">
+                Cada quota aparecerá automaticamente na aba de <strong>Protocolo</strong> da respectiva competência de entrega (ex.: 3º Trim → 30/10, 30/11 e 30/12).
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              ${t ? `
+                <button
+                  type="button"
+                  onclick="ZGestorApp.concluirIrpjSemMovimento('${t.id}', '${modo}')"
+                  class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
+                  Sem Valor / Prejuízo
+                </button>
+              ` : '<div></div>'}
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="ZGestorApp.closeModal()" class="px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+                <button
+                  type="submit"
+                  class="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold shadow-sm transition cursor-pointer">
+                  ${ehModoAndamento ? 'Salvar em Andamento' : 'Gerar Quotas no Protocolo'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+
+    this._irpjQuotasSalvasTemp = cfgSalva ? cfgSalva.quotasLista : null;
+    this.atualizarQuotasModalIrpj();
+  },
+
+  atualizarQuotasModalIrpj() {
+    const container = document.getElementById('irpj-quotas-container');
+    if (!container) return;
+    const trim = parseInt(document.getElementById('f-irpj-trim')?.value, 10) || 3;
+    const ano = parseInt(document.getElementById('f-irpj-ano')?.value, 10) || 2026;
+    const qtd = parseInt(document.querySelector('input[name="f-irpj-qtd-quotas"]:checked')?.value, 10) || 3;
+    const quotasCalc = window.zgestorDB.calcularDatasQuotasTrimestre(trim, ano, qtd);
+    const salvas = Array.isArray(this._irpjQuotasSalvasTemp) ? this._irpjQuotasSalvasTemp : [];
+    this._irpjQuotasSalvasTemp = null;
+
+    container.innerHTML = quotasCalc.map((q, idx) => {
+      const sv = salvas[idx];
+      const dtVal = (sv && sv.data_vencimento) ? sv.data_vencimento : q.data_vencimento;
+      const ativa = sv && sv.ativa !== undefined ? Boolean(sv.ativa) : true;
+      const vIrpj = sv && sv.valor_irpj ? sv.valor_irpj : '';
+      const vCsll = sv && sv.valor_csll ? sv.valor_csll : '';
+      return `
+        <div class="p-2.5 rounded-xl bg-white border border-teal-200 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+          <label class="sm:col-span-4 flex items-center gap-2 font-bold text-slate-900 cursor-pointer">
+            <input type="checkbox" class="f-irpj-q-ativa w-4 h-4 rounded text-teal-600" data-idx="${idx}" ${ativa ? 'checked' : ''} />
+            <span>${qtd === 1 ? 'Quota Única' : `${q.quota}ª Quota`}</span>
+          </label>
+          <div class="sm:col-span-4">
+            <input type="date" class="f-irpj-q-venc w-full rounded-lg border border-slate-300 px-2 py-1 font-bold text-slate-800" data-idx="${idx}" value="${dtVal}" />
+          </div>
+          <div class="sm:col-span-2">
+            <input type="number" step="0.01" min="0" placeholder="IRPJ R$" value="${vIrpj}" class="f-irpj-q-val-irpj w-full rounded-lg border border-slate-300 px-2 py-1 text-right font-semibold" data-idx="${idx}" />
+          </div>
+          <div class="sm:col-span-2">
+            <input type="number" step="0.01" min="0" placeholder="CSLL R$" value="${vCsll}" class="f-irpj-q-val-csll w-full rounded-lg border border-slate-300 px-2 py-1 text-right font-semibold" data-idx="${idx}" />
+          </div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  concluirIrpjSemMovimento(tarefaId, modo = 'TRANSMITIR') {
+    try {
+      const trim = parseInt(document.getElementById('f-irpj-trim')?.value, 10) || 3;
+      const ano = parseInt(document.getElementById('f-irpj-ano')?.value, 10) || 2026;
+      const empId = document.getElementById('f-irpj-emp')?.value || '';
+      window.zgestorDB.salvarApuracaoIrpjCsllTrimestral({
+        tarefaId,
+        empresaId: empId,
+        trimestre: trim,
+        ano,
+        qtdQuotas: 1,
+        semMovimento: true,
+        modo
+      });
+      this.closeModal();
+      this.showToast('IRPJ/CSLL registrado Sem Valor a Recolher / Prejuízo.', 'info');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  submitApuracaoIrpjCsll(e, tarefaId = '', modo = 'TRANSMITIR') {
+    e.preventDefault();
+    try {
+      const empId = document.getElementById('f-irpj-emp')?.value || '';
+      if (!empId) {
+        this.showToast('Selecione a empresa para gerar as guias de IRPJ/CSLL.', 'error');
+        return;
+      }
+      const trim = parseInt(document.getElementById('f-irpj-trim')?.value, 10) || 3;
+      const ano = parseInt(document.getElementById('f-irpj-ano')?.value, 10) || 2026;
+      const qtd = parseInt(document.querySelector('input[name="f-irpj-qtd-quotas"]:checked')?.value, 10) || 3;
+      const tributos = Array.from(document.querySelectorAll('input[name="f-irpj-trib"]:checked')).map(cb => cb.value);
+      if (tributos.length === 0) {
+        this.showToast('Marque IRPJ e/ou CSLL para gerar as guias.', 'error');
+        return;
+      }
+
+      const ativasEls = Array.from(document.querySelectorAll('.f-irpj-q-ativa'));
+      const vencEls = Array.from(document.querySelectorAll('.f-irpj-q-venc'));
+      const valIrpjEls = Array.from(document.querySelectorAll('.f-irpj-q-val-irpj'));
+      const valCsllEls = Array.from(document.querySelectorAll('.f-irpj-q-val-csll'));
+
+      const quotasConfig = vencEls.map((el, i) => ({
+        quota: i + 1,
+        ativa: ativasEls[i] ? ativasEls[i].checked : true,
+        data_vencimento: el.value,
+        valor_irpj: Number(valIrpjEls[i]?.value || 0),
+        valor_csll: Number(valCsllEls[i]?.value || 0)
+      }));
+
+      if (!quotasConfig.some(q => q.ativa)) {
+        this.showToast('Mantenha ao menos uma quota marcada para gerar no Protocolo.', 'error');
+        return;
+      }
+
+      const res = window.zgestorDB.salvarApuracaoIrpjCsllTrimestral({
+        tarefaId: tarefaId || null,
+        empresaId: empId,
+        trimestre: trim,
+        ano,
+        qtdQuotas: qtd,
+        tributos,
+        quotasConfig,
+        semMovimento: false,
+        modo
+      });
+      this.closeModal();
+      this.showToast(
+        modo === 'EM_ANDAMENTO'
+          ? `Apuração do ${trim}º Trim/${ano} salva em andamento!`
+          : `${res.guiasCriadas} guia(s) do ${trim}º Trim/${ano} gerada(s) no Controle de Guias / Protocolo!`,
+        'success'
+      );
       this.renderAll();
     } catch (err) {
       this.showToast(err.message, 'error');
