@@ -216,13 +216,19 @@ window.ZGestorViews = {
 
     if (tarefa.status === 'EM_ANDAMENTO') {
       return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800 border border-sky-200">
-        <i data-lucide="loader" class="w-3 h-3"></i> Em Andamento
+        🔄 Em Andamento
+      </span>`;
+    }
+
+    if (tarefa.status === 'AGUARDANDO_DOCS') {
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+        📄 Aguardando Docs
       </span>`;
     }
 
     if (tarefa.status === 'PENDENTE') {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-        <i data-lucide="circle-dashed" class="w-3 h-3"></i> Pendente
+      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 border border-rose-300">
+        ⚠ Pendente
       </span>`;
     }
 
@@ -670,7 +676,7 @@ window.ZGestorViews = {
     if (fDeptAtual !== 'TODOS') lista = lista.filter(t => t.departamento === fDeptAtual);
     if (fRegimeAtual !== 'TODOS') {
       lista = lista.filter(t => {
-        const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+        const emp = this.obterEmp(db, t.empresa_id, t);
         return emp && emp.regime_tributario === fRegimeAtual;
       });
     }
@@ -683,6 +689,8 @@ window.ZGestorViews = {
         lista = lista.filter(t => db.obterStatusSimplesTarefa(t) === 'NAO_INICIADA');
       } else if (fStatus === 'PENDENTE') {
         lista = lista.filter(t => db.obterStatusSimplesTarefa(t) === 'PENDENTE');
+      } else if (fStatus === 'AGUARDANDO_DOCS') {
+        lista = lista.filter(t => db.obterStatusSimplesTarefa(t) === 'AGUARDANDO_DOCS');
       } else if (fStatus === 'EM_ANDAMENTO') {
         lista = lista.filter(t => db.obterStatusSimplesTarefa(t) === 'EM_ANDAMENTO');
       } else if (fStatus === 'ENTREGUE') {
@@ -704,6 +712,7 @@ window.ZGestorViews = {
         return (
           (t.titulo || '').toLowerCase().includes(fBusca) ||
           (t.descricao || '').toLowerCase().includes(fBusca) ||
+          (t.motivo_pendencia || '').toLowerCase().includes(fBusca) ||
           (t.protocolo_observacao || '').toLowerCase().includes(fBusca) ||
           (t.solicitante || '').toLowerCase().includes(fBusca) ||
           (t.responsavel_nome || '').toLowerCase().includes(fBusca) ||
@@ -713,60 +722,71 @@ window.ZGestorViews = {
     }
     lista.sort((a, b) => (a.prazo_entrega || '').localeCompare(b.prazo_entrega || ''));
 
-    // Contadores rápidos da competência
+    // Contadores rápidos da competência (uma única passada O(N))
     const todasComp = db.getTarefasVisiveis(rlsAtivo).filter(t => t.competencia === comp);
-    const qtdNaoIniciadasComp = todasComp.filter(t => db.obterStatusSimplesTarefa(t) === 'NAO_INICIADA').length;
-    const qtdPendentesComp = todasComp.filter(t => db.obterStatusSimplesTarefa(t) === 'PENDENTE').length;
-    const qtdAndamentoComp = todasComp.filter(t => db.obterStatusSimplesTarefa(t) === 'EM_ANDAMENTO').length;
-    const qtdEntreguesComp = todasComp.filter(t => db.obterStatusSimplesTarefa(t) === 'ENTREGUE').length;
+    let qtdNaoIniciadasComp = 0;
+    let qtdPendentesComp = 0;
+    let qtdAguardandoDocsComp = 0;
+    let qtdAndamentoComp = 0;
+    let qtdEntreguesComp = 0;
+    for (let i = 0; i < todasComp.length; i++) {
+      const stS = db.obterStatusSimplesTarefa(todasComp[i]);
+      if (stS === 'NAO_INICIADA') qtdNaoIniciadasComp++;
+      else if (stS === 'PENDENTE') qtdPendentesComp++;
+      else if (stS === 'AGUARDANDO_DOCS') qtdAguardandoDocsComp++;
+      else if (stS === 'EM_ANDAMENTO') qtdAndamentoComp++;
+      else if (stS === 'ENTREGUE' || stS === 'CONFERIDO') qtdEntreguesComp++;
+    }
 
-    // 2. Filtra Guias de Impostos
+    // 2. Filtra Guias de Impostos (somente executa filtros pesados quando na sub-aba guias_impostos)
     const ehGuiaDigital = (g) => Boolean(g.arquivada_digital || ['WhatsApp', 'E-mail'].includes(g.canal_envio) || ['ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
     const todasGuiasComp = db.getGuiasParaEntregaNaCompetencia(comp) || [];
-    let listaGuiasImpostos = [...todasGuiasComp];
-    if (fCliente !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.empresa_id === fCliente);
-    if (fGuiaTipo !== 'TODOS') {
-      listaGuiasImpostos = listaGuiasImpostos.filter(g => {
-        const tg = String(g.tipo_guia || '');
-        if (fGuiaTipo === 'Parcelamento') return tg.startsWith('Parcelamento');
-        if (fGuiaTipo.includes('IRPJ')) return tg.includes('IRPJ') || tg.includes('CSLL');
-        if (fGuiaTipo.includes('PIS')) return tg.includes('PIS') || tg.includes('COFINS');
-        if (fGuiaTipo.includes('ICMS')) return tg.includes('ICMS');
-        if (/\bISS\b/i.test(fGuiaTipo)) return /\bISS\b/i.test(tg);
-        return tg === fGuiaTipo;
-      });
-    }
-    if (fGuiaStatus !== 'TODOS') {
-      if (fGuiaStatus === 'PENDENTES') {
-        listaGuiasImpostos = listaGuiasImpostos.filter(g => !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
-      } else if (fGuiaStatus === 'ENVIADAS_DIGITAIS') {
-        listaGuiasImpostos = listaGuiasImpostos.filter(ehGuiaDigital);
-      } else {
-        listaGuiasImpostos = listaGuiasImpostos.filter(g => g.status_envio === fGuiaStatus);
+    let listaGuiasImpostos = subTab === 'guias_impostos' ? [...todasGuiasComp] : [];
+    const fPrefGuia = appState.filtroGuiaPreferenciaEnvio || 'TODOS';
+    if (subTab === 'guias_impostos') {
+      if (fCliente !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.empresa_id === fCliente);
+      if (fGuiaTipo !== 'TODOS') {
+        listaGuiasImpostos = listaGuiasImpostos.filter(g => {
+          const tg = String(g.tipo_guia || '');
+          if (fGuiaTipo === 'Parcelamento') return tg.startsWith('Parcelamento');
+          if (fGuiaTipo.includes('IRPJ')) return tg.includes('IRPJ') || tg.includes('CSLL');
+          if (fGuiaTipo.includes('PIS')) return tg.includes('PIS') || tg.includes('COFINS');
+          if (fGuiaTipo.includes('ICMS')) return tg.includes('ICMS');
+          if (/\bISS\b/i.test(fGuiaTipo)) return /\bISS\b/i.test(tg);
+          return tg === fGuiaTipo;
+        });
+      }
+      if (fGuiaStatus !== 'TODOS') {
+        if (fGuiaStatus === 'PENDENTES') {
+          listaGuiasImpostos = listaGuiasImpostos.filter(g => !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
+        } else if (fGuiaStatus === 'ENVIADAS_DIGITAIS') {
+          listaGuiasImpostos = listaGuiasImpostos.filter(ehGuiaDigital);
+        } else {
+          listaGuiasImpostos = listaGuiasImpostos.filter(g => g.status_envio === fGuiaStatus);
+        }
+      }
+      if (fPrefGuia !== 'TODOS' && db.ehOperadorInterno && db.ehOperadorInterno()) {
+        listaGuiasImpostos = listaGuiasImpostos.filter(g => {
+          const emp = this.obterEmp(db, g.empresa_id, g);
+          const pref = emp ? db.obterPreferenciaEnvioEmpresa(emp, comp) : null;
+          const canalPref = pref ? pref.canal : 'NAO_DEFINIDO';
+          return canalPref === fPrefGuia;
+        });
+      }
+      if (fBusca) {
+        listaGuiasImpostos = listaGuiasImpostos.filter(g => {
+          const emp = this.obterEmp(db, g.empresa_id, g);
+          const empNome = emp ? `${emp.codigo_interno || ''} ${emp.razao_social || ''} ${emp.nome_fantasia || ''} ${emp.cnpj || ''}`.toLowerCase() : '';
+          return (
+            (g.tipo_guia || '').toLowerCase().includes(fBusca) ||
+            (g.observacoes || '').toLowerCase().includes(fBusca) ||
+            empNome.includes(fBusca)
+          );
+        });
       }
     }
-    const fPrefGuia = appState.filtroGuiaPreferenciaEnvio || 'TODOS';
-    if (fPrefGuia !== 'TODOS' && db.ehOperadorInterno && db.ehOperadorInterno()) {
-      listaGuiasImpostos = listaGuiasImpostos.filter(g => {
-        const emp = this.obterEmp(db, g.empresa_id, g);
-        const pref = emp ? db.obterPreferenciaEnvioEmpresa(emp, comp) : null;
-        const canalPref = pref ? pref.canal : 'NAO_DEFINIDO';
-        return canalPref === fPrefGuia;
-      });
-    }
-    if (fBusca) {
-      listaGuiasImpostos = listaGuiasImpostos.filter(g => {
-        const emp = this.obterEmp(db, g.empresa_id, g);
-        const empNome = emp ? `${emp.codigo_interno || ''} ${emp.razao_social || ''} ${emp.nome_fantasia || ''} ${emp.cnpj || ''}`.toLowerCase() : '';
-        return (
-          (g.tipo_guia || '').toLowerCase().includes(fBusca) ||
-          (g.observacoes || '').toLowerCase().includes(fBusca) ||
-          empNome.includes(fBusca)
-        );
-      });
-    }
 
-    // 3. Dados para a Sub-Aba 2: Visão Geral & Controle de Fechamentos Contábeis (Anual Jan-Dez)
+    // 3. Dados para a Sub-Aba 2: Visão Geral & Controle de Fechamentos Contábeis (calculados apenas quando ativa)
     const mesesRaw = (window.ZGESTOR_MODELS && window.ZGESTOR_MODELS.mesesAno) || [
       { num: '01', curto: 'Jan', nome: 'Janeiro' },
       { num: '02', curto: 'Fev', nome: 'Fevereiro' },
@@ -786,39 +806,41 @@ window.ZGestorViews = {
       curto: m.curto || m.abrev || (m.nome && m.nome.slice(0, 3)) || ''
     }));
 
-    let empresasFechamento = [...db.data.empresas];
-    if (fCliente !== 'TODOS') {
-      empresasFechamento = empresasFechamento.filter(e => e.id === fCliente);
-    }
-
-    // Lista Geral Multi-Competência do Ano (para auditoria de fechamentos)
-    let tarefasAnoGeral = db.getTarefasVisiveis(rlsAtivo).filter(t => String(t.competencia || '').endsWith(`/${anoFechamento}`));
-    if (fSetorFechamento !== 'TODOS') {
-      tarefasAnoGeral = tarefasAnoGeral.filter(t => t.departamento === fSetorFechamento);
-    }
-    if (fCliente !== 'TODOS') {
-      tarefasAnoGeral = tarefasAnoGeral.filter(t => t.empresa_id === fCliente);
-    }
-    if (fStatusGeral !== 'TODOS') {
-      tarefasAnoGeral = tarefasAnoGeral.filter(t => db.obterStatusSimplesTarefa(t) === fStatusGeral);
-    }
-    if (fBusca) {
-      tarefasAnoGeral = tarefasAnoGeral.filter(t => {
-        const emp = db.data.empresas.find(e => e.id === t.empresa_id);
-        const empNome = emp ? `${emp.razao_social} ${emp.nome_fantasia}`.toLowerCase() : '';
-        return (
-          (t.titulo || '').toLowerCase().includes(fBusca) ||
-          (t.protocolo_observacao || '').toLowerCase().includes(fBusca) ||
-          (t.competencia || '').toLowerCase().includes(fBusca) ||
-          empNome.includes(fBusca)
-        );
+    let empresasFechamento = [];
+    let tarefasAnoGeral = [];
+    if (subTab === 'fechamentos_geral') {
+      empresasFechamento = [...db.data.empresas];
+      if (fCliente !== 'TODOS') {
+        empresasFechamento = empresasFechamento.filter(e => e.id === fCliente);
+      }
+      tarefasAnoGeral = db.getTarefasVisiveis(rlsAtivo).filter(t => String(t.competencia || '').endsWith(`/${anoFechamento}`));
+      if (fSetorFechamento !== 'TODOS') {
+        tarefasAnoGeral = tarefasAnoGeral.filter(t => t.departamento === fSetorFechamento);
+      }
+      if (fCliente !== 'TODOS') {
+        tarefasAnoGeral = tarefasAnoGeral.filter(t => t.empresa_id === fCliente);
+      }
+      if (fStatusGeral !== 'TODOS') {
+        tarefasAnoGeral = tarefasAnoGeral.filter(t => db.obterStatusSimplesTarefa(t) === fStatusGeral);
+      }
+      if (fBusca) {
+        tarefasAnoGeral = tarefasAnoGeral.filter(t => {
+          const emp = this.obterEmp(db, t.empresa_id, t);
+          const empNome = emp ? `${emp.razao_social} ${emp.nome_fantasia}`.toLowerCase() : '';
+          return (
+            (t.titulo || '').toLowerCase().includes(fBusca) ||
+            (t.protocolo_observacao || '').toLowerCase().includes(fBusca) ||
+            (t.competencia || '').toLowerCase().includes(fBusca) ||
+            empNome.includes(fBusca)
+          );
+        });
+      }
+      tarefasAnoGeral.sort((a, b) => {
+        const [mA, yA] = String(a.competencia || '01/2026').split('/');
+        const [mB, yB] = String(b.competencia || '01/2026').split('/');
+        return `${yB}-${mB}`.localeCompare(`${yA}-${mA}`) || (a.empresa_id || '').localeCompare(b.empresa_id || '');
       });
     }
-    tarefasAnoGeral.sort((a, b) => {
-      const [mA, yA] = String(a.competencia || '01/2026').split('/');
-      const [mB, yB] = String(b.competencia || '01/2026').split('/');
-      return `${yB}-${mB}`.localeCompare(`${yA}-${mA}`) || (a.empresa_id || '').localeCompare(b.empresa_id || '');
-    });
 
     const modelosTiposGuias = ((window.ZGESTOR_MODELS && window.ZGESTOR_MODELS.tiposGuiasImpostos) || []).map(tg =>
       typeof tg === 'string' ? { sigla: tg, departamento: 'FISCAL', dia_vencimento_padrao: 20 } : tg
@@ -880,13 +902,24 @@ window.ZGestorViews = {
           </span>
         `;
       }
-      if (stAtual === 'PENDENTE') {
+      if (stAtual === 'AGUARDANDO_DOCS') {
         return `
           <span
             title="Aguardando Documentos / Arquivos do Cliente"
             class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs select-none cursor-default">
             <span class="w-2 h-2 rounded-full bg-amber-500"></span>
             <span>Aguardando Docs</span>
+          </span>
+        `;
+      }
+      if (stAtual === 'PENDENTE') {
+        const mot = this.escapeHtml(t?.motivo_pendencia || t?.protocolo_observacao || 'Pendente');
+        return `
+          <span
+            title="Pendente — ${mot}"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-50 text-rose-800 border border-rose-300 shadow-2xs select-none cursor-default">
+            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+            <span>⚠ Pendente</span>
           </span>
         `;
       }
@@ -1084,7 +1117,7 @@ window.ZGestorViews = {
                       <span class="px-2 py-0.5 rounded-full text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">${pctC}% Concluído</span>
                     </div>
                     <p class="text-[11px] text-slate-500 mt-0.5">
-                      ${totalC === 0 ? 'Nenhuma rotina gerada ainda para este mês. Clique em "Gerar Rotinas" para criar automaticamente conforme regime e Inscrição Estadual.' : `${qtdEntreguesComp} de ${totalC} obrigações concluídas (${qtdEntreguesComp - qtdSemMovC} normais • ${qtdSemMovC} sem movimento) • ${qtdPendentesComp} aguardando docs • ${qtdAndamentoComp} em andamento`}
+                      ${totalC === 0 ? 'Nenhuma rotina gerada ainda para este mês. Clique em "Gerar Rotinas" para criar automaticamente conforme regime e Inscrição Estadual.' : `${qtdEntreguesComp} de ${totalC} obrigações concluídas (${qtdEntreguesComp - qtdSemMovC} normais • ${qtdSemMovC} sem movimento) • ${qtdPendentesComp} pendente(s) • ${qtdAguardandoDocsComp} aguardando docs • ${qtdAndamentoComp} em andamento`}
                     </p>
                   </div>
                   ${totalC === 0 ? `
@@ -1268,9 +1301,114 @@ window.ZGestorViews = {
             <div class="flex-1 w-full min-w-0">
               ${(() => {
                 const modo = appState.modoVisualizacaoTarefas || 'kanban';
+                const selecionadasSet = new Set(Array.isArray(appState.tarefasSelecionadas) ? appState.tarefasSelecionadas : []);
+                const idsVisiveis = lista.map(t => t.id);
+                const qtdSelVisiveis = idsVisiveis.filter(id => selecionadasSet.has(id)).length;
+                const todasVisiveisMarcadas = idsVisiveis.length > 0 && qtdSelVisiveis === idsVisiveis.length;
+                const totalSelecionadas = selecionadasSet.size;
+
+                // Índices O(1) das tarefas e guias de ICMS da competência para exibição imediata ao lado da DeSTDA
+                const mapaTarefasIcmsComp = new Map();
+                for (let i = 0; i < todasComp.length; i++) {
+                  const ti = todasComp[i];
+                  if (ti && ti.empresa_id && db.ehTarefaApuracaoIcms && db.ehTarefaApuracaoIcms(ti)) {
+                    mapaTarefasIcmsComp.set(ti.empresa_id, ti);
+                  }
+                }
+                const mapaGuiasIcmsComp = new Map();
+                const todasGuiasRefComp = db.getGuiasImpostos(comp) || [];
+                for (let i = 0; i < todasGuiasRefComp.length; i++) {
+                  const gi = todasGuiasRefComp[i];
+                  if (gi && gi.empresa_id && String(gi.tipo_guia || '').toLowerCase().includes('icms')) {
+                    let arrG = mapaGuiasIcmsComp.get(gi.empresa_id);
+                    if (!arrG) {
+                      arrG = [];
+                      mapaGuiasIcmsComp.set(gi.empresa_id, arrG);
+                    }
+                    arrG.push(gi);
+                  }
+                }
+
+                const renderBadgeIcmsAoLadoDestda = (t) => {
+                  if (!db.ehTarefaDestda || !db.ehTarefaDestda(t)) return '';
+                  const info = db.obterResumoApuracaoIcmsParaDestda(t.empresa_id, comp, mapaTarefasIcmsComp, mapaGuiasIcmsComp);
+                  if (!info) return '';
+                  return `
+                    <span
+                      title="${this.escapeHtml(info.detalhe || info.label)}"
+                      class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-extrabold border ${info.cls}">
+                      <span>${info.icone}</span>
+                      <span>${this.escapeHtml(info.label)}</span>
+                    </span>
+                  `;
+                };
+
+                const renderBlocoMotivoPendente = (t) => {
+                  const stS = db.obterStatusSimplesTarefa(t);
+                  const motivo = String(t.motivo_pendencia || (stS === 'PENDENTE' ? t.protocolo_observacao : '') || '').trim();
+                  if (stS !== 'PENDENTE' && !t.motivo_pendencia) return '';
+                  return `
+                    <div class="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-rose-50 text-rose-900 border border-rose-200 text-[10.5px] font-bold max-w-full">
+                      <span>⚠ Motivo:</span>
+                      <span class="truncate" title="${this.escapeHtml(motivo || 'Sem motivo informado')}">${this.escapeHtml(motivo || 'Clique em Pendente p/ informar o motivo')}</span>
+                    </div>
+                  `;
+                };
+
+                const barraLoteHtml = `
+                  <div class="mb-3 rounded-2xl border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 transition ${totalSelecionadas > 0 ? 'bg-slate-900 text-white border-slate-800 shadow-lg sticky top-14 z-20' : 'bg-white text-slate-700 border-slate-200 shadow-2xs'}">
+                    <div class="flex flex-wrap items-center gap-2.5 text-xs">
+                      <label class="inline-flex items-center gap-2 font-bold cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          ${todasVisiveisMarcadas ? 'checked' : ''}
+                          onchange="ZGestorApp.toggleSelecionarTodasTarefasVisiveis(this.checked)"
+                          class="w-4 h-4 rounded text-indigo-600 cursor-pointer"
+                        />
+                        <span>${totalSelecionadas > 0 ? `${totalSelecionadas} tarefa(s) selecionada(s)` : `Selecionar tarefas em lote (${lista.length} visíveis)`}</span>
+                      </label>
+                      ${totalSelecionadas > 0 ? `
+                        <button
+                          type="button"
+                          onclick="ZGestorApp.limparSelecaoTarefas()"
+                          class="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold cursor-pointer">
+                          Limpar seleção
+                        </button>
+                      ` : `<span class="text-[11px] text-slate-400 hidden sm:inline">Marque várias tarefas para alterar a situação ou registrar pendência com motivo de uma só vez.</span>`}
+                    </div>
+
+                    ${totalSelecionadas > 0 ? `
+                      <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+                        <button type="button" onclick="ZGestorApp.abrirModalLoteSelecionadas('PENDENTE')" class="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold shadow-xs cursor-pointer">
+                          ⚠ Pendente (+ Motivo)
+                        </button>
+                        <button type="button" onclick="ZGestorApp.abrirModalLoteSelecionadas('AGUARDANDO_DOCS')" class="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold cursor-pointer">
+                          📄 Aguardando Docs
+                        </button>
+                        <button type="button" onclick="ZGestorApp.aplicarAcaoRapidaLoteTarefas('EM_ANDAMENTO')" class="px-2.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer">
+                          🔄 Fazendo
+                        </button>
+                        <button type="button" onclick="ZGestorApp.aplicarAcaoRapidaLoteTarefas('ENTREGUE_NORMAL')" class="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold cursor-pointer">
+                          ✓ Normal
+                        </button>
+                        <button type="button" onclick="ZGestorApp.aplicarAcaoRapidaLoteTarefas('SEM_MOVIMENTO')" class="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold cursor-pointer">
+                          S/ Mov.
+                        </button>
+                        <button type="button" onclick="ZGestorApp.aplicarAcaoRapidaLoteTarefas('REABRIR')" class="px-2.5 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold cursor-pointer">
+                          ↩ A Fazer
+                        </button>
+                        <button type="button" onclick="ZGestorApp.abrirModalLoteSelecionadas('ESCOLHER')" class="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold border border-white/20 cursor-pointer">
+                          📝 Situação + Motivo...
+                        </button>
+                      </div>
+                    ` : ''}
+                  </div>
+                `;
+
                 const colunas = [
                   { key: 'NAO_INICIADA', label: 'A Fazer', dot: 'bg-slate-400', headerBg: 'bg-slate-50 border-slate-200', badge: 'bg-slate-200 text-slate-800' },
-                  { key: 'PENDENTE', label: 'Aguardando Docs', dot: 'bg-amber-500', headerBg: 'bg-amber-50/80 border-amber-200', badge: 'bg-amber-200 text-amber-900' },
+                  { key: 'PENDENTE', label: 'Pendentes', dot: 'bg-rose-500', headerBg: 'bg-rose-50/80 border-rose-200', badge: 'bg-rose-200 text-rose-900' },
+                  { key: 'AGUARDANDO_DOCS', label: 'Aguardando Docs', dot: 'bg-amber-500', headerBg: 'bg-amber-50/80 border-amber-200', badge: 'bg-amber-200 text-amber-900' },
                   { key: 'EM_ANDAMENTO', label: 'Em Andamento', dot: 'bg-sky-500', headerBg: 'bg-sky-50/80 border-sky-200', badge: 'bg-sky-200 text-sky-900' },
                   { key: 'ENTREGUE', label: 'Concluídas', dot: 'bg-emerald-500', headerBg: 'bg-emerald-50/80 border-emerald-200', badge: 'bg-emerald-200 text-emerald-900' }
                 ];
@@ -1290,23 +1428,49 @@ window.ZGestorViews = {
                   return '<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">' + emp.regime_tributario + '</span>';
                 };
 
+                const svgEdit = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>';
+                const svgTrash = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
+
+                // Agrupa uma única vez O(N) para evitar múltiplos .filter() sobre 1.000+ tarefas
+                const porGrupo = new Map();
+                colunas.forEach(c => porGrupo.set(c.key, []));
+                for (let i = 0; i < lista.length; i++) {
+                  const itemT = lista[i];
+                  let stKey = db.obterStatusSimplesTarefa(itemT);
+                  if (stKey === 'CONFERIDO') stKey = 'ENTREGUE';
+                  const bucket = porGrupo.get(stKey) || porGrupo.get('NAO_INICIADA');
+                  bucket.push(itemT);
+                }
+
                 // =============================================================
-                // MODO 1: QUADRO KANBAN MODERNO (COM DRAG & DROP + AÇÕES RÁPIDAS)
+                // MODO 1: QUADRO KANBAN MODERNO (COM DRAG & DROP + SELEÇÃO EM LOTE)
                 // =============================================================
                 if (modo === 'kanban') {
                   return `
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 items-start">
+                    ${barraLoteHtml}
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 items-start">
                       ${colunas.map(col => {
-                        const cards = lista.filter(t => db.obterStatusSimplesTarefa(t) === col.key);
+                        const cards = porGrupo.get(col.key) || [];
+                        const todosColMarcados = cards.length > 0 && cards.every(c => selecionadasSet.has(c.id));
                         return `
                           <div
                             ondragover="ZGestorApp.onDragOverColunaKanban(event)"
                             ondrop="ZGestorApp.onDropColunaKanban(event, '${col.key}')"
                             class="bg-slate-50/90 rounded-2xl border border-slate-200 flex flex-col max-h-[72vh]">
-                            <div class="p-3 rounded-t-2xl border-b ${col.headerBg} flex items-center justify-between shrink-0">
-                              <div class="flex items-center gap-2">
-                                <span class="w-2.5 h-2.5 rounded-full ${col.dot}"></span>
-                                <h3 class="text-xs font-extrabold text-slate-800">${col.label}</h3>
+                            <div class="p-2.5 rounded-t-2xl border-b ${col.headerBg} flex items-center justify-between shrink-0">
+                              <div class="flex items-center gap-2 min-w-0">
+                                ${cards.length > 0 ? `
+                                  <input
+                                    type="checkbox"
+                                    ${todosColMarcados ? 'checked' : ''}
+                                    onclick="event.stopPropagation()"
+                                    onchange="ZGestorApp.toggleSelecionarGrupoTarefas('${col.key}', this.checked)"
+                                    title="Selecionar todas de ${col.label}"
+                                    class="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer shrink-0"
+                                  />
+                                ` : ''}
+                                <span class="w-2.5 h-2.5 rounded-full ${col.dot} shrink-0"></span>
+                                <h3 class="text-xs font-extrabold text-slate-800 truncate">${col.label}</h3>
                               </div>
                               <span class="px-2 py-0.5 rounded-full text-[11px] font-black ${col.badge}">${cards.length}</span>
                             </div>
@@ -1320,14 +1484,23 @@ window.ZGestorViews = {
                                 const emp = this.obterEmp(db, t.empresa_id, t);
                                 const atrasada = !t.data_entrega && t.prazo_entrega && t.prazo_entrega < hoje;
                                 const isAtivo = sidePeekTarefa && sidePeekTarefa.id === t.id;
+                                const isChecked = selecionadasSet.has(t.id);
                                 return `
                                   <div
                                     draggable="true"
                                     ondragstart="ZGestorApp.onDragStartTarefa(event, '${t.id}')"
                                     onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')"
-                                    class="bg-white p-3 rounded-xl border transition shadow-2xs hover:shadow-md cursor-pointer space-y-2 ${isAtivo ? 'border-indigo-500 ring-2 ring-indigo-200' : atrasada ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200 hover:border-indigo-300'}">
+                                    class="bg-white p-3 rounded-xl border transition shadow-2xs hover:shadow-md cursor-pointer space-y-2 ${isChecked ? 'border-indigo-600 ring-2 ring-indigo-300 bg-indigo-50/20' : isAtivo ? 'border-indigo-500 ring-2 ring-indigo-200' : atrasada ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200 hover:border-indigo-300'}">
                                     <div class="flex items-center justify-between gap-1.5">
-                                      <div class="flex items-center gap-1 flex-wrap">
+                                      <div class="flex items-center gap-1.5 flex-wrap">
+                                        <input
+                                          type="checkbox"
+                                          ${isChecked ? 'checked' : ''}
+                                          onclick="event.stopPropagation()"
+                                          onchange="ZGestorApp.toggleSelecionarTarefa('${t.id}', this.checked)"
+                                          class="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer"
+                                          title="Selecionar tarefa p/ lote"
+                                        />
                                         ${badgeSetor(t.departamento)}
                                         ${badgeRegime(emp)}
                                         ${t.tipo === 'TRIMESTRAL' ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200">Trimestral</span>' : ''}
@@ -1342,9 +1515,11 @@ window.ZGestorViews = {
                                       <div class="text-[11px] font-bold text-indigo-700 truncate" title="${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: t }))}">
                                         ${emp && this.codLimpo(emp.codigo_interno) ? `<span class="font-mono font-extrabold bg-indigo-50 px-1 py-0.2 rounded mr-1">${this.escapeHtml(this.codLimpo(emp.codigo_interno))}</span>` : ''}${this.escapeHtml(this.nomeEmp(emp, { fallbackObj: t }))}
                                       </div>
-                                      <div class="text-xs font-extrabold text-slate-900 leading-snug mt-0.5">
-                                        ${this.escapeHtml(t.titulo)}
+                                      <div class="text-xs font-extrabold text-slate-900 leading-snug mt-0.5 flex flex-wrap items-center gap-1.5">
+                                        <span>${this.escapeHtml(t.titulo)}</span>
+                                        ${renderBadgeIcmsAoLadoDestda(t)}
                                       </div>
+                                      ${renderBlocoMotivoPendente(t)}
                                       ${t.icms_apuracao_definida ? `
                                         <div class="flex flex-wrap gap-1 mt-1.5">
                                           ${t.icms_sem_movimento
@@ -1352,7 +1527,7 @@ window.ZGestorViews = {
                                             : (t.icms_apuracao_tipos || []).map(tp => `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">Apurado: ${this.escapeHtml(tp)}</span>`).join('')}
                                         </div>
                                       ` : ''}
-                                      ${t.protocolo_observacao && !t.icms_apuracao_definida ? `
+                                      ${t.protocolo_observacao && !t.icms_apuracao_definida && col.key !== 'PENDENTE' ? `
                                         <div class="text-[10px] text-slate-500 truncate mt-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
                                           ${this.escapeHtml(t.protocolo_observacao)}
                                         </div>
@@ -1361,7 +1536,10 @@ window.ZGestorViews = {
 
                                     <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-1" onclick="event.stopPropagation()">
                                       <div class="flex items-center gap-1 flex-wrap">
-                                        ${col.key !== 'PENDENTE' && col.key !== 'ENTREGUE' ? `
+                                        ${col.key !== 'ENTREGUE' ? `
+                                          <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'PENDENTE')" class="px-1.5 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${col.key === 'PENDENTE' ? 'bg-rose-600 text-white border-rose-700' : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'}">Pendente</button>
+                                        ` : ''}
+                                        ${col.key !== 'AGUARDANDO_DOCS' && col.key !== 'ENTREGUE' ? `
                                           <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'COBRAR_DOCS')" class="px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold cursor-pointer">Docs</button>
                                         ` : ''}
                                         ${col.key !== 'EM_ANDAMENTO' && col.key !== 'ENTREGUE' ? `
@@ -1375,7 +1553,7 @@ window.ZGestorViews = {
                                         `}
                                       </div>
                                       <button type="button" onclick="ZGestorApp.openModalEditarTarefa('${t.id}')" class="p-1 rounded text-slate-400 hover:text-indigo-600 cursor-pointer" title="Editar">
-                                        <i data-lucide="pencil" class="w-3 h-3"></i>
+                                        ${svgEdit}
                                       </button>
                                     </div>
                                   </div>
@@ -1482,19 +1660,31 @@ window.ZGestorViews = {
                 }
 
                 // =============================================================
-                // MODO 3: LISTA PRÁTICA E MODERNA (LIMPA E COMPACTA)
+                // MODO 3: LISTA PRÁTICA E MODERNA (COM SELEÇÃO EM LOTE, PENDENTE E ICMS NA DESTDA)
                 // =============================================================
                 return `
+                  ${barraLoteHtml}
                   <div class="space-y-4">
                     ${colunas.map(grupo => {
-                      const itensGrupo = lista.filter(t => db.obterStatusSimplesTarefa(t) === grupo.key);
+                      const itensGrupo = porGrupo.get(grupo.key) || [];
                       const isColapsado = colapsados[grupo.key] === true;
+                      const todosGrupoMarcados = itensGrupo.length > 0 && itensGrupo.every(it => selecionadasSet.has(it.id));
                       return `
                         <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
                           <div
                             onclick="ZGestorApp.toggleNotionGrupo('${grupo.key}')"
                             class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-50 transition select-none border-b border-slate-100">
                             <div class="flex items-center gap-2.5">
+                              ${itensGrupo.length > 0 ? `
+                                <input
+                                  type="checkbox"
+                                  ${todosGrupoMarcados ? 'checked' : ''}
+                                  onclick="event.stopPropagation()"
+                                  onchange="ZGestorApp.toggleSelecionarGrupoTarefas('${grupo.key}', this.checked)"
+                                  title="Selecionar todas de ${grupo.label}"
+                                  class="w-4 h-4 rounded text-indigo-600 cursor-pointer"
+                                />
+                              ` : ''}
                               <span class="text-xs text-slate-400 font-mono">${isColapsado ? '▶' : '▼'}</span>
                               <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${grupo.badge}">
                                 <span class="w-2 h-2 rounded-full ${grupo.dot}"></span>
@@ -1507,42 +1697,60 @@ window.ZGestorViews = {
                           ${!isColapsado ? `
                             <div class="divide-y divide-slate-100">
                               ${itensGrupo.length === 0 ? `
-                                <div class="py-5 text-center text-slate-400 text-xs italic">
+                                <div class="py-4 text-center text-slate-400 text-xs italic">
                                   Nenhuma tarefa em "${grupo.label}".
                                 </div>
                               ` : itensGrupo.map(t => {
                                 const emp = this.obterEmp(db, t.empresa_id, t);
                                 const atrasada = !t.data_entrega && t.prazo_entrega && t.prazo_entrega < hoje;
                                 const isAtivo = sidePeekTarefa && sidePeekTarefa.id === t.id;
+                                const isChecked = selecionadasSet.has(t.id);
+                                const stLinha = db.obterStatusSimplesTarefa(t);
                                 return `
-                                  <div class="px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-slate-50/90 transition ${isAtivo ? 'bg-indigo-50/60' : ''}">
-                                    <div class="flex items-start gap-3 min-w-0 flex-1 cursor-pointer" onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')">
-                                      <div class="pt-0.5 shrink-0">${renderNotionStatusPill(t)}</div>
-                                      <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-2 flex-wrap">
-                                          <span class="text-xs font-extrabold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: t }))}</span>
-                                          ${badgeSetor(t.departamento)}
-                                          ${badgeRegime(emp)}
-                                          <span class="text-[11px] font-bold ${atrasada ? 'text-rose-600' : 'text-slate-400'}">• Prazo: ${this.formatDate(t.prazo_entrega)}</span>
-                                        </div>
-                                        <div class="text-xs font-semibold text-slate-700 mt-0.5">${this.escapeHtml(t.titulo)}</div>
-                                        ${t.icms_apuracao_definida ? `
-                                          <div class="flex flex-wrap gap-1 mt-1">
-                                            ${t.icms_sem_movimento
-                                              ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-bold">Apurado: Sem Movimento</span>'
-                                              : (t.icms_apuracao_tipos || []).map(tp => `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">Apurado: ${this.escapeHtml(tp)}</span>`).join('')}
+                                  <div class="px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-slate-50/90 transition ${isChecked ? 'bg-indigo-50/50' : isAtivo ? 'bg-indigo-50/60' : ''}">
+                                    <div class="flex items-start gap-2.5 min-w-0 flex-1">
+                                      <div class="pt-1 shrink-0" onclick="event.stopPropagation()">
+                                        <input
+                                          type="checkbox"
+                                          ${isChecked ? 'checked' : ''}
+                                          onchange="ZGestorApp.toggleSelecionarTarefa('${t.id}', this.checked)"
+                                          class="w-4 h-4 rounded text-indigo-600 cursor-pointer"
+                                          title="Selecionar tarefa p/ lote"
+                                        />
+                                      </div>
+                                      <div class="flex items-start gap-3 min-w-0 flex-1 cursor-pointer" onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')">
+                                        <div class="pt-0.5 shrink-0">${renderNotionStatusPill(t)}</div>
+                                        <div class="min-w-0 flex-1">
+                                          <div class="flex items-center gap-2 flex-wrap">
+                                            <span class="text-xs font-extrabold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: t }))}</span>
+                                            ${badgeSetor(t.departamento)}
+                                            ${badgeRegime(emp)}
+                                            <span class="text-[11px] font-bold ${atrasada ? 'text-rose-600' : 'text-slate-400'}">• Prazo: ${this.formatDate(t.prazo_entrega)}</span>
                                           </div>
-                                        ` : t.protocolo_observacao ? `<div class="text-[11px] text-slate-500 mt-0.5 truncate">Obs: ${this.escapeHtml(t.protocolo_observacao)}</div>` : ''}
+                                          <div class="text-xs font-semibold text-slate-700 mt-0.5 flex flex-wrap items-center gap-2">
+                                            <span>${this.escapeHtml(t.titulo)}</span>
+                                            ${renderBadgeIcmsAoLadoDestda(t)}
+                                          </div>
+                                          ${renderBlocoMotivoPendente(t)}
+                                          ${t.icms_apuracao_definida ? `
+                                            <div class="flex flex-wrap gap-1 mt-1">
+                                              ${t.icms_sem_movimento
+                                                ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-bold">Apurado: Sem Movimento</span>'
+                                                : (t.icms_apuracao_tipos || []).map(tp => `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">Apurado: ${this.escapeHtml(tp)}</span>`).join('')}
+                                            </div>
+                                          ` : (t.protocolo_observacao && stLinha !== 'PENDENTE') ? `<div class="text-[11px] text-slate-500 mt-0.5 truncate">Obs: ${this.escapeHtml(t.protocolo_observacao)}</div>` : ''}
+                                        </div>
                                       </div>
                                     </div>
 
                                     <div class="flex items-center gap-1.5 flex-wrap shrink-0">
-                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'COBRAR_DOCS')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'PENDENTE' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'}">Docs</button>
-                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'EM_ANDAMENTO')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'EM_ANDAMENTO' ? 'bg-sky-600 text-white border-sky-700' : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'}">Fazendo</button>
-                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'ENTREGUE_NORMAL')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${db.obterStatusSimplesTarefa(t) === 'ENTREGUE' && t.modalidade_entrega !== 'SEM_MOVIMENTO' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'}">✓ Normal</button>
+                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'PENDENTE')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${stLinha === 'PENDENTE' ? 'bg-rose-600 text-white border-rose-700' : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'}">Pendente</button>
+                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'COBRAR_DOCS')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${stLinha === 'AGUARDANDO_DOCS' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'}">Docs</button>
+                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'EM_ANDAMENTO')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${stLinha === 'EM_ANDAMENTO' ? 'bg-sky-600 text-white border-sky-700' : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'}">Fazendo</button>
+                                      <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'ENTREGUE_NORMAL')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${stLinha === 'ENTREGUE' && t.modalidade_entrega !== 'SEM_MOVIMENTO' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'}">✓ Normal</button>
                                       <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'SEM_MOVIMENTO')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${t.modalidade_entrega === 'SEM_MOVIMENTO' ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'}">S/ Mov.</button>
-                                      <button type="button" onclick="ZGestorApp.openModalEditarTarefa('${t.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition cursor-pointer" title="Editar"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
-                                      <button type="button" onclick="ZGestorApp.excluirTarefa('${t.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer" title="Excluir"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                      <button type="button" onclick="ZGestorApp.openModalEditarTarefa('${t.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition cursor-pointer" title="Editar">${svgEdit}</button>
+                                      <button type="button" onclick="ZGestorApp.excluirTarefa('${t.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer" title="Excluir">${svgTrash}</button>
                                     </div>
                                   </div>
                                 `;
@@ -1642,12 +1850,17 @@ window.ZGestorViews = {
                     <label class="block font-bold text-slate-700 mb-1 uppercase text-[10px] tracking-wider">
                       Obrigação Selecionada:
                     </label>
-                    <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-900">
-                      ${sidePeekTarefa.titulo}
+                    <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-900 space-y-1.5">
+                      <div>${sidePeekTarefa.titulo}</div>
+                      ${db.ehTarefaDestda && db.ehTarefaDestda(sidePeekTarefa) ? (() => {
+                        const resIcmsSp = db.obterResumoApuracaoIcmsParaDestda(sidePeekTarefa.empresa_id, comp);
+                        if (!resIcmsSp) return '';
+                        return `<div class="p-2 rounded-lg border text-[11px] font-extrabold ${resIcmsSp.cls}">${resIcmsSp.icone} ${this.escapeHtml(resIcmsSp.label)}</div>`;
+                      })() : ''}
                     </div>
                   </div>
 
-                  <!-- Seletor dos 4 Status com visual Notion Pill -->
+                  <!-- Seletor dos Status com visual Notion Pill -->
                   <div>
                     <label class="block font-bold text-slate-700 mb-1.5 uppercase text-[10px] tracking-wider">
                       Situação / Status da Tarefa *
@@ -1676,9 +1889,24 @@ window.ZGestorViews = {
                           class="peer sr-only"
                           ${db.obterStatusSimplesTarefa(sidePeekTarefa) === 'PENDENTE' ? 'checked' : ''}
                         />
+                        <div class="p-2 rounded-xl bg-white border border-slate-300 text-center peer-checked:bg-rose-600 peer-checked:border-rose-700 peer-checked:text-white transition">
+                          <span class="inline-flex items-center gap-1 text-[11px] font-bold">
+                            <span class="w-2 h-2 rounded-full bg-rose-400"></span> ⚠ Pendente
+                          </span>
+                        </div>
+                      </label>
+
+                      <label class="cursor-pointer">
+                        <input
+                          type="radio"
+                          name="notion-sp-status"
+                          value="AGUARDANDO_DOCS"
+                          class="peer sr-only"
+                          ${db.obterStatusSimplesTarefa(sidePeekTarefa) === 'AGUARDANDO_DOCS' ? 'checked' : ''}
+                        />
                         <div class="p-2 rounded-xl bg-white border border-slate-300 text-center peer-checked:bg-amber-500 peer-checked:border-amber-600 peer-checked:text-white transition">
                           <span class="inline-flex items-center gap-1 text-[11px] font-bold">
-                            <span class="w-2 h-2 rounded-full bg-amber-400"></span> Pendente
+                            <span class="w-2 h-2 rounded-full bg-amber-400"></span> Aguardando Docs
                           </span>
                         </div>
                       </label>
@@ -1698,7 +1926,7 @@ window.ZGestorViews = {
                         </div>
                       </label>
 
-                      <label class="cursor-pointer">
+                      <label class="cursor-pointer col-span-2">
                         <input
                           type="radio"
                           name="notion-sp-status"
@@ -1726,16 +1954,16 @@ window.ZGestorViews = {
                     />
                   </div>
 
-                  <!-- Comments / Observações -->
+                  <!-- Motivo da Pendência / Observações -->
                   <div>
                     <label class="block font-bold text-slate-700 mb-1 uppercase text-[10px] tracking-wider">
-                      💬 Observações & Protocolos (Comments)
+                      💬 Motivo da Pendência / Observações
                     </label>
                     <textarea
                       id="notion-sp-obs"
                       rows="3"
-                      placeholder="Add a comment... (Digite notas sobre o andamento, pendências com cliente ou protocolo de envio)"
-                      class="w-full rounded-xl bg-white border border-slate-300 p-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500">${sidePeekTarefa.protocolo_observacao || ''}</textarea>
+                      placeholder="Informe o motivo caso esteja Pendente, detalhes do andamento ou protocolo..."
+                      class="w-full rounded-xl bg-white border border-slate-300 p-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500">${this.escapeHtml(sidePeekTarefa.motivo_pendencia || sidePeekTarefa.protocolo_observacao || '')}</textarea>
                   </div>
 
                   <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
@@ -4522,14 +4750,30 @@ window.ZGestorViews = {
                     Nenhum lançamento de honorário encontrado para os filtros aplicados.
                   </td>
                 </tr>
-              ` : listaHon.map(h => {
-      const emp = this.obterEmp(db, h.empresa_id, h);
-      const codHon = emp ? this.codLimpo(emp.codigo_interno) : '';
-      const pags = db.data.honorario_pagamentos.filter(p => p.honorario_id === h.id);
-      const saldoAnt = Number(h.saldo_anterior || 0);
-      const compRefAnt = h.competencia_saldo_anterior || compAnt;
-      const totalLiquido = Math.max(0, Number(h.valor_mensal) + saldoAnt + Number(h.servicos_extras) - Number(h.desconto));
-      return `
+              ` : (() => {
+      const pagsPorHon = new Map();
+      const todosPags = db.data.honorario_pagamentos || [];
+      for (let i = 0; i < todosPags.length; i++) {
+        const pg = todosPags[i];
+        if (!pg || !pg.honorario_id) continue;
+        let arrPg = pagsPorHon.get(pg.honorario_id);
+        if (!arrPg) {
+          arrPg = [];
+          pagsPorHon.set(pg.honorario_id, arrPg);
+        }
+        arrPg.push(pg);
+      }
+      const svgPrint = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>';
+      const svgSliders = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>';
+
+      return listaHon.map(h => {
+        const emp = this.obterEmp(db, h.empresa_id, h);
+        const codHon = emp ? this.codLimpo(emp.codigo_interno) : '';
+        const pags = pagsPorHon.get(h.id) || [];
+        const saldoAnt = Number(h.saldo_anterior || 0);
+        const compRefAnt = h.competencia_saldo_anterior || compAnt;
+        const totalLiquido = Math.max(0, Number(h.valor_mensal) + saldoAnt + Number(h.servicos_extras) - Number(h.desconto));
+        return `
                   <tr class="hover:bg-slate-50 ${saldoAnt > 0 ? 'bg-amber-50/20' : ''}">
                     <td class="py-3 px-3">
                       <div class="font-bold text-slate-900">
@@ -4552,7 +4796,7 @@ window.ZGestorViews = {
                         })()}
                         ${emp ? this.renderBadgePreferenciaEnvio(emp, comp, true) : ''}
                       </div>
-                      ${h.observacoes ? `<div class="text-[10px] text-slate-500 mt-0.5 italic">"${h.observacoes}"</div>` : ''}
+                      ${h.observacoes ? `<div class="text-[10px] text-slate-500 mt-0.5 italic">"${this.escapeHtml(h.observacoes)}"</div>` : ''}
                     </td>
                     <td class="py-3 px-2.5">
                       <div class="font-bold text-slate-800">${this.formatCurrency(h.valor_mensal)}</div>
@@ -4586,7 +4830,7 @@ window.ZGestorViews = {
                     <td class="py-3 px-3 text-right">
                       <div class="inline-flex flex-wrap items-center justify-end gap-1">
                         <button onclick="ZGestorReports.imprimirReciboHonorarioPix('${h.id}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-semibold inline-flex items-center gap-1">
-                          <i data-lucide="printer" class="w-3 h-3"></i> PIX
+                          ${svgPrint} PIX
                         </button>
                         ${Number(h.saldo_aberto) > 0 ? `
                           <button onclick="ZGestorApp.openModalPagamentoHonorario('${h.id}')" class="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold">
@@ -4594,13 +4838,14 @@ window.ZGestorViews = {
                           </button>
                         ` : ''}
                         <button onclick="ZGestorApp.openModalEditarHonorario('${h.id}')" class="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100" title="Ajustar">
-                          <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
+                          ${svgSliders}
                         </button>
                       </div>
                     </td>
                   </tr>
                 `;
-    }).join('')}
+      }).join('');
+    })()}
             </tbody>
           </table>
           </div>

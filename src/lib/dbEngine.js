@@ -166,19 +166,40 @@
       return String(cod === null || cod === undefined ? '' : cod).replace(/^#+/, '').trim();
     }
 
+    _obterMapaEmpresas() {
+      const lista = Array.isArray(this.data?.empresas) ? this.data.empresas : [];
+      if (this._cacheEmpListaRef === lista && this._cacheEmpLen === lista.length && this._cacheEmpPorId) {
+        return { porId: this._cacheEmpPorId, porCnpj: this._cacheEmpPorCnpj };
+      }
+      const porId = new Map();
+      const porCnpj = new Map();
+      for (let i = 0; i < lista.length; i++) {
+        const e = lista[i];
+        if (!e) continue;
+        if (e.id) porId.set(e.id, e);
+        const doc = String(e.cnpj || '').replace(/\D/g, '');
+        if (doc.length === 14 && !porCnpj.has(doc)) porCnpj.set(doc, e);
+      }
+      this._cacheEmpListaRef = lista;
+      this._cacheEmpLen = lista.length;
+      this._cacheEmpPorId = porId;
+      this._cacheEmpPorCnpj = porCnpj;
+      return { porId, porCnpj };
+    }
+
     obterEmpresaSegura(empresaIdOuObj, registroFallback = null) {
       if (!empresaIdOuObj && !registroFallback) return null;
       if (typeof empresaIdOuObj === 'object' && empresaIdOuObj !== null) return empresaIdOuObj;
-      const lista = Array.isArray(this.data?.empresas) ? this.data.empresas : [];
+      const { porId, porCnpj } = this._obterMapaEmpresas();
       if (empresaIdOuObj) {
-        const porId = lista.find(e => e.id === empresaIdOuObj);
-        if (porId) return porId;
+        const encontrada = porId.get(empresaIdOuObj);
+        if (encontrada) return encontrada;
       }
       if (registroFallback) {
         const docCand = String(registroFallback.cnpj || registroFallback.documento || '').replace(/\D/g, '');
         if (docCand.length === 14) {
-          const porCnpj = lista.find(e => String(e.cnpj || '').replace(/\D/g, '') === docCand);
-          if (porCnpj) return porCnpj;
+          const encontradaCnpj = porCnpj.get(docCand);
+          if (encontradaCnpj) return encontradaCnpj;
         }
       }
       return null;
@@ -732,7 +753,7 @@
     }
 
     saveLocalData() {
-      this._normalizarDadosCarregados(this.data);
+      this._cacheEmpListaRef = null;
       this._migrarCredenciais(this.data);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
@@ -1248,7 +1269,7 @@
       if (!tarefa) return null;
       const empresa = emp || this.obterEmpresaSegura(tarefa.empresa_id, tarefa);
       const tit = String(tarefa.titulo || '').toLowerCase().trim();
-      if (tit.startsWith('transmissão efd-') || tit.startsWith('transmissao efd-')) {
+      if (tit.startsWith('transmissão efd-') || tit.startsWith('transmissao efd-') || tit.includes('destda')) {
         return null;
       }
       if (tit.includes('irpj') || tit.includes('csll')) {
@@ -1260,9 +1281,6 @@
       if (/\biss\b|\bissqn\b/i.test(tit)) {
         return 'ISS_MUNICIPAL';
       }
-      if (tit.includes('destda')) {
-        return 'ICMS_SIMPLES';
-      }
       if (tit.includes('icms')) {
         if (empresa && ['Lucro Presumido', 'Lucro Real'].includes(empresa.regime_tributario)) {
           return 'ICMS_PRESUMIDO_REAL';
@@ -1270,6 +1288,154 @@
         return 'ICMS_SIMPLES';
       }
       return null;
+    }
+
+    ehTarefaDestda(tarefa) {
+      if (!tarefa) return false;
+      const tit = String(tarefa.titulo || '').toLowerCase();
+      return tit.includes('destda') || tit.includes('sedif');
+    }
+
+    ehTarefaApuracaoIcms(tarefa) {
+      if (!tarefa) return false;
+      const tit = String(tarefa.titulo || '').toLowerCase();
+      if (tit.includes('destda') || tit.includes('sedif')) return false;
+      if (tit.startsWith('transmissão efd') || tit.startsWith('transmissao efd')) return false;
+      return tit.includes('icms');
+    }
+
+    obterResumoApuracaoIcmsParaDestda(empresaId, competencia, mapaTarefasIcms = null, mapaGuiasIcms = null) {
+      if (!empresaId || !competencia) return null;
+      let tIcms = null;
+      if (mapaTarefasIcms && typeof mapaTarefasIcms.get === 'function') {
+        tIcms = mapaTarefasIcms.get(empresaId) || null;
+      } else {
+        tIcms = (this.data.tarefas || []).find(
+          t => t && t.empresa_id === empresaId && t.competencia === competencia && this.ehTarefaApuracaoIcms(t)
+        ) || null;
+      }
+
+      let guiasIcms = [];
+      if (mapaGuiasIcms && typeof mapaGuiasIcms.get === 'function') {
+        guiasIcms = mapaGuiasIcms.get(empresaId) || [];
+      } else {
+        guiasIcms = (this.data.guias_impostos || []).filter(
+          g => g && g.empresa_id === empresaId && g.competencia === competencia && String(g.tipo_guia || '').toLowerCase().includes('icms')
+        );
+      }
+
+      const resumirTipos = (listaTipos) => {
+        if (!Array.isArray(listaTipos) || listaTipos.length === 0) return '';
+        return listaTipos.map(tp => {
+          const s = String(tp || '').trim();
+          if (/antecip.*st/i.test(s)) return 'Antecipação ST';
+          if (/difal/i.test(s)) return 'DIFAL';
+          if (/antecip/i.test(s) && !/difal|st/i.test(s)) return 'Antecipação';
+          if (/dae.*icms.*mensal/i.test(s)) return 'ICMS Mensal';
+          return s.replace(/^DAE\s*\/\s*DARE\s*-\s*/i, '');
+        }).join(' + ');
+      };
+
+      if (!tIcms) {
+        if (guiasIcms.length > 0) {
+          const tiposGuias = resumirTipos(guiasIcms.map(g => g.tipo_guia));
+          return {
+            codigo: 'CONCLUIDA_COM_MOV',
+            icone: '📌',
+            label: `ICMS c/ Movimento: ${tiposGuias || 'Guia gerada'}`,
+            detalhe: tiposGuias,
+            cls: 'bg-emerald-50 text-emerald-900 border-emerald-300'
+          };
+        }
+        return null;
+      }
+
+      const stSimples = this.obterStatusSimplesTarefa(tIcms);
+      const tiposTask = resumirTipos(tIcms.icms_apuracao_tipos);
+      const tiposGuias = resumirTipos(guiasIcms.map(g => g.tipo_guia));
+      const qualMov = tiposTask || tiposGuias;
+      const obsLimpa = String(tIcms.motivo_pendencia || tIcms.protocolo_observacao || '').trim();
+
+      if (stSimples === 'ENTREGUE' || stSimples === 'CONFERIDO') {
+        if (tIcms.modalidade_entrega === 'SEM_MOVIMENTO' || tIcms.icms_sem_movimento === true) {
+          return {
+            codigo: 'CONCLUIDA_SEM_MOV',
+            icone: '📌',
+            label: 'ICMS: Sem Movimento',
+            detalhe: 'Apuração de ICMS encerrada sem movimento',
+            cls: 'bg-sky-50 text-sky-900 border-sky-300'
+          };
+        }
+        let descMov = qualMov;
+        if (!descMov && obsLimpa && !/^conclu[ií]da/i.test(obsLimpa)) {
+          descMov = obsLimpa.length > 48 ? obsLimpa.slice(0, 48) + '…' : obsLimpa;
+        }
+        return {
+          codigo: 'CONCLUIDA_COM_MOV',
+          icone: '📌',
+          label: descMov ? `ICMS c/ Movimento: ${descMov}` : 'ICMS: Com Movimento (Normal)',
+          detalhe: descMov || 'Apuração de ICMS concluída com movimento',
+          cls: 'bg-emerald-50 text-emerald-900 border-emerald-300'
+        };
+      }
+
+      if (stSimples === 'EM_ANDAMENTO') {
+        if (tIcms.icms_apuracao_definida) {
+          if (tIcms.icms_sem_movimento) {
+            return {
+              codigo: 'EM_ANDAMENTO',
+              icone: '🔄',
+              label: 'ICMS: Em Andamento (pré-marcado Sem Mov.)',
+              detalhe: obsLimpa,
+              cls: 'bg-amber-50 text-amber-900 border-amber-300'
+            };
+          }
+          if (qualMov) {
+            return {
+              codigo: 'EM_ANDAMENTO',
+              icone: '🔄',
+              label: `ICMS: Em Andamento (${qualMov})`,
+              detalhe: obsLimpa,
+              cls: 'bg-amber-50 text-amber-900 border-amber-300'
+            };
+          }
+        }
+        return {
+          codigo: 'EM_ANDAMENTO',
+          icone: '🔄',
+          label: obsLimpa ? `ICMS: Em Andamento (${obsLimpa.length > 36 ? obsLimpa.slice(0, 36) + '…' : obsLimpa})` : 'ICMS: Ainda em Andamento',
+          detalhe: obsLimpa || 'Apuração de ICMS ainda está em andamento',
+          cls: 'bg-sky-50 text-sky-900 border-sky-300'
+        };
+      }
+
+      if (stSimples === 'PENDENTE') {
+        return {
+          codigo: 'PENDENTE',
+          icone: '⚠️',
+          label: obsLimpa ? `ICMS: Pendente (${obsLimpa.length > 40 ? obsLimpa.slice(0, 40) + '…' : obsLimpa})` : 'ICMS: Pendente',
+          detalhe: obsLimpa || 'Apuração de ICMS marcada como pendente',
+          cls: 'bg-rose-50 text-rose-900 border-rose-300'
+        };
+      }
+
+      if (stSimples === 'AGUARDANDO_DOCS') {
+        return {
+          codigo: 'AGUARDANDO_DOCS',
+          icone: '⏳',
+          label: 'ICMS: Aguardando Docs',
+          detalhe: obsLimpa || 'Aguardando envio de documentos do cliente',
+          cls: 'bg-amber-50 text-amber-900 border-amber-300'
+        };
+      }
+
+      return {
+        codigo: 'NAO_INICIADA',
+        icone: '⚪',
+        label: 'ICMS: Ainda não apurado',
+        detalhe: 'A tarefa de Apuração de ICMS desta empresa ainda não foi iniciada',
+        cls: 'bg-slate-100 text-slate-600 border-slate-300'
+      };
     }
 
     // =========================================================================
@@ -1421,6 +1587,28 @@
       return todos;
     }
 
+    _registrarSnapshotNuvem() {
+      if (!this._cloudRowHashes) this._cloudRowHashes = new Map();
+      if (!this._cloudColIds) this._cloudColIds = new Map();
+      this._cloudRowHashes.clear();
+      this._cloudColIds.clear();
+      this._getCloudCollections().forEach(col => {
+        const arr = Array.isArray(this.data?.[col]) ? this.data[col] : [];
+        const idSet = new Set();
+        for (let i = 0; i < arr.length; i++) {
+          const item = arr[i];
+          if (!item || !item.id) continue;
+          const idStr = String(item.id);
+          idSet.add(idStr);
+          this._cloudRowHashes.set(`${col}:${idStr}`, JSON.stringify(item));
+        }
+        this._cloudColIds.set(col, idSet);
+      });
+      this._cloudCfgEscritorioJson = JSON.stringify(this.data?.escritorio || {});
+      this._cloudCfgModelosJson = JSON.stringify(this.data?.modelos_tarefas || []);
+      this._cloudBaselineReady = true;
+    }
+
     _agendarSyncNuvem() {
       if (!this._initialCloudSyncDone) return;
       if (this._cloudSyncTimer) clearTimeout(this._cloudSyncTimer);
@@ -1428,7 +1616,7 @@
       this._cloudSyncTimer = setTimeout(() => {
         this._cloudSyncTimer = null;
         this.pushToSupabase({ silent: true }).catch(() => {});
-      }, 1200);
+      }, 1500);
     }
 
     async pushToSupabase(opts = {}) {
@@ -1444,9 +1632,62 @@
         this.statusNuvem = 'SINCRONIZANDO';
         const colecoes = this._getCloudCollections();
         const agora = new Date().toISOString();
+        const usarDelta = Boolean(this._cloudBaselineReady && !opts.forceManual && !opts.forceEmpty);
 
         for (const col of colecoes) {
           const arr = Array.isArray(this.data[col]) ? this.data[col] : [];
+          if (usarDelta) {
+            const prevIds = this._cloudColIds.get(col) || new Set();
+            const currentIds = new Set();
+            const alterados = [];
+            for (let i = 0; i < arr.length; i++) {
+              const item = arr[i];
+              if (!item || !item.id) continue;
+              const idStr = String(item.id);
+              currentIds.add(idStr);
+              const jsonAtual = JSON.stringify(item);
+              const chave = `${col}:${idStr}`;
+              if (this._cloudRowHashes.get(chave) !== jsonAtual) {
+                alterados.push({ item, idStr, jsonAtual, chave });
+              }
+            }
+
+            if (alterados.length > 0) {
+              const rows = alterados.map(a => ({
+                colecao: col,
+                id: a.idStr,
+                dados: a.item,
+                updated_at: agora
+              }));
+              for (let i = 0; i < rows.length; i += 100) {
+                const chunk = rows.slice(i, i + 100);
+                const { error } = await this.supabase
+                  .from('zgestor_registros')
+                  .upsert(chunk, { onConflict: 'colecao,id' });
+                if (error) throw new Error(error.message || 'Erro ao enviar ' + col);
+              }
+              alterados.forEach(a => this._cloudRowHashes.set(a.chave, a.jsonAtual));
+            }
+
+            if (arr.length > 0) {
+              const idsRemovidos = [];
+              prevIds.forEach(oldId => {
+                if (!currentIds.has(oldId)) idsRemovidos.push(oldId);
+              });
+              for (let j = 0; j < idsRemovidos.length; j += 100) {
+                const delChunk = idsRemovidos.slice(j, j + 100);
+                await this.supabase
+                  .from('zgestor_registros')
+                  .delete()
+                  .eq('colecao', col)
+                  .in('id', delChunk);
+              }
+              idsRemovidos.forEach(oldId => this._cloudRowHashes.delete(`${col}:${oldId}`));
+            }
+            this._cloudColIds.set(col, currentIds);
+            continue;
+          }
+
           const rows = arr
             .filter(item => item && item.id)
             .map(item => ({
@@ -1483,15 +1724,24 @@
           }
         }
 
-        const configs = [
-          { chave: 'escritorio', dados: this.data.escritorio || {}, updated_at: agora },
-          { chave: 'modelos_tarefas', dados: this.data.modelos_tarefas || [], updated_at: agora }
-        ];
-        const { error: errCfg } = await this.supabase
-          .from('zgestor_config')
-          .upsert(configs, { onConflict: 'chave' });
-        if (errCfg) throw new Error(errCfg.message);
+        const escJson = JSON.stringify(this.data.escritorio || {});
+        const modJson = JSON.stringify(this.data.modelos_tarefas || []);
+        if (!usarDelta || escJson !== this._cloudCfgEscritorioJson || modJson !== this._cloudCfgModelosJson) {
+          const configs = [
+            { chave: 'escritorio', dados: this.data.escritorio || {}, updated_at: agora },
+            { chave: 'modelos_tarefas', dados: this.data.modelos_tarefas || [], updated_at: agora }
+          ];
+          const { error: errCfg } = await this.supabase
+            .from('zgestor_config')
+            .upsert(configs, { onConflict: 'chave' });
+          if (errCfg) throw new Error(errCfg.message);
+          this._cloudCfgEscritorioJson = escJson;
+          this._cloudCfgModelosJson = modJson;
+        }
 
+        if (!usarDelta) {
+          this._registrarSnapshotNuvem();
+        }
         this._initialCloudSyncDone = true;
         this.statusNuvem = 'CONECTADO';
         this.ultimaSyncNuvem = agora;
@@ -1569,6 +1819,11 @@
           }
 
           this._initialCloudSyncDone = true;
+          this._honMutVersion = (this._honMutVersion || 0) + 1;
+
+          if (!precisaSubirReconciliacao) {
+            this._registrarSnapshotNuvem();
+          }
 
           if (atualizado) {
             this._suppressCloudSync = !precisaSubirReconciliacao;
@@ -2072,7 +2327,7 @@
       return emp;
     }
 
-    marcarEtapaTarefa(tarefaId, acao, observacao = null) {
+    marcarEtapaTarefa(tarefaId, acao, observacao = null, opcoes = {}) {
       const idx = (this.data.tarefas || []).findIndex(t => t.id === tarefaId);
       if (idx === -1) throw new Error('Tarefa não encontrada.');
       const t = this.data.tarefas[idx];
@@ -2082,33 +2337,55 @@
       }
 
       const hoje = new Date().toISOString().slice(0, 10);
-      if (acao === 'COBRAR_DOCS') {
+      const textoObsInformado = (observacao !== null && observacao !== undefined) ? String(observacao).trim() : null;
+
+      if (acao === 'PENDENTE') {
         t.status = 'PENDENTE';
         t.data_entrega = null;
         t.modalidade_entrega = null;
-        if (!t.protocolo_observacao) t.protocolo_observacao = 'Documentos solicitados ao cliente.';
+        const motivo = textoObsInformado !== null ? textoObsInformado : String(t.motivo_pendencia || t.protocolo_observacao || '').trim();
+        t.motivo_pendencia = motivo;
+        t.protocolo_observacao = motivo || 'Marcada como Pendente.';
+      } else if (acao === 'COBRAR_DOCS' || acao === 'AGUARDANDO_DOCS') {
+        t.status = 'AGUARDANDO_DOCS';
+        t.data_entrega = null;
+        t.modalidade_entrega = null;
+        t.motivo_pendencia = '';
+        if (textoObsInformado !== null) {
+          t.protocolo_observacao = textoObsInformado || 'Documentos solicitados ao cliente.';
+        } else if (!t.protocolo_observacao) {
+          t.protocolo_observacao = 'Documentos solicitados ao cliente.';
+        }
       } else if (acao === 'EM_ANDAMENTO') {
         t.status = 'EM_ANDAMENTO';
         t.data_entrega = null;
         t.modalidade_entrega = null;
+        t.motivo_pendencia = '';
+        if (textoObsInformado !== null) t.protocolo_observacao = textoObsInformado;
       } else if (acao === 'ENTREGUE_NORMAL') {
         t.data_entrega = hoje;
         t.modalidade_entrega = 'NORMAL';
+        t.motivo_pendencia = '';
         t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+        if (textoObsInformado !== null) t.protocolo_observacao = textoObsInformado;
       } else if (acao === 'SEM_MOVIMENTO') {
         t.data_entrega = hoje;
         t.modalidade_entrega = 'SEM_MOVIMENTO';
+        t.motivo_pendencia = '';
         t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
-        if (!t.protocolo_observacao) t.protocolo_observacao = 'Concluída Sem Movimento.';
-      } else if (acao === 'REABRIR') {
+        if (textoObsInformado !== null) {
+          t.protocolo_observacao = textoObsInformado || 'Concluída Sem Movimento.';
+        } else if (!t.protocolo_observacao) {
+          t.protocolo_observacao = 'Concluída Sem Movimento.';
+        }
+      } else if (acao === 'REABRIR' || acao === 'NAO_INICIADA') {
         t.data_entrega = null;
         t.modalidade_entrega = null;
+        t.motivo_pendencia = '';
         t.status = 'NAO_INICIADA';
+        if (textoObsInformado !== null) t.protocolo_observacao = textoObsInformado;
       }
 
-      if (observacao !== null && observacao !== undefined) {
-        t.protocolo_observacao = String(observacao).trim();
-      }
       if (user) {
         t.responsavel_nome = user.nome;
       }
@@ -2169,9 +2446,37 @@
       }
 
       this.sincronizarSolicitacaoPortalComTarefa(t);
-      this.saveLocalData();
-      this.registrarLog('ETAPA_TAREFA', 'Tarefas', `Etapa "${t.titulo}" marcada como ${acao} (${t.competencia}).`);
+      if (!opcoes.skipSave) {
+        this.saveLocalData();
+        this.registrarLog('ETAPA_TAREFA', 'Tarefas', `Etapa "${t.titulo}" marcada como ${acao}${t.motivo_pendencia ? ' — Motivo: ' + t.motivo_pendencia : ''} (${t.competencia}).`);
+      }
       return t;
+    }
+
+    atualizarTarefasEmLote(tarefaIds = [], acao = 'PENDENTE', motivoOuObs = null) {
+      const idsUnicos = Array.from(new Set((tarefaIds || []).filter(Boolean)));
+      if (idsUnicos.length === 0) return { atualizadas: 0, ignoradas: 0 };
+
+      let atualizadas = 0;
+      let ignoradas = 0;
+      idsUnicos.forEach(id => {
+        try {
+          this.marcarEtapaTarefa(id, acao, motivoOuObs, { skipSave: true });
+          atualizadas++;
+        } catch (_) {
+          ignoradas++;
+        }
+      });
+
+      if (atualizadas > 0) {
+        this.saveLocalData();
+        this.registrarLog(
+          'ETAPA_TAREFA_LOTE',
+          'Tarefas',
+          `Lote de ${atualizadas} tarefa(s) atualizado para ${acao}${motivoOuObs ? ` — Motivo/Obs: "${motivoOuObs}"` : ''}.`
+        );
+      }
+      return { atualizadas, ignoradas };
     }
 
     _removerGuiasPendentesPorFiltro(predicado) {
@@ -2232,6 +2537,9 @@
       if (statusEscolhido === 'EM_ANDAMENTO') {
         return 'EM_ANDAMENTO';
       }
+      if (statusEscolhido === 'AGUARDANDO_DOCS') {
+        return 'AGUARDANDO_DOCS';
+      }
       if (statusEscolhido === 'PENDENTE') {
         return 'PENDENTE';
       }
@@ -2248,6 +2556,9 @@
       }
       if (tarefa.status === 'EM_ANDAMENTO') {
         return 'EM_ANDAMENTO';
+      }
+      if (tarefa.status === 'AGUARDANDO_DOCS') {
+        return 'AGUARDANDO_DOCS';
       }
       if (tarefa.status === 'PENDENTE') {
         return 'PENDENTE';
@@ -2339,19 +2650,30 @@
       if (opcaoStatus === 'CONFERIDO') {
         const dt = dataEntregaEfetiva || tarefa.data_entrega || hoje;
         tarefa.data_entrega = dt;
+        tarefa.motivo_pendencia = '';
         tarefa.status = 'CONFERIDO';
       } else if (opcaoStatus === 'ENTREGUE' || opcaoStatus === 'ENTREGUE_NO_PRAZO' || opcaoStatus === 'ENTREGUE_COM_ATRASO') {
         const dt = dataEntregaEfetiva || tarefa.data_entrega || hoje;
         tarefa.data_entrega = dt;
+        tarefa.motivo_pendencia = '';
         tarefa.status = dt <= (tarefa.prazo_entrega || dt) ? 'ENTREGUE_NO_PRAZO' : 'ENTREGUE_COM_ATRASO';
       } else if (opcaoStatus === 'EM_ANDAMENTO') {
         tarefa.data_entrega = null;
+        tarefa.motivo_pendencia = '';
         tarefa.status = 'EM_ANDAMENTO';
+      } else if (opcaoStatus === 'AGUARDANDO_DOCS') {
+        tarefa.data_entrega = null;
+        tarefa.motivo_pendencia = '';
+        tarefa.status = 'AGUARDANDO_DOCS';
       } else if (opcaoStatus === 'PENDENTE') {
         tarefa.data_entrega = null;
         tarefa.status = 'PENDENTE';
+        if (observacao !== undefined && observacao !== null) {
+          tarefa.motivo_pendencia = String(observacao).trim();
+        }
       } else {
         tarefa.data_entrega = null;
+        tarefa.motivo_pendencia = '';
         tarefa.status = 'NAO_INICIADA';
       }
 
@@ -3445,9 +3767,10 @@
 
     sincronizarGuiasParcelamentoNoProtocolo(competencia) {
       if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
-      if (!Array.isArray(this.data.parcelamento_guias)) return;
+      if (!Array.isArray(this.data.parcelamento_guias)) return false;
       const enviados = ['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'];
       const guiasMes = this.data.parcelamento_guias.filter(g => g.competencia === competencia);
+      let mudou = false;
 
       guiasMes.forEach(g => {
         const parc = (this.data.parcelamentos || []).find(p => p.id === g.parcelamento_id);
@@ -3474,22 +3797,34 @@
               origem: 'PARCELAMENTO',
               observacoes: obsLabel
             });
+            mudou = true;
           } else {
-            this.data.guias_impostos[idxExist].tipo_guia = tipoLabel;
-            if (!enviados.includes(this.data.guias_impostos[idxExist].status_envio)) {
-              this.data.guias_impostos[idxExist].data_vencimento = g.data_vencimento;
-              this.data.guias_impostos[idxExist].valor = Number(g.valor_guia || 0);
-              this.data.guias_impostos[idxExist].observacoes = obsLabel;
+            const giAtual = this.data.guias_impostos[idxExist];
+            if (giAtual.tipo_guia !== tipoLabel) {
+              giAtual.tipo_guia = tipoLabel;
+              mudou = true;
+            }
+            if (!enviados.includes(giAtual.status_envio)) {
+              const valNum = Number(g.valor_guia || 0);
+              if (giAtual.data_vencimento !== g.data_vencimento || giAtual.valor !== valNum || giAtual.observacoes !== obsLabel) {
+                giAtual.data_vencimento = g.data_vencimento;
+                giAtual.valor = valNum;
+                giAtual.observacoes = obsLabel;
+                mudou = true;
+              }
             }
           }
         } else if (idxExist !== -1 && !enviados.includes(this.data.guias_impostos[idxExist].status_envio)) {
           this.data.guias_impostos.splice(idxExist, 1);
+          mudou = true;
         }
       });
+      return mudou;
     }
 
     sincronizarPendenciasParcelamento(competencia) {
-      const acordos = this.data.parcelamentos;
+      const acordos = this.data.parcelamentos || [];
+      let mudou = false;
 
       acordos.forEach(parc => {
         const guiaAtual = this.data.parcelamento_guias.find(
@@ -3504,19 +3839,27 @@
         );
 
         if (parc.status === 'EM_ATRASO' || guiasAntNaoEnviadas.length > 0) {
-          guiaAtual.parcelas_anteriores_abertas = Math.max(1, guiasAntNaoEnviadas.length);
+          const novaQtd = Math.max(1, guiasAntNaoEnviadas.length);
+          if (guiaAtual.parcelas_anteriores_abertas !== novaQtd) {
+            guiaAtual.parcelas_anteriores_abertas = novaQtd;
+            mudou = true;
+          }
           if (!guiaAtual.detalhe_pendencia_anterior) {
             guiaAtual.detalhe_pendencia_anterior = guiasAntNaoEnviadas.length > 0
               ? `Guia anterior (${guiasAntNaoEnviadas.map(ga => `Comp. ${ga.competencia}`).join(', ')}) pendente / Acordo em atraso!`
               : 'Parcelamento sinalizado como ATIVO EM ATRASO na competência anterior!';
+            mudou = true;
           }
-        } else {
+        } else if (guiaAtual.parcelas_anteriores_abertas !== 0 || guiaAtual.detalhe_pendencia_anterior !== '') {
           guiaAtual.parcelas_anteriores_abertas = 0;
           guiaAtual.detalhe_pendencia_anterior = '';
+          mudou = true;
         }
       });
-      this.sincronizarGuiasParcelamentoNoProtocolo(competencia);
-      this.saveLocalData();
+      const mudouProt = this.sincronizarGuiasParcelamentoNoProtocolo(competencia);
+      if (mudou || mudouProt) {
+        this.saveLocalData();
+      }
     }
 
     gerarGuiasParcelamentoCompetencia(competencia) {
@@ -4387,20 +4730,29 @@
       return { valor: 0, competencia: '' };
     }
 
-    recalcularHonorario(honorarioId) {
+    recalcularHonorario(honorarioId, salvarAoFinal = true, _estadoInterno = null) {
       const hon = this.data.honorarios.find(h => h.id === honorarioId);
       if (!hon) return null;
 
+      let mudou = false;
       const ant = this.obterSaldoAnteriorEmpresa(hon.empresa_id, hon.competencia);
       if (ant.valor > 0) {
-        hon.saldo_anterior = ant.valor;
-        hon.competencia_saldo_anterior = ant.competencia;
-      } else if (hon.competencia_saldo_anterior) {
-        hon.saldo_anterior = 0;
-        hon.competencia_saldo_anterior = '';
+        if (hon.saldo_anterior !== ant.valor || hon.competencia_saldo_anterior !== ant.competencia) {
+          hon.saldo_anterior = ant.valor;
+          hon.competencia_saldo_anterior = ant.competencia;
+          mudou = true;
+        }
+      } else if (hon.competencia_saldo_anterior || Number(hon.saldo_anterior) > 0) {
+        if (hon.competencia_saldo_anterior) {
+          hon.saldo_anterior = 0;
+          hon.competencia_saldo_anterior = '';
+          mudou = true;
+        }
       }
 
-      const pagamentos = this.data.honorario_pagamentos.filter(p => p.honorario_id === honorarioId);
+      const pagamentos = _estadoInterno?.pagamentosPorHon
+        ? (_estadoInterno.pagamentosPorHon.get(honorarioId) || [])
+        : this.data.honorario_pagamentos.filter(p => p.honorario_id === honorarioId);
       const somaPago = pagamentos.reduce((acc, p) => acc + Number(p.valor || 0), 0);
       const valorLiquido = Math.max(
         0,
@@ -4410,24 +4762,37 @@
         Number(hon.desconto || 0)
       );
       const saldoAberto = Math.max(0, Number((valorLiquido - somaPago).toFixed(2)));
+      const valorPagoNovo = Number(somaPago.toFixed(2));
 
-      hon.valor_pago = Number(somaPago.toFixed(2));
-      hon.saldo_aberto = saldoAberto;
-
-      const hoje = new Date().toISOString().slice(0, 10);
-      // Regra de honorários: se o vencimento cair em sábado, domingo ou feriado nacional, prorroga para o próximo dia útil
-      if (hon.data_vencimento && !this.ehDiaUtilBrasil(hon.data_vencimento, false)) {
-        hon.data_vencimento = this.prorrogarParaProximoDiaUtil(hon.data_vencimento);
+      if (hon.valor_pago !== valorPagoNovo) {
+        hon.valor_pago = valorPagoNovo;
+        mudou = true;
+      }
+      if (hon.saldo_aberto !== saldoAberto) {
+        hon.saldo_aberto = saldoAberto;
+        mudou = true;
       }
 
+      const hoje = _estadoInterno?.hoje || new Date().toISOString().slice(0, 10);
+      if (hon.data_vencimento && !this.ehDiaUtilBrasil(hon.data_vencimento, false)) {
+        const vencProrrogado = this.prorrogarParaProximoDiaUtil(hon.data_vencimento);
+        if (vencProrrogado !== hon.data_vencimento) {
+          hon.data_vencimento = vencProrrogado;
+          mudou = true;
+        }
+      }
+
+      let novoStatus = 'ABERTO';
       if (saldoAberto <= 0.009 && valorLiquido > 0) {
-        hon.status = 'PAGO';
+        novoStatus = 'PAGO';
       } else if (somaPago > 0 && saldoAberto > 0) {
-        hon.status = 'PARCIAL';
+        novoStatus = 'PARCIAL';
       } else if (hon.data_vencimento < hoje && saldoAberto > 0) {
-        hon.status = 'ATRASADO';
-      } else {
-        hon.status = 'ABERTO';
+        novoStatus = 'ATRASADO';
+      }
+      if (hon.status !== novoStatus) {
+        hon.status = novoStatus;
+        mudou = true;
       }
 
       const compSeg = this.obterMesSubsequente(hon.competencia).label;
@@ -4435,16 +4800,56 @@
         h => h.empresa_id === hon.empresa_id && h.competencia === compSeg
       );
       if (honSeg) {
-        this.recalcularHonorario(honSeg.id);
+        const resSeg = this.recalcularHonorario(honSeg.id, false, _estadoInterno);
+        if (resSeg && _estadoInterno && _estadoInterno.algumMudou) {
+          mudou = true;
+        }
       }
 
-      this.saveLocalData();
+      if (_estadoInterno && mudou) {
+        _estadoInterno.algumMudou = true;
+      }
+
+      if (salvarAoFinal && mudou) {
+        this._honMutVersion = (this._honMutVersion || 0) + 1;
+        this.saveLocalData();
+      }
       return hon;
     }
 
     sincronizarSaldosAnterioresHonorarios(competencia) {
-      const lista = this.data.honorarios.filter(h => h.competencia === competencia);
-      lista.forEach(h => this.recalcularHonorario(h.id));
+      const hoje = new Date().toISOString().slice(0, 10);
+      const mutVer = `${this._honMutVersion || 0}:${(this.data.honorarios || []).length}:${(this.data.honorario_pagamentos || []).length}:${hoje}`;
+      if (!this._honSyncCache) this._honSyncCache = new Map();
+      if (this._honSyncCache.get(competencia) === mutVer) {
+        return;
+      }
+
+      const pagamentosPorHon = new Map();
+      const todosPags = this.data.honorario_pagamentos || [];
+      for (let i = 0; i < todosPags.length; i++) {
+        const p = todosPags[i];
+        if (!p || !p.honorario_id) continue;
+        let arr = pagamentosPorHon.get(p.honorario_id);
+        if (!arr) {
+          arr = [];
+          pagamentosPorHon.set(p.honorario_id, arr);
+        }
+        arr.push(p);
+      }
+
+      const estadoInterno = { pagamentosPorHon, hoje, algumMudou: false };
+      const lista = (this.data.honorarios || []).filter(h => h.competencia === competencia);
+      for (let i = 0; i < lista.length; i++) {
+        this.recalcularHonorario(lista[i].id, false, estadoInterno);
+      }
+
+      if (estadoInterno.algumMudou) {
+        this._honMutVersion = (this._honMutVersion || 0) + 1;
+        this.saveLocalData();
+      }
+      const novaMutVer = `${this._honMutVersion || 0}:${(this.data.honorarios || []).length}:${(this.data.honorario_pagamentos || []).length}:${hoje}`;
+      this._honSyncCache.set(competencia, novaMutVer);
     }
 
     gerarHonorariosCompetencia(competencia) {
@@ -4494,6 +4899,7 @@
       });
 
       if (criados > 0) {
+        this._honMutVersion = (this._honMutVersion || 0) + 1;
         this.saveLocalData();
         this.registrarLog('GERACAO_HONORARIOS', 'Honorários', `Gerados ${criados} honorários da competência ${competencia} (vencimento em ${sub.label}) com transporte automático de saldos anteriores em aberto.`);
       }
@@ -4517,7 +4923,9 @@
             data_vencimento: this.prorrogarParaProximoDiaUtil(dadosHon.data_vencimento || this.data.honorarios[idx].data_vencimento),
             observacoes: dadosHon.observacoes !== undefined ? dadosHon.observacoes : this.data.honorarios[idx].observacoes
           };
-          const atualizado = this.recalcularHonorario(dadosHon.id);
+          this._honMutVersion = (this._honMutVersion || 0) + 1;
+          const atualizado = this.recalcularHonorario(dadosHon.id, false);
+          this.saveLocalData();
           const emp = this.data.empresas.find(e => e.id === atualizado.empresa_id);
           this.registrarLog('EDICAO_HONORARIO', 'Honorários', `Honorário de ${emp ? emp.nome_fantasia : 'Cliente'} (${atualizado.competencia}) ajustado. Saldo em aberto: R$ ${atualizado.saldo_aberto.toFixed(2)}.`);
           return atualizado;
@@ -4541,7 +4949,9 @@
         observacoes: dadosHon.observacoes || ''
       };
       this.data.honorarios.push(novo);
-      this.recalcularHonorario(novo.id);
+      this._honMutVersion = (this._honMutVersion || 0) + 1;
+      this.recalcularHonorario(novo.id, false);
+      this.saveLocalData();
       return novo;
     }
 
@@ -4571,6 +4981,7 @@
       };
 
       this.data.honorario_pagamentos.push(novoPag);
+      this._honMutVersion = (this._honMutVersion || 0) + 1;
       const atualizado = this.recalcularHonorario(honorarioId);
       const emp = this.data.empresas.find(e => e.id === hon.empresa_id);
 
@@ -4590,6 +5001,7 @@
       if (!pag) return null;
       const honorarioId = pag.honorario_id;
       this.data.honorario_pagamentos = this.data.honorario_pagamentos.filter(p => p.id !== pagamentoId);
+      this._honMutVersion = (this._honMutVersion || 0) + 1;
       const atualizado = this.recalcularHonorario(honorarioId);
       this.registrarLog('ESTORNO_PAGAMENTO_HONORARIO', 'Honorários', `Estornado lançamento de R$ ${pag.valor.toFixed(2)}. Novo saldo em aberto: R$ ${atualizado.saldo_aberto.toFixed(2)}.`);
       return atualizado;

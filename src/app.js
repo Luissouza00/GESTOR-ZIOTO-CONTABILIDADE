@@ -43,6 +43,7 @@ window.ZGestorApp = {
     filtroGuiaImpostoStatus: 'TODOS',
     filtroGuiaPreferenciaEnvio: 'TODOS',
     guiasSelecionadas: [],
+    tarefasSelecionadas: [],
     filtroCNDCliente: 'TODOS',
     filtroCNDOrgao: 'TODOS',
     filtroCNDStatus: 'TODOS',
@@ -159,7 +160,7 @@ window.ZGestorApp = {
       }).catch(() => {});
     }
     if (this._autoSyncInterval) clearInterval(this._autoSyncInterval);
-    this._autoSyncInterval = setInterval(executarAutoSyncNuvem, 45000);
+    this._autoSyncInterval = setInterval(executarAutoSyncNuvem, 90000);
     if (typeof window !== 'undefined' && window.addEventListener && !this._autoSyncFocusBound) {
       this._autoSyncFocusBound = true;
       window.addEventListener('focus', executarAutoSyncNuvem);
@@ -209,6 +210,7 @@ window.ZGestorApp = {
 
   setCompetencia(novaComp) {
     this.state.competencia = novaComp;
+    this.state.tarefasSelecionadas = [];
     const partes = String(novaComp || '10/2026').split('/');
     if (partes[1]) {
       this.state.anoCalendarioHeader = Number(partes[1]);
@@ -1640,9 +1642,14 @@ window.ZGestorApp = {
     this.state.draggedTarefaId = null;
     if (!tarefaId) return;
 
+    if (colunaKey === 'PENDENTE') {
+      this.openModalPendenciaOuLoteTarefas([tarefaId], 'PENDENTE');
+      return;
+    }
+
     const mapAcao = {
       NAO_INICIADA: 'REABRIR',
-      PENDENTE: 'COBRAR_DOCS',
+      AGUARDANDO_DOCS: 'COBRAR_DOCS',
       EM_ANDAMENTO: 'EM_ANDAMENTO',
       ENTREGUE: 'ENTREGUE_NORMAL'
     };
@@ -1652,8 +1659,293 @@ window.ZGestorApp = {
     }
   },
 
+  // ===========================================================================
+  // SELEÇÃO EM LOTE DE TAREFAS E SITUAÇÃO PENDENTE COM MOTIVO
+  // ===========================================================================
+  _obterTarefasFiltradasVisiveis() {
+    const db = window.zgestorDB;
+    const comp = this.state.competencia;
+    const rlsAtivo = this.state.rlsFiltroSetor !== false;
+    const hoje = new Date().toISOString().slice(0, 10);
+    const fDeptAtual = this.state.filtroTarefaDept || 'TODOS';
+    const fRegimeAtual = this.state.filtroEmpresaRegime || 'TODOS';
+    const fCliente = this.state.filtroTarefaCliente || 'TODOS';
+    const fModalidade = this.state.filtroTarefaModalidade || 'TODOS';
+    const fObrigacao = this.state.filtroTarefaObrigacao || 'TODOS';
+    const fStatus = this.state.filtroTarefaStatus || 'TODOS';
+    const fBusca = String(this.state.filtroTarefaBusca || '').toLowerCase().trim();
+
+    let lista = db.getTarefasVisiveis(rlsAtivo).filter(t => t.competencia === comp);
+    if (fDeptAtual !== 'TODOS') lista = lista.filter(t => t.departamento === fDeptAtual);
+    if (fRegimeAtual !== 'TODOS') {
+      lista = lista.filter(t => {
+        const emp = db.obterEmpresaSegura(t.empresa_id, t);
+        return emp && emp.regime_tributario === fRegimeAtual;
+      });
+    }
+    if (fCliente !== 'TODOS') lista = lista.filter(t => t.empresa_id === fCliente);
+    if (fModalidade !== 'TODOS') lista = lista.filter(t => t.tipo === fModalidade);
+    if (fObrigacao !== 'TODOS') lista = lista.filter(t => (t.titulo || '') === fObrigacao);
+    if (fStatus !== 'TODOS') {
+      if (fStatus === 'PENDENTES_GERAL') lista = lista.filter(t => !t.data_entrega);
+      else if (fStatus === 'ATRASADAS') lista = lista.filter(t => !t.data_entrega && t.prazo_entrega < hoje);
+      else if (fStatus === 'ENTREGUE_NO_PRAZO') lista = lista.filter(t => t.data_entrega && t.data_entrega <= t.prazo_entrega);
+      else if (fStatus === 'ENTREGUE_COM_ATRASO') lista = lista.filter(t => t.data_entrega && t.data_entrega > t.prazo_entrega);
+      else lista = lista.filter(t => db.obterStatusSimplesTarefa(t) === fStatus);
+    }
+    if (fBusca) {
+      lista = lista.filter(t => {
+        const emp = db.obterEmpresaSegura(t.empresa_id, t);
+        const empNome = emp ? `${emp.codigo_interno || ''} ${emp.razao_social || ''} ${emp.nome_fantasia || ''} ${emp.cnpj || ''}`.toLowerCase() : '';
+        return (
+          (t.titulo || '').toLowerCase().includes(fBusca) ||
+          (t.descricao || '').toLowerCase().includes(fBusca) ||
+          (t.motivo_pendencia || '').toLowerCase().includes(fBusca) ||
+          (t.protocolo_observacao || '').toLowerCase().includes(fBusca) ||
+          (t.solicitante || '').toLowerCase().includes(fBusca) ||
+          (t.responsavel_nome || '').toLowerCase().includes(fBusca) ||
+          empNome.includes(fBusca)
+        );
+      });
+    }
+    return lista;
+  },
+
+  toggleSelecionarTarefa(tarefaId, marcar) {
+    const set = new Set(Array.isArray(this.state.tarefasSelecionadas) ? this.state.tarefasSelecionadas : []);
+    if (marcar === undefined) {
+      if (set.has(tarefaId)) set.delete(tarefaId);
+      else set.add(tarefaId);
+    } else if (marcar) {
+      set.add(tarefaId);
+    } else {
+      set.delete(tarefaId);
+    }
+    this.state.tarefasSelecionadas = Array.from(set);
+    this.renderContentOnly();
+  },
+
+  toggleSelecionarGrupoTarefas(grupoKey, marcar) {
+    const db = window.zgestorDB;
+    const visiveis = this._obterTarefasFiltradasVisiveis();
+    const doGrupo = visiveis.filter(t => {
+      let st = db.obterStatusSimplesTarefa(t);
+      if (st === 'CONFERIDO') st = 'ENTREGUE';
+      return st === grupoKey;
+    });
+    const set = new Set(Array.isArray(this.state.tarefasSelecionadas) ? this.state.tarefasSelecionadas : []);
+    doGrupo.forEach(t => {
+      if (marcar) set.add(t.id);
+      else set.delete(t.id);
+    });
+    this.state.tarefasSelecionadas = Array.from(set);
+    this.renderContentOnly();
+  },
+
+  toggleSelecionarTodasTarefasVisiveis(marcar) {
+    const visiveis = this._obterTarefasFiltradasVisiveis();
+    const set = new Set(Array.isArray(this.state.tarefasSelecionadas) ? this.state.tarefasSelecionadas : []);
+    visiveis.forEach(t => {
+      if (marcar) set.add(t.id);
+      else set.delete(t.id);
+    });
+    this.state.tarefasSelecionadas = Array.from(set);
+    this.renderContentOnly();
+  },
+
+  limparSelecaoTarefas() {
+    this.state.tarefasSelecionadas = [];
+    this.renderContentOnly();
+  },
+
+  abrirModalLoteSelecionadas(acaoInicial = 'PENDENTE') {
+    const ids = Array.isArray(this.state.tarefasSelecionadas) ? this.state.tarefasSelecionadas : [];
+    if (ids.length === 0) {
+      this.showToast('Selecione ao menos uma tarefa na lista ou no Kanban.', 'info');
+      return;
+    }
+    this.openModalPendenciaOuLoteTarefas(ids, acaoInicial === 'ESCOLHER' ? 'PENDENTE' : acaoInicial);
+  },
+
+  aplicarAcaoRapidaLoteTarefas(acao) {
+    const ids = Array.isArray(this.state.tarefasSelecionadas) ? this.state.tarefasSelecionadas : [];
+    if (ids.length === 0) return;
+    if (acao === 'PENDENTE') {
+      this.openModalPendenciaOuLoteTarefas(ids, 'PENDENTE');
+      return;
+    }
+    try {
+      const res = window.zgestorDB.atualizarTarefasEmLote(ids, acao, null);
+      this.state.tarefasSelecionadas = [];
+      const labels = {
+        AGUARDANDO_DOCS: 'Aguardando Docs',
+        COBRAR_DOCS: 'Aguardando Docs',
+        EM_ANDAMENTO: 'Em Andamento',
+        ENTREGUE_NORMAL: 'Concluída (Normal)',
+        SEM_MOVIMENTO: 'Concluída (Sem Movimento)',
+        REABRIR: 'Não Iniciada (A Fazer)'
+      };
+      this.showToast(`${res.atualizadas} tarefa(s) marcada(s) como "${labels[acao] || acao}"!`, 'success');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  openModalPendenciaOuLoteTarefas(tarefaIds = [], acaoInicial = 'PENDENTE') {
+    const ids = Array.isArray(tarefaIds) ? tarefaIds.filter(Boolean) : [];
+    if (ids.length === 0) return;
+    const db = window.zgestorDB;
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    this._loteTarefasModalIds = ids;
+    const unica = ids.length === 1 ? (db.data.tarefas || []).find(t => t.id === ids[0]) : null;
+    const empUnica = unica ? db.obterEmpresaSegura(unica.empresa_id, unica) : null;
+    const motivoInicial = unica ? String(unica.motivo_pendencia || (unica.status === 'PENDENTE' ? unica.protocolo_observacao : '') || '').trim() : '';
+
+    const opcoes = [
+      { val: 'PENDENTE', label: '⚠ Pendente', desc: 'Com pendência / bloqueio', cls: 'peer-checked:border-rose-600 peer-checked:bg-rose-50 peer-checked:text-rose-950' },
+      { val: 'AGUARDANDO_DOCS', label: '📄 Aguardando Docs', desc: 'Solicitado ao cliente', cls: 'peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-950' },
+      { val: 'EM_ANDAMENTO', label: '🔄 Em Andamento', desc: 'Em execução no setor', cls: 'peer-checked:border-sky-600 peer-checked:bg-sky-50 peer-checked:text-sky-950' },
+      { val: 'ENTREGUE_NORMAL', label: '✓ Concluída Normal', desc: 'Entregue c/ movimento', cls: 'peer-checked:border-emerald-600 peer-checked:bg-emerald-50 peer-checked:text-emerald-950' },
+      { val: 'SEM_MOVIMENTO', label: '⚪ Sem Movimento', desc: 'Concluída s/ movimento', cls: 'peer-checked:border-indigo-600 peer-checked:bg-indigo-50 peer-checked:text-indigo-950' },
+      { val: 'REABRIR', label: '↩ A Fazer', desc: 'Voltar p/ não iniciada', cls: 'peer-checked:border-slate-600 peer-checked:bg-slate-100 peer-checked:text-slate-900' }
+    ];
+
+    const sugestoesMotivo = [
+      'Aguardando envio de documentos / notas pelo cliente',
+      'Certificado digital vencido ou sem procuração ativa',
+      'Divergência fiscal aguardando confirmação do cliente',
+      'Aguardando extrato bancário / fechamento anterior',
+      'Bloqueio / pendência cadastral no portal governamental'
+    ];
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${ids.length > 1 ? 'bg-indigo-100 text-indigo-800' : 'bg-rose-100 text-rose-800'}">
+                ${ids.length > 1 ? `Ação em Lote • ${ids.length} tarefas selecionadas` : 'Atualizar Situação e Motivo'}
+              </span>
+              <h3 class="text-base font-bold text-slate-900 mt-1">
+                ${ids.length > 1 ? `Definir Situação para ${ids.length} Tarefas` : escapeHtml(unica ? unica.titulo : 'Tarefa')}
+              </h3>
+              ${unica && empUnica ? `<p class="text-xs text-slate-500 mt-0.5">${escapeHtml(empUnica.codigo_interno ? empUnica.codigo_interno + ' — ' : '')}${escapeHtml(empUnica.razao_social || empUnica.nome_fantasia)} • Comp. ${escapeHtml(unica.competencia)}</p>` : ''}
+            </div>
+            <button type="button" onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitModalPendenciaOuLoteTarefas(event)" class="space-y-4 mt-4 text-xs">
+            <div>
+              <label class="block font-bold text-slate-800 mb-2">Escolha a Situação *</label>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                ${opcoes.map(op => `
+                  <label class="cursor-pointer">
+                    <input type="radio" name="f-lote-acao" value="${op.val}" ${acaoInicial === op.val ? 'checked' : ''} class="sr-only peer" />
+                    <div class="p-2.5 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-center transition ${op.cls}">
+                      <div class="font-extrabold text-xs">${op.label}</div>
+                      <div class="text-[10px] opacity-75 mt-0.5">${op.desc}</div>
+                    </div>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <div>
+              <label for="f-lote-motivo" class="block font-bold text-slate-800 mb-1">
+                Motivo da Pendência / Observação (fica visível na tarefa)
+              </label>
+              <div class="flex flex-wrap gap-1 mb-2">
+                ${sugestoesMotivo.map(sug => `
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.preencherSugestaoMotivoLote('${escapeHtml(sug)}')"
+                    class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-800 hover:border-rose-200 border border-slate-200 text-[10px] font-semibold text-slate-600 transition cursor-pointer">
+                    + ${escapeHtml(sug)}
+                  </button>
+                `).join('')}
+              </div>
+              <textarea
+                id="f-lote-motivo"
+                rows="3"
+                placeholder="Digite o motivo de estar pendente ou observação da situação..."
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-900 focus:outline-none focus:border-indigo-600"
+              >${escapeHtml(motivoInicial)}</textarea>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+              <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow cursor-pointer">
+                ${ids.length > 1 ? `Aplicar nas ${ids.length} Tarefas` : 'Salvar Situação'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    setTimeout(() => {
+      const txt = document.getElementById('f-lote-motivo');
+      if (txt && typeof txt.focus === 'function') txt.focus();
+    }, 30);
+  },
+
+  preencherSugestaoMotivoLote(texto) {
+    const el = document.getElementById('f-lote-motivo');
+    if (!el) return;
+    el.value = el.value.trim() ? `${el.value.trim()}; ${texto}` : texto;
+    el.focus();
+  },
+
+  submitModalPendenciaOuLoteTarefas(e) {
+    e.preventDefault();
+    try {
+      const ids = Array.isArray(this._loteTarefasModalIds) ? this._loteTarefasModalIds : [];
+      if (ids.length === 0) {
+        this.closeModal();
+        return;
+      }
+      const acao = document.querySelector('input[name="f-lote-acao"]:checked')?.value || 'PENDENTE';
+      const motivo = document.getElementById('f-lote-motivo')?.value.trim() || '';
+      if (acao === 'PENDENTE' && !motivo) {
+        this.showToast('Informe o motivo da pendência para registrar.', 'error');
+        const txt = document.getElementById('f-lote-motivo');
+        if (txt && typeof txt.focus === 'function') txt.focus();
+        return;
+      }
+
+      const res = window.zgestorDB.atualizarTarefasEmLote(ids, acao, motivo);
+      this.state.tarefasSelecionadas = (this.state.tarefasSelecionadas || []).filter(id => !ids.includes(id));
+      this._loteTarefasModalIds = [];
+      this.closeModal();
+
+      const mapLabel = {
+        PENDENTE: 'Pendente',
+        AGUARDANDO_DOCS: 'Aguardando Docs',
+        EM_ANDAMENTO: 'Em Andamento',
+        ENTREGUE_NORMAL: 'Concluída (Normal)',
+        SEM_MOVIMENTO: 'Concluída (Sem Movimento)',
+        REABRIR: 'A Fazer'
+      };
+      this.showToast(
+        ids.length > 1
+          ? `${res.atualizadas} tarefas atualizadas para "${mapLabel[acao] || acao}"!`
+          : `Tarefa marcada como "${mapLabel[acao] || acao}"!`,
+        'success'
+      );
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
   marcarEtapaRapida(tarefaId, acao) {
     try {
+      if (acao === 'PENDENTE') {
+        this.openModalPendenciaOuLoteTarefas([tarefaId], 'PENDENTE');
+        return;
+      }
       const db = window.zgestorDB;
       const tarefaAlvo = (db.data.tarefas || []).find(item => item.id === tarefaId);
       if (tarefaAlvo) {
@@ -2335,7 +2627,7 @@ window.ZGestorApp = {
       const dataEnt = (novoStatus === 'ENTREGUE' && dataEntEl) ? dataEntEl.value : null;
 
       window.zgestorDB.atualizarStatusObservacaoTarefa(tarefaId, novoStatus, obs, dataEnt);
-      const mapNome = { NAO_INICIADA: 'Não Iniciada', PENDENTE: 'Pendente', EM_ANDAMENTO: 'Em Andamento', ENTREGUE: 'Entregue' };
+      const mapNome = { NAO_INICIADA: 'Não Iniciada', PENDENTE: 'Pendente', AGUARDANDO_DOCS: 'Aguardando Docs', EM_ANDAMENTO: 'Em Andamento', ENTREGUE: 'Entregue' };
       this.showToast(`Notion: Tarefa salva como "${mapNome[novoStatus] || novoStatus}"!`, 'success');
       this.renderContentOnly();
     } catch (err) {
