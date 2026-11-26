@@ -224,20 +224,32 @@ window.ZGestorReports = {
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              <tr>
-                <td class="py-1.5 font-bold text-slate-800">${V.escapeHtml(descricaoItem)}</td>
-                <td class="py-1.5 text-center font-bold">${V.escapeHtml(compExibicao)}</td>
-                <td class="py-1.5 text-center">${V.formatDate(hon.data_vencimento)}</td>
-                <td class="py-1.5 text-right font-semibold">${V.formatCurrency(hon.valor_mensal)}</td>
-              </tr>
-              ${saldoAnterior > 0 ? `
-                <tr class="bg-amber-50/70">
-                  <td class="py-1.5 font-bold text-amber-900">(+) Saldo Remanescente em Aberto do Mês Anterior (Comp. ${compAnterior})</td>
-                  <td class="py-1.5 text-center font-bold text-amber-900">${compAnterior}</td>
-                  <td class="py-1.5 text-center text-amber-800">Acumulado</td>
-                  <td class="py-1.5 text-right font-bold text-amber-900">+ ${V.formatCurrency(saldoAnterior)}</td>
+              ${Number(hon.valor_mensal || 0) === 0 && saldoAnterior > 0 ? `
+                <tr>
+                  <td class="py-1.5 font-bold text-slate-800">
+                    ${V.escapeHtml(descricaoItem)}
+                    <span class="block text-[9.5px] font-semibold text-amber-800">Saldo remanescente em aberto ref. competência ${V.escapeHtml(hon.competencia_referencia || compAnterior)}</span>
+                  </td>
+                  <td class="py-1.5 text-center font-bold">${V.escapeHtml(compExibicao)}</td>
+                  <td class="py-1.5 text-center">${V.formatDate(hon.data_vencimento)}</td>
+                  <td class="py-1.5 text-right font-semibold">${V.formatCurrency(saldoAnterior)}</td>
                 </tr>
-              ` : ''}
+              ` : `
+                <tr>
+                  <td class="py-1.5 font-bold text-slate-800">${V.escapeHtml(descricaoItem)}</td>
+                  <td class="py-1.5 text-center font-bold">${V.escapeHtml(compExibicao)}</td>
+                  <td class="py-1.5 text-center">${V.formatDate(hon.data_vencimento)}</td>
+                  <td class="py-1.5 text-right font-semibold">${V.formatCurrency(hon.valor_mensal)}</td>
+                </tr>
+                ${saldoAnterior > 0 ? `
+                  <tr class="bg-amber-50/70">
+                    <td class="py-1.5 font-bold text-amber-900">(+) Saldo Remanescente em Aberto do Mês Anterior (Comp. ${compAnterior})</td>
+                    <td class="py-1.5 text-center font-bold text-amber-900">${compAnterior}</td>
+                    <td class="py-1.5 text-center text-amber-800">Acumulado</td>
+                    <td class="py-1.5 text-right font-bold text-amber-900">+ ${V.formatCurrency(saldoAnterior)}</td>
+                  </tr>
+                ` : ''}
+              `}
               ${Number(hon.servicos_extras) > 0 ? `
                 <tr>
                   <td class="py-1.5 text-slate-700">(+) Serviços Extras / Taxas / Solicitações Avulsas no Mês</td>

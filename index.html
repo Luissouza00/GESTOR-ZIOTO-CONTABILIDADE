@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
   <title>ZGESTOR — Sistema de Gestão Contábil, Fiscal, DP, Parcelamentos, CNDs e Central do Cliente</title>
-  
+
   <!-- Configurações PWA e Mobile Nativo -->
   <link rel="manifest" href="./manifest.json" />
   <meta name="theme-color" content="#012147" />
@@ -16,7 +17,8 @@
   <link rel="icon" type="image/png" href="./assets/icone-zioto.png" />
 
   <!-- Tailwind CSS (com espelho de contingência automático caso o CDN primário oscile) -->
-  <script src="https://cdn.tailwindcss.com" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tailwindcss-cdn@3.4.10/tailwindcss.js';document.head.appendChild(s);"></script>
+  <script src="https://cdn.tailwindcss.com"
+    onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tailwindcss-cdn@3.4.10/tailwindcss.js';document.head.appendChild(s);"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Supabase Official JS SDK v2 -->
@@ -28,16 +30,22 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after {
+    *,
+    *::before,
+    *::after {
       box-sizing: border-box;
     }
+
     [hidden] {
       display: none !important;
     }
+
     .hidden {
       display: none;
     }
-    html, body {
+
+    html,
+    body {
       margin: 0;
       padding: 0;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -47,33 +55,46 @@
       color: #0f172a;
       -webkit-tap-highlight-color: transparent;
     }
-    img, svg {
+
+    img,
+    svg {
       max-width: 100%;
     }
-    button, a, select, input, textarea {
+
+    button,
+    a,
+    select,
+    input,
+    textarea {
       touch-action: manipulation;
       font-family: inherit;
     }
+
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
+
     .no-scrollbar {
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
+
     /* Rolagem horizontal suave e sem travamento para tabelas no celular */
     .table-container-responsive {
       width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
     }
+
     /* Mantém largura mínima para que as colunas não fiquem espremidas em telas pequenas */
     .table-responsive {
       min-width: 650px;
       width: 100%;
       border-collapse: collapse;
     }
-    th, td {
+
+    th,
+    td {
       word-break: normal;
     }
 
@@ -90,11 +111,13 @@
       padding: 1.25rem;
       background: radial-gradient(circle at top, #0f172a 0%, #020617 75%);
     }
+
     .zg-auth-wrap {
       width: 100%;
       max-width: 28rem;
       margin: auto;
     }
+
     .zg-auth-card {
       background: #ffffff;
       border-radius: 1.5rem;
@@ -103,10 +126,12 @@
       border: 1px solid #e2e8f0;
       color: #0f172a;
     }
+
     .zg-auth-header {
       text-align: center;
       margin-bottom: 1.5rem;
     }
+
     .zg-auth-logo-box {
       padding: 0.85rem 1.25rem;
       background: #012147;
@@ -120,6 +145,7 @@
       width: 100%;
       margin: 0 auto;
     }
+
     .zg-auth-logo-img {
       height: 64px;
       max-height: 64px;
@@ -129,6 +155,7 @@
       margin: 0 auto;
       object-fit: contain;
     }
+
     .zg-auth-title {
       font-size: 1.25rem;
       font-weight: 800;
@@ -136,12 +163,14 @@
       margin: 0.85rem 0 0.2rem;
       letter-spacing: -0.02em;
     }
+
     .zg-auth-subtitle {
       font-size: 0.75rem;
       color: #64748b;
       font-weight: 500;
       margin: 0;
     }
+
     .zg-auth-badge {
       display: inline-flex;
       align-items: center;
@@ -155,6 +184,7 @@
       border: 1px solid #e2e8f0;
       margin-top: 0.65rem;
     }
+
     .zg-auth-dot {
       width: 0.5rem;
       height: 0.5rem;
@@ -162,29 +192,34 @@
       background: #10b981;
       display: inline-block;
     }
+
     .zg-auth-form {
       display: flex;
       flex-direction: column;
       gap: 1rem;
       font-size: 0.75rem;
     }
+
     .zg-auth-label {
       display: block;
       font-weight: 700;
       color: #334155;
       margin-bottom: 0.35rem;
     }
+
     .zg-auth-label-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
       margin-bottom: 0.35rem;
     }
+
     .zg-auth-input-wrap {
       position: relative;
       display: flex;
       align-items: center;
     }
+
     .zg-auth-icon-left {
       position: absolute;
       left: 0.75rem;
@@ -193,6 +228,7 @@
       pointer-events: none;
       color: #94a3b8;
     }
+
     .zg-auth-input {
       width: 100%;
       border-radius: 0.75rem;
@@ -205,11 +241,13 @@
       outline: none;
       transition: border-color 0.15s, background-color 0.15s;
     }
+
     .zg-auth-input:focus {
       border-color: #4f46e5;
       background: #ffffff;
       box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
     }
+
     .zg-auth-eye-btn {
       position: absolute;
       right: 0.5rem;
@@ -221,6 +259,7 @@
       display: flex;
       align-items: center;
     }
+
     .zg-auth-submit {
       width: 100%;
       padding: 0.8rem 1rem;
@@ -239,9 +278,11 @@
       box-shadow: 0 8px 16px -4px rgba(79, 70, 229, 0.35);
       transition: background-color 0.15s;
     }
+
     .zg-auth-submit:hover {
       background: #4338ca;
     }
+
     .zg-auth-invite {
       margin-top: 1.35rem;
       padding-top: 1.1rem;
@@ -250,6 +291,7 @@
       font-size: 0.75rem;
       color: #64748b;
     }
+
     .zg-auth-link-btn {
       background: transparent;
       border: none;
@@ -260,9 +302,11 @@
       color: #4f46e5;
       cursor: pointer;
     }
+
     .zg-auth-link-btn:hover {
       text-decoration: underline;
     }
+
     .zg-auth-footer {
       margin-top: 1rem;
       padding-top: 0.75rem;
@@ -273,6 +317,7 @@
       font-size: 0.6875rem;
       color: #94a3b8;
     }
+
     .zg-auth-version {
       display: inline-flex;
       align-items: center;
@@ -287,64 +332,65 @@
     }
   </style>
 </head>
+
 <body class="bg-slate-100 text-slate-900 min-h-screen w-full overflow-x-hidden">
 
   <!-- TELA DE LOGIN / AUTENTICAÇÃO (Exibida quando não há sessão ativa) -->
-  <div id="app-auth-screen" hidden class="hidden min-h-screen w-full flex items-center justify-center bg-slate-950 p-4"></div>
+  <div id="app-auth-screen" hidden class="hidden min-h-screen w-full flex items-center justify-center bg-slate-950 p-4">
+  </div>
 
   <!-- APLICAÇÃO AUTENTICADA (Oculta até autenticação confirmada) -->
   <div id="app-authenticated" hidden class="hidden flex flex-col md:flex-row w-full min-h-screen relative">
-    
+
     <!-- Backdrop Overlay para Drawer Mobile (< 768px) -->
-    <div
-      id="mobile-sidebar-backdrop"
-      onclick="window.ZGestorApp.fecharMenuMobile()"
+    <div id="mobile-sidebar-backdrop" onclick="window.ZGestorApp.fecharMenuMobile()"
       class="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-40 hidden md:hidden transition-opacity duration-300">
     </div>
 
     <!-- Sidebar Lateral Compacta (Gaveta Deslizante no Mobile < 768px e Fixa no Desktop >= 768px) -->
-    <aside
-      id="main-sidebar"
+    <aside id="main-sidebar"
       class="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-slate-900 text-white flex flex-col justify-between shrink-0 min-h-screen transition-transform duration-300 ease-in-out -translate-x-full md:translate-x-0 md:static md:w-56 lg:w-56 xl:w-60 md:max-w-none md:min-h-screen shadow-2xl md:shadow-none">
       <div>
         <!-- Logo Oficial do Escritório Zioto Contabilidade -->
-        <div id="sidebar-header-bar" class="p-3.5 border-b border-slate-800 flex items-center justify-between gap-2 bg-slate-950/40">
+        <div id="sidebar-header-bar"
+          class="p-3.5 border-b border-slate-800 flex items-center justify-between gap-2 bg-slate-950/40">
           <div class="flex items-center gap-2.5 flex-1 min-w-0" id="sidebar-brand-block">
-            <div class="w-10 h-10 rounded-xl bg-[#0f172a] border border-slate-700/60 p-1 flex items-center justify-center shrink-0 shadow-md">
-              <img
-                id="sidebar-brand-logo"
-                src="./assets/logo-contabil.svg"
-                alt="Logo do Escritório"
-                width="36"
-                height="36"
-                style="width:36px;height:36px;object-fit:contain;"
+            <div
+              class="w-10 h-10 rounded-xl bg-[#0f172a] border border-slate-700/60 p-1 flex items-center justify-center shrink-0 shadow-md">
+              <img id="sidebar-brand-logo" src="./assets/logo-contabil.svg" alt="Logo do Escritório" width="36"
+                height="36" style="width:36px;height:36px;object-fit:contain;"
                 class="w-full h-full object-contain rounded-lg"
-                onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
-              />
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
               <span style="display:none;" class="font-extrabold text-amber-400 text-xs">ZC</span>
             </div>
             <div class="min-w-0 sidebar-brand-text">
-              <div id="sidebar-brand-title" class="font-black tracking-tight text-sm text-white truncate leading-tight">ZIOTO</div>
-              <div id="sidebar-brand-subtitle" class="text-[9px] text-amber-400 font-bold uppercase tracking-widest leading-tight truncate">CONTABILIDADE</div>
+              <div id="sidebar-brand-title" class="font-black tracking-tight text-sm text-white truncate leading-tight">
+                ZIOTO</div>
+              <div id="sidebar-brand-subtitle"
+                class="text-[9px] text-amber-400 font-bold uppercase tracking-widest leading-tight truncate">
+                CONTABILIDADE</div>
             </div>
           </div>
           <div class="flex items-center gap-1 shrink-0">
             <!-- Botão fechar drawer no mobile -->
-            <button
-              type="button"
-              onclick="window.ZGestorApp.fecharMenuMobile()"
+            <button type="button" onclick="window.ZGestorApp.fecharMenuMobile()"
               class="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
               title="Fechar menu lateral">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
             </button>
             <!-- Botão para recolher/expandir o menu lateral no desktop -->
-            <button
-              id="sidebar-toggle-btn"
-              onclick="window.ZGestorApp.toggleSidebar()"
-              type="button"
+            <button id="sidebar-toggle-btn" onclick="window.ZGestorApp.toggleSidebar()" type="button"
               class="hidden md:inline-flex items-center justify-center p-1.5 rounded-lg bg-slate-800/80 border border-slate-700/80 text-slate-200 hover:text-white hover:bg-indigo-600 hover:border-indigo-500 transition cursor-pointer shrink-0"
               title="Recolher menu lateral">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="m11 17-5-5 5-5" />
+                <path d="m18 17-5-5 5-5" />
+              </svg>
             </button>
           </div>
         </div>
@@ -361,11 +407,14 @@
           <span>Políticas RLS:</span>
           <span class="text-emerald-400 font-semibold">Ativas</span>
         </div>
-        <div class="flex items-center justify-between sidebar-footer-text text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
+        <div
+          class="flex items-center justify-between sidebar-footer-text text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
           <span>Versão do Sistema:</span>
-          <span id="sidebar-system-version" class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/80">v1.4.9</span>
+          <span id="sidebar-system-version"
+            class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/80">v1.5.0</span>
         </div>
-        <div id="sidebar-collapsed-version" class="hidden text-center font-mono font-bold text-[10px] text-indigo-400">v1.4.9</div>
+        <div id="sidebar-collapsed-version" class="hidden text-center font-mono font-bold text-[10px] text-indigo-400">
+          v1.5.0</div>
         <button
           onclick="window.zgestorDB.resetToSeedData(); window.ZGestorApp.renderAll(); window.ZGestorApp.showToast('Base de demonstração restaurada!', 'info');"
           class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer">
@@ -381,7 +430,9 @@
       <div id="simulacao-portal-banner"></div>
 
       <!-- Barra Superior -->
-      <header id="top-header" class="bg-white border-b border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3 sticky top-0 z-30 shadow-xs w-full"></header>
+      <header id="top-header"
+        class="bg-white border-b border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3 sticky top-0 z-30 shadow-xs w-full">
+      </header>
 
       <!-- Conteúdo Dinâmico da Aba Selecionada (Full Width) -->
       <main id="main-view" class="flex-1 p-2.5 sm:p-4 lg:p-5 w-full max-w-none overflow-x-hidden"></main>
@@ -394,23 +445,24 @@
   <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
   <!-- Versão Oficial Unificada e Scripts da Aplicação (Cache-Busting Automático) -->
-  <script>window.ZGESTOR_VERSION = 'v1.4.9';</script>
-  <script src="./src/data/seedData.js?v=1.4.9"></script>
-  <script src="./src/data/carteiraOficial.js?v=1.4.9"></script>
-  <script src="./src/lib/dbEngine.js?v=1.4.9"></script>
-  <script src="./src/ui/views.js?v=1.4.9"></script>
-  <script src="./src/ui/reports.js?v=1.4.9"></script>
-  <script src="./src/app.js?v=1.4.9"></script>
+  <script>window.ZGESTOR_VERSION = 'v1.5.0';</script>
+  <script src="./src/data/seedData.js?v=1.5.0"></script>
+  <script src="./src/data/carteiraOficial.js?v=1.5.0"></script>
+  <script src="./src/lib/dbEngine.js?v=1.5.0"></script>
+  <script src="./src/ui/views.js?v=1.5.0"></script>
+  <script src="./src/ui/reports.js?v=1.5.0"></script>
+  <script src="./src/app.js?v=1.5.0"></script>
 
   <!-- Registro do Service Worker PWA para Suporte Mobile & Instalação -->
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js?v=1.4.9').then(function(reg) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js?v=1.5.0').then(function (reg) {
           if (reg && typeof reg.update === 'function') reg.update();
-        }).catch(function() {});
+        }).catch(function () { });
       });
     }
   </script>
 </body>
+
 </html>

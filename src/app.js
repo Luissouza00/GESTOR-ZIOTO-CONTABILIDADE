@@ -1049,7 +1049,7 @@ window.ZGestorApp = {
     const toggleBtnEl = document.getElementById('sidebar-toggle-btn');
     const versionEl = document.getElementById('sidebar-system-version');
     const versionCollapsedEl = document.getElementById('sidebar-collapsed-version');
-    const versaoAtual = window.ZGESTOR_VERSION || 'v1.4.9';
+    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.0';
 
     if (versionEl) versionEl.textContent = versaoAtual;
     if (versionCollapsedEl) {
@@ -1487,7 +1487,7 @@ window.ZGestorApp = {
             <span class="sm:hidden">Relatório</span>
           </button>
           <span class="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold text-[10.5px]" title="Versão ativa do ZGestor">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.4.9'}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.0'}
           </span>
         </div>
 
@@ -3432,36 +3432,43 @@ window.ZGestorApp = {
   // ===========================================================================
   // MODAL DE EMPRESAS E ONBOARDING
   // ===========================================================================
-  openModalEmpresa(empresaId = null, forcarOnboarding = false) {
+  openModalEmpresa(empresaId = null, forcarOnboarding = false, tipoPessoaInicial = null) {
     const db = window.zgestorDB;
     const emp = empresaId ? db.data.empresas.find(e => e.id === empresaId) : null;
+    const isPFDefault = emp
+      ? (emp.tipo_pessoa === 'PF' || emp.regime_tributario === 'Pessoa Física (Doméstica)' || String(emp.cnpj || '').replace(/\D/g, '').length === 11)
+      : (tipoPessoaInicial === 'PF');
+
     const d = emp || {
       id: '',
+      tipo_pessoa: isPFDefault ? 'PF' : 'PJ',
       codigo_interno: String(db.data.empresas.length + 1).padStart(3, '0'),
       razao_social: '',
       nome_fantasia: '',
       cnpj: '',
       municipio_uf: '',
       validade_certificado: '',
-      competencia_inicial: '11/2026',
+      competencia_inicial: this.state.competencia || '10/2026',
       modelo_onboarding: 'ABERTURA_EMPRESA',
-      regime_tributario: 'Simples Nacional',
+      regime_tributario: isPFDefault ? 'Pessoa Física (Doméstica)' : 'Simples Nacional',
       inscricao_estadual: 'Isento',
       inscricao_municipal: '',
       responsavel_legal: '',
       telefone: '',
       email: '',
-      status: forcarOnboarding ? 'EM_ONBOARDING' : 'EM_ONBOARDING',
-      valor_honorario_padrao: 1500.00,
+      status: forcarOnboarding ? 'EM_ONBOARDING' : (isPFDefault ? 'ATIVA' : 'EM_ONBOARDING'),
+      valor_honorario_padrao: isPFDefault ? 250.00 : 1500.00,
       dia_vencimento_honorario: 10,
       canal_pagamento_padrao: 'PIX_PRINCIPAL',
-      possui_pro_labore: true, // Padrão = true (gera DARF INSS/IRRF)
-      possui_funcionarios: false, // Separado (somente quem tem funcionário gera FGTS)
+      possui_pro_labore: !isPFDefault,
+      possui_funcionarios: isPFDefault,
       observacoes: ''
     };
 
-    const temProLabore = d.possui_pro_labore !== false;
-    const temFuncionarios = Boolean(d.possui_funcionarios);
+    const ehPF = isPFDefault;
+    const temProLabore = ehPF ? Boolean(d.possui_pro_labore) : (d.possui_pro_labore !== false);
+    const temFuncionarios = d.possui_funcionarios !== undefined ? Boolean(d.possui_funcionarios) : ehPF;
+    const listaRegimes = Array.from(new Set([...(window.ZGESTOR_MODELS.regimesTributarios || []), 'Pessoa Física (Doméstica)']));
 
     const modal = document.getElementById('modal-root');
     if (!modal) return;
@@ -3469,23 +3476,42 @@ window.ZGestorApp = {
       <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
-            <h3 class="text-base font-bold text-slate-900">${d.id ? 'Editar Cadastro da Empresa' : 'Cadastrar Nova Empresa Cliente'}</h3>
+            <h3 class="text-base font-bold text-slate-900">${d.id ? 'Editar Cadastro do Cliente' : (ehPF ? 'Cadastrar Pessoa Física / Empregador Doméstico' : 'Cadastrar Nova Empresa / Cliente')}</h3>
             <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
           </div>
           <form onsubmit="ZGestorApp.submitFormEmpresa(event)" class="space-y-4 mt-4 text-xs">
             <input type="hidden" id="f-emp-id" value="${d.id || ''}" />
+            <input type="hidden" id="f-emp-tipo-pessoa" value="${ehPF ? 'PF' : 'PJ'}" />
 
-            <!-- 1. TOPO: CÓDIGO INTERNO + CNPJ * COM BUSCA AUTOMÁTICA VIA API PÚBLICA -->
+            <!-- SELETOR PESSOA JURÍDICA (CNPJ) vs PESSOA FÍSICA / DOMÉSTICA (CPF) -->
+            <div class="grid grid-cols-2 gap-2.5 p-1.5 rounded-xl bg-slate-100 border border-slate-200">
+              <button
+                type="button"
+                id="btn-tipo-pj"
+                onclick="ZGestorApp.alternarTipoPessoaModalEmpresa('PJ')"
+                class="py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${!ehPF ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}">
+                🏢 Empresa (CNPJ)
+              </button>
+              <button
+                type="button"
+                id="btn-tipo-pf"
+                onclick="ZGestorApp.alternarTipoPessoaModalEmpresa('PF')"
+                class="py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${ehPF ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}">
+                🏠 Pessoa Física / Doméstica (CPF)
+              </button>
+            </div>
+
+            <!-- 1. TOPO: CÓDIGO INTERNO + CNPJ / CPF * -->
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Código Interno</label>
                 <input id="f-emp-cod" type="text" value="${d.codigo_interno || ''}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-xs font-bold" />
               </div>
               <div class="sm:col-span-3">
-                <label class="block font-bold text-slate-700 mb-1">CNPJ *</label>
+                <label id="lbl-emp-doc" class="block font-bold text-slate-700 mb-1">${ehPF ? 'CPF do Empregador (ou CAEPF) *' : 'CNPJ *'}</label>
                 <div class="flex gap-2">
-                  <input id="f-emp-cnpj" type="text" required value="${d.cnpj}" placeholder="00.000.000/0001-00" class="flex-1 rounded-xl border border-slate-300 px-3 py-2 font-mono font-semibold text-slate-800 text-xs focus:ring-2 focus:ring-indigo-500" />
-                  <button type="button" onclick="ZGestorApp.buscarDadosCNPJ()" id="btn-busca-cnpj" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm whitespace-nowrap transition cursor-pointer">
+                  <input id="f-emp-cnpj" type="text" required value="${d.cnpj}" placeholder="${ehPF ? '000.000.000-00' : '00.000.000/0001-00'}" class="flex-1 rounded-xl border border-slate-300 px-3 py-2 font-mono font-semibold text-slate-800 text-xs focus:ring-2 focus:ring-indigo-500" />
+                  <button type="button" onclick="ZGestorApp.buscarDadosCNPJ()" id="btn-busca-cnpj" class="${ehPF ? 'hidden' : 'flex'} px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs items-center gap-1.5 shadow-sm whitespace-nowrap transition cursor-pointer">
                     <i data-lucide="search" class="w-3.5 h-3.5"></i>
                     <span>Buscar CNPJ</span>
                   </button>
@@ -3493,30 +3519,30 @@ window.ZGestorApp = {
               </div>
             </div>
 
-            <!-- 2. RAZÃO SOCIAL E NOME FANTASIA -->
+            <!-- 2. RAZÃO SOCIAL / NOME COMPLETO E NOME FANTASIA / APELIDO -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="block font-bold text-slate-700 mb-1">Razão Social *</label>
-                <input id="f-emp-razao" type="text" required value="${d.razao_social}" placeholder="Ex: Alfa Comércio e Serviços Ltda" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
+                <label id="lbl-emp-razao" class="block font-bold text-slate-700 mb-1">${ehPF ? 'Nome Completo (Pessoa Física) *' : 'Razão Social *'}</label>
+                <input id="f-emp-razao" type="text" required value="${d.razao_social}" placeholder="${ehPF ? 'Ex: Maria Aparecida da Silva' : 'Ex: Alfa Comércio e Serviços Ltda'}" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
               </div>
               <div>
-                <label class="block font-bold text-slate-700 mb-1">Nome Fantasia *</label>
-                <input id="f-emp-fantasia" type="text" required value="${d.nome_fantasia}" placeholder="Ex: Alfa Soluções" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
+                <label id="lbl-emp-fantasia" class="block font-bold text-slate-700 mb-1">${ehPF ? 'Identificação / Apelido (opcional)' : 'Nome Fantasia'}</label>
+                <input id="f-emp-fantasia" type="text" value="${d.nome_fantasia}" placeholder="${ehPF ? 'Se vazio, usa o Nome Completo' : 'Ex: Alfa Soluções'}" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
               </div>
             </div>
 
             <!-- 3. MUNICÍPIO/UF, INSCRIÇÃO ESTADUAL E INSCRIÇÃO MUNICIPAL -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label class="block font-bold text-slate-700 mb-1">Município / UF *</label>
-                <input id="f-emp-municipio-uf" type="text" value="${d.municipio_uf || ''}" placeholder="Ex: Belo Horizonte/MG" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
+                <label class="block font-bold text-slate-700 mb-1">Município / UF</label>
+                <input id="f-emp-municipio-uf" type="text" value="${d.municipio_uf || ''}" placeholder="Ex: Mutum/MG" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
               </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Inscrição Estadual</label>
                 <input id="f-emp-ie" type="text" value="${d.inscricao_estadual || ''}" placeholder="Ex: Isento ou 000.000.000" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
               </div>
               <div>
-                <label class="block font-bold text-slate-700 mb-1">Inscrição Municipal</label>
+                <label id="lbl-emp-im" class="block font-bold text-slate-700 mb-1">${ehPF ? 'CAEPF / Matrícula eSocial (opcional)' : 'Inscrição Municipal'}</label>
                 <input id="f-emp-im" type="text" value="${d.inscricao_municipal || ''}" placeholder="Ex: 000000-0" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
               </div>
             </div>
@@ -3524,9 +3550,9 @@ window.ZGestorApp = {
             <!-- 4. REGIME TRIBUTÁRIO, RESPONSÁVEL E CONTATO -->
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
-                <label class="block font-bold text-slate-700 mb-1">Regime Tributário *</label>
-                <select id="f-emp-regime" class="w-full rounded-xl border border-slate-300 px-3 py-2">
-                  ${window.ZGESTOR_MODELS.regimesTributarios.map(r => `<option value="${r}" ${r === d.regime_tributario ? 'selected' : ''}>${r}</option>`).join('')}
+                <label class="block font-bold text-slate-700 mb-1">Regime / Enquadramento *</label>
+                <select id="f-emp-regime" onchange="ZGestorApp.aoMudarRegimeModalEmpresa(this.value)" class="w-full rounded-xl border border-slate-300 px-3 py-2">
+                  ${listaRegimes.map(r => `<option value="${r}" ${r === d.regime_tributario ? 'selected' : ''}>${r}</option>`).join('')}
                 </select>
               </div>
               <div>
@@ -3611,9 +3637,11 @@ window.ZGestorApp = {
               <label class="flex items-start gap-2.5 p-3.5 rounded-xl bg-purple-50/70 border border-purple-200 cursor-pointer hover:border-purple-400">
                 <input id="f-emp-func" type="checkbox" ${temFuncionarios ? 'checked' : ''} class="mt-0.5 w-4 h-4 rounded text-purple-600" />
                 <div>
-                  <span class="font-bold text-purple-950 block">2. Possui Funcionários CLT Registrados</span>
-                  <span class="text-[11px] text-purple-800 block mt-0.5">
-                    Marque somente quando a empresa tiver empregados. Gera a <strong>Folha CLT e a Guia de FGTS Digital</strong>.
+                  <span id="lbl-emp-func-tit" class="font-bold text-purple-950 block">${ehPF ? '2. Possui Empregada Doméstica (eSocial Doméstico)' : '2. Possui Funcionários CLT Registrados'}</span>
+                  <span id="lbl-emp-func-desc" class="text-[11px] text-purple-800 block mt-0.5">
+                    ${ehPF
+                      ? 'Gera mensalmente a rotina de <strong>Folha Doméstica (eSocial) e Guia DAE</strong>.'
+                      : 'Marque somente quando a empresa tiver empregados. Gera a <strong>Folha CLT e a Guia de FGTS Digital</strong>.'}
                   </span>
                 </div>
               </label>
@@ -3626,13 +3654,97 @@ window.ZGestorApp = {
 
             <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
               <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
-              <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow cursor-pointer">Salvar Empresa</button>
+              <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow cursor-pointer">Salvar Cadastro</button>
             </div>
           </form>
         </div>
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+  },
+
+  alternarTipoPessoaModalEmpresa(tipo) {
+    const ehPF = tipo === 'PF';
+    const hiddenTipo = document.getElementById('f-emp-tipo-pessoa');
+    if (hiddenTipo) hiddenTipo.value = ehPF ? 'PF' : 'PJ';
+
+    const btnPj = document.getElementById('btn-tipo-pj');
+    const btnPf = document.getElementById('btn-tipo-pf');
+    if (btnPj) {
+      btnPj.className = `py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${!ehPF ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`;
+    }
+    if (btnPf) {
+      btnPf.className = `py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${ehPF ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`;
+    }
+
+    const lblDoc = document.getElementById('lbl-emp-doc');
+    const inpDoc = document.getElementById('f-emp-cnpj');
+    const btnBusca = document.getElementById('btn-busca-cnpj');
+    const lblRazao = document.getElementById('lbl-emp-razao');
+    const inpRazao = document.getElementById('f-emp-razao');
+    const lblFantasia = document.getElementById('lbl-emp-fantasia');
+    const inpFantasia = document.getElementById('f-emp-fantasia');
+    const lblIm = document.getElementById('lbl-emp-im');
+    const selRegime = document.getElementById('f-emp-regime');
+    const chkPro = document.getElementById('f-emp-prolabore');
+    const chkFunc = document.getElementById('f-emp-func');
+    const lblFuncTit = document.getElementById('lbl-emp-func-tit');
+    const lblFuncDesc = document.getElementById('lbl-emp-func-desc');
+    const inpIe = document.getElementById('f-emp-ie');
+    const selStatus = document.getElementById('f-emp-status');
+    const isNovo = !document.getElementById('f-emp-id')?.value;
+
+    if (lblDoc) lblDoc.textContent = ehPF ? 'CPF do Empregador (ou CAEPF) *' : 'CNPJ *';
+    if (inpDoc) inpDoc.placeholder = ehPF ? '000.000.000-00' : '00.000.000/0001-00';
+    if (btnBusca) {
+      if (ehPF) {
+        btnBusca.classList.add('hidden');
+        btnBusca.classList.remove('flex');
+      } else {
+        btnBusca.classList.remove('hidden');
+        btnBusca.classList.add('flex');
+      }
+    }
+    if (lblRazao) lblRazao.textContent = ehPF ? 'Nome Completo (Pessoa Física) *' : 'Razão Social *';
+    if (inpRazao) inpRazao.placeholder = ehPF ? 'Ex: Maria Aparecida da Silva' : 'Ex: Alfa Comércio e Serviços Ltda';
+    if (lblFantasia) lblFantasia.textContent = ehPF ? 'Identificação / Apelido (opcional)' : 'Nome Fantasia';
+    if (inpFantasia) inpFantasia.placeholder = ehPF ? 'Se vazio, usa o Nome Completo' : 'Ex: Alfa Soluções';
+    if (lblIm) lblIm.textContent = ehPF ? 'CAEPF / Matrícula eSocial (opcional)' : 'Inscrição Municipal';
+
+    if (ehPF) {
+      if (selRegime) selRegime.value = 'Pessoa Física (Doméstica)';
+      if (inpIe && !inpIe.value) inpIe.value = 'Isento';
+      if (isNovo) {
+        if (chkPro) chkPro.checked = false;
+        if (chkFunc) chkFunc.checked = true;
+        if (selStatus) {
+          selStatus.value = 'ATIVA';
+          this.aoMudarStatusInicialEmpresa('ATIVA');
+        }
+      }
+    } else if (selRegime && selRegime.value === 'Pessoa Física (Doméstica)') {
+      selRegime.value = 'Simples Nacional';
+      if (isNovo && chkPro) chkPro.checked = true;
+    }
+
+    if (lblFuncTit) {
+      lblFuncTit.textContent = ehPF ? '2. Possui Empregada Doméstica (eSocial Doméstico)' : '2. Possui Funcionários CLT Registrados';
+    }
+    if (lblFuncDesc) {
+      lblFuncDesc.innerHTML = ehPF
+        ? 'Gera mensalmente a rotina de <strong>Folha Doméstica (eSocial) e Guia DAE</strong>.'
+        : 'Marque somente quando a empresa tiver empregados. Gera a <strong>Folha CLT e a Guia de FGTS Digital</strong>.';
+    }
+  },
+
+  aoMudarRegimeModalEmpresa(regime) {
+    if (regime === 'Pessoa Física (Doméstica)') {
+      this.alternarTipoPessoaModalEmpresa('PF');
+    } else if (document.getElementById('f-emp-tipo-pessoa')?.value === 'PF') {
+      this.alternarTipoPessoaModalEmpresa('PJ');
+      const selRegime = document.getElementById('f-emp-regime');
+      if (selRegime) selRegime.value = regime;
+    }
   },
 
   aoMudarStatusInicialEmpresa(status) {
@@ -3730,17 +3842,30 @@ window.ZGestorApp = {
 
   submitFormEmpresa(e) {
     e.preventDefault();
+    const razaoVal = document.getElementById('f-emp-razao').value.trim();
+    const fantasiaVal = document.getElementById('f-emp-fantasia').value.trim() || razaoVal;
+    let docRaw = document.getElementById('f-emp-cnpj').value.trim();
+    const docDigitos = docRaw.replace(/\D/g, '');
+    if (docDigitos.length === 11) {
+      docRaw = docDigitos.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+    } else if (docDigitos.length === 14) {
+      docRaw = docDigitos.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+    }
+    const regimeVal = document.getElementById('f-emp-regime').value;
+    const tipoPessoaVal = (document.getElementById('f-emp-tipo-pessoa')?.value === 'PF' || regimeVal === 'Pessoa Física (Doméstica)' || docDigitos.length === 11) ? 'PF' : 'PJ';
+
     const dados = {
       id: document.getElementById('f-emp-id').value || null,
+      tipo_pessoa: tipoPessoaVal,
       codigo_interno: document.getElementById('f-emp-cod').value.trim(),
-      razao_social: document.getElementById('f-emp-razao').value.trim(),
-      nome_fantasia: document.getElementById('f-emp-fantasia').value.trim(),
-      cnpj: document.getElementById('f-emp-cnpj').value.trim(),
+      razao_social: razaoVal,
+      nome_fantasia: fantasiaVal,
+      cnpj: docRaw,
       municipio_uf: (document.getElementById('f-emp-municipio-uf')?.value || '').trim(),
-      regime_tributario: document.getElementById('f-emp-regime').value,
-      inscricao_estadual: document.getElementById('f-emp-ie').value.trim(),
+      regime_tributario: regimeVal,
+      inscricao_estadual: document.getElementById('f-emp-ie').value.trim() || 'Isento',
       inscricao_municipal: document.getElementById('f-emp-im').value.trim(),
-      responsavel_legal: document.getElementById('f-emp-resp').value.trim(),
+      responsavel_legal: document.getElementById('f-emp-resp').value.trim() || (tipoPessoaVal === 'PF' ? razaoVal : ''),
       telefone: document.getElementById('f-emp-tel').value.trim(),
       email: document.getElementById('f-emp-email').value.trim(),
       valor_honorario_padrao: Number(document.getElementById('f-emp-hon').value || 0),
@@ -9543,9 +9668,6 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
       content: resposta,
       hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     });
-    this.renderContentOnly();
-    const boxPos = document.getElementById('chat-ia-mensagens');
-    if (boxPos) boxPos.scrollTop = boxPos.scrollHeight;
   },
 
   enviarPerguntaSugeridaIA(texto) {

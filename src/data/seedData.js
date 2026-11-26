@@ -97,7 +97,8 @@ window.ZGESTOR_MODELS = {
     'Lucro Presumido',
     'Lucro Real',
     'MEI',
-    'Imune/Isenta'
+    'Imune/Isenta',
+    'Pessoa Física (Doméstica)'
   ],
 
   tiposGuiasImpostos: [
@@ -106,6 +107,7 @@ window.ZGESTOR_MODELS = {
     { sigla: 'DAE / DARE - ICMS (Antecipação / DIFAL / ST)', departamento: 'FISCAL', dia_vencimento_padrao: 20 },
     { sigla: 'DARF - DCTFWeb / INSS / IRRF (Pró-Labore / Folha)', departamento: 'PESSOAL', dia_vencimento_padrao: 20 },
     { sigla: 'FGTS Digital - Guia Mensal (Funcionários CLT)', departamento: 'PESSOAL', dia_vencimento_padrao: 20 },
+    { sigla: 'DAE - eSocial Doméstico (Guia Única Mensal)', departamento: 'PESSOAL', dia_vencimento_padrao: 20 },
     { sigla: 'DARF - PIS / COFINS', departamento: 'FISCAL', dia_vencimento_padrao: 25 },
     { sigla: 'DARF - PIS', departamento: 'FISCAL', dia_vencimento_padrao: 25 },
     { sigla: 'DARF - COFINS', departamento: 'FISCAL', dia_vencimento_padrao: 25 },
@@ -462,6 +464,20 @@ window.ZGESTOR_MODELS = {
       requer_funcionarios: true,
       requer_ie: false,
       ativo: false
+    },
+    {
+      id: 'mod-dp-domestica-esocial',
+      titulo: 'Fechamento Folha Doméstica (eSocial) e Emissão da Guia DAE',
+      descricao: 'Fechar folha mensal de empregada doméstica no eSocial Doméstico, emitir recibo de pagamento e gerar a Guia DAE (vencimento dia 20, antecipando se cair em dia não útil).',
+      departamento: 'PESSOAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Pessoa Física (Doméstica)'],
+      dia_prazo_padrao: 15,
+      antecipar_dia_util: true,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
+      ativo: true
     }
   ]
 };

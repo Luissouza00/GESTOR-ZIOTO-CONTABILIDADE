@@ -2160,6 +2160,9 @@
     // =========================================================================
     salvarEmpresa(dadosEmpresa, criarChecklistOnboarding = true) {
       const compNorm = this.normalizarCompetencia(dadosEmpresa.competencia_inicial || '11/2026');
+      const docLimpo = String(dadosEmpresa.cnpj || '').replace(/\D/g, '');
+      const ehPF = dadosEmpresa.tipo_pessoa === 'PF' || dadosEmpresa.regime_tributario === 'Pessoa Física (Doméstica)' || docLimpo.length === 11;
+      const tipoPessoaFinal = ehPF ? 'PF' : 'PJ';
       const isEdit = Boolean(dadosEmpresa.id);
       if (isEdit) {
         const idx = this.data.empresas.findIndex(e => e.id === dadosEmpresa.id);
@@ -2168,19 +2171,21 @@
           this.data.empresas[idx] = {
             ...this.data.empresas[idx],
             ...dadosEmpresa,
+            tipo_pessoa: tipoPessoaFinal,
+            nome_fantasia: dadosEmpresa.nome_fantasia || dadosEmpresa.razao_social || this.data.empresas[idx].nome_fantasia,
             codigo_interno: this.limparCodigoInterno(dadosEmpresa.codigo_interno || this.data.empresas[idx].codigo_interno),
             municipio_uf: dadosEmpresa.municipio_uf || this.data.empresas[idx].municipio_uf || '',
             validade_certificado: dadosEmpresa.validade_certificado || this.data.empresas[idx].validade_certificado || '',
             competencia_inicial: compNorm,
             canal_pagamento_padrao: dadosEmpresa.canal_pagamento_padrao || this.data.empresas[idx].canal_pagamento_padrao || 'PIX_PRINCIPAL',
             modelo_onboarding: dadosEmpresa.modelo_onboarding || this.data.empresas[idx].modelo_onboarding || 'ABERTURA_EMPRESA',
-            possui_pro_labore: dadosEmpresa.possui_pro_labore !== false,
-            possui_funcionarios: Boolean(dadosEmpresa.possui_funcionarios)
+            possui_pro_labore: ehPF ? Boolean(dadosEmpresa.possui_pro_labore) : (dadosEmpresa.possui_pro_labore !== false),
+            possui_funcionarios: dadosEmpresa.possui_funcionarios !== undefined ? Boolean(dadosEmpresa.possui_funcionarios) : (ehPF ? true : Boolean(this.data.empresas[idx].possui_funcionarios))
           };
           if (dadosEmpresa.status === 'ATIVA' && oldStatus !== 'ATIVA') {
             const compGera = this.data.empresas[idx].competencia_inicial || this.data.competencia_ativa || '10/2026';
             this.gerarTarefasCompetencia(compGera, this.data.empresas[idx].id);
-                if (this.canAccessModule('honorarios')) {
+            if (this.canAccessModule('honorarios')) {
               this.gerarHonorariosCompetencia(compGera);
             }
           }
@@ -2188,7 +2193,7 @@
           this.registrarLog(
             'EDICAO_EMPRESA',
             'Empresas',
-            `Dados atualizados da empresa ${dadosEmpresa.razao_social} (Pró-Labore: ${this.data.empresas[idx].possui_pro_labore ? 'Sim' : 'Não'} | Funcionários CLT: ${this.data.empresas[idx].possui_funcionarios ? 'Sim' : 'Não'}).`
+            `Dados atualizados de ${dadosEmpresa.razao_social} (${tipoPessoaFinal} - ${this.data.empresas[idx].regime_tributario}).`
           );
           return this.data.empresas[idx];
         }
@@ -2197,6 +2202,7 @@
       const nextNum = String(this.data.empresas.length + 1).padStart(3, '0');
       const novaEmpresa = {
         id: 'emp-' + Date.now(),
+        tipo_pessoa: tipoPessoaFinal,
         codigo_interno: this.limparCodigoInterno(dadosEmpresa.codigo_interno) || nextNum,
         razao_social: dadosEmpresa.razao_social,
         nome_fantasia: dadosEmpresa.nome_fantasia || dadosEmpresa.razao_social,
@@ -2205,19 +2211,18 @@
         validade_certificado: dadosEmpresa.validade_certificado || '',
         competencia_inicial: compNorm,
         modelo_onboarding: dadosEmpresa.modelo_onboarding || 'ABERTURA_EMPRESA',
-        regime_tributario: dadosEmpresa.regime_tributario || 'Simples Nacional',
+        regime_tributario: dadosEmpresa.regime_tributario || (ehPF ? 'Pessoa Física (Doméstica)' : 'Simples Nacional'),
         inscricao_estadual: dadosEmpresa.inscricao_estadual || 'Isento',
         inscricao_municipal: dadosEmpresa.inscricao_municipal || '',
-        responsavel_legal: dadosEmpresa.responsavel_legal || '',
+        responsavel_legal: dadosEmpresa.responsavel_legal || (ehPF ? dadosEmpresa.razao_social : ''),
         telefone: dadosEmpresa.telefone || '',
         email: dadosEmpresa.email || '',
         status: dadosEmpresa.status || 'EM_ONBOARDING',
         valor_honorario_padrao: Number(dadosEmpresa.valor_honorario_padrao || 0),
         dia_vencimento_honorario: Number(dadosEmpresa.dia_vencimento_honorario || 10),
         canal_pagamento_padrao: dadosEmpresa.canal_pagamento_padrao || 'PIX_PRINCIPAL',
-        // Pró-Labore padrão = true (gera DARF INSS/IRRF); Funcionários CLT separado = false por padrão (gera FGTS)
-        possui_pro_labore: dadosEmpresa.possui_pro_labore !== false,
-        possui_funcionarios: Boolean(dadosEmpresa.possui_funcionarios),
+        possui_pro_labore: ehPF ? Boolean(dadosEmpresa.possui_pro_labore) : (dadosEmpresa.possui_pro_labore !== false),
+        possui_funcionarios: dadosEmpresa.possui_funcionarios !== undefined ? Boolean(dadosEmpresa.possui_funcionarios) : ehPF,
         data_entrada: dadosEmpresa.data_entrada || new Date().toISOString().slice(0, 10),
         observacoes: dadosEmpresa.observacoes || ''
       };
@@ -2528,6 +2533,19 @@
           this._garantirGuiaPorConclusaoTarefa(t, 'DAM / Guia ISS Próprio (Serviços Prestados)', diaIss, false, vencIss);
         } else if (acao === 'SEM_MOVIMENTO') {
           this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && /\bISS\b/i.test(String(g.tipo_guia || '')));
+        }
+      } else if (
+        (empTarefa && empTarefa.regime_tributario === 'Pessoa Física (Doméstica)') ||
+        tituloLower.includes('folha doméstica') ||
+        tituloLower.includes('folha domestica') ||
+        tituloLower.includes('esocial doméstico') ||
+        tituloLower.includes('esocial domestico')
+      ) {
+        const vencDaeDom = this.calcularDataMesSubsequenteUtil(t.competencia, 20, true);
+        if (acao === 'ENTREGUE_NORMAL') {
+          this._garantirGuiaPorConclusaoTarefa(t, 'DAE - eSocial Doméstico (Guia Única Mensal)', 20, false, vencDaeDom);
+        } else if (acao === 'SEM_MOVIMENTO') {
+          this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && String(g.tipo_guia || '').toLowerCase().includes('doméstic'));
         }
       }
 
@@ -4823,6 +4841,8 @@
 
       let mudou = false;
       const ehMensalRegular = (!hon.tipo_lancamento || hon.tipo_lancamento === 'MENSAL') && !hon.cliente_avulso && Boolean(hon.empresa_id);
+      const ehAvulso = hon.tipo_lancamento === 'AVULSO';
+
       if (ehMensalRegular) {
         const ant = this.obterSaldoAnteriorEmpresa(hon.empresa_id, hon.competencia);
         if (ant.valor > 0) {
@@ -4837,6 +4857,15 @@
             hon.competencia_saldo_anterior = '';
             mudou = true;
           }
+        }
+      } else if (ehAvulso && hon.avulso_transportado && hon.avulso_pai_id) {
+        const pai = this.data.honorarios.find(p => p.id === hon.avulso_pai_id);
+        const saldoPai = pai ? Math.max(0, Number(pai.saldo_aberto || 0)) : 0;
+        const compPai = pai ? pai.competencia : (hon.competencia_saldo_anterior || '');
+        if (hon.saldo_anterior !== saldoPai || hon.competencia_saldo_anterior !== compPai) {
+          hon.saldo_anterior = saldoPai;
+          hon.competencia_saldo_anterior = compPai;
+          mudou = true;
         }
       }
 
@@ -4896,6 +4925,30 @@
             mudou = true;
           }
         }
+      } else if (ehAvulso) {
+        const compSeg = this.obterMesSubsequente(hon.competencia).label;
+        const origemId = hon.avulso_origem_id || hon.id;
+        const idxFilho = this.data.honorarios.findIndex(
+          h => h.competencia === compSeg && h.tipo_lancamento === 'AVULSO' && h.avulso_transportado && (h.avulso_pai_id === hon.id || h.avulso_origem_id === origemId)
+        );
+        if (idxFilho !== -1) {
+          const filho = this.data.honorarios[idxFilho];
+          const pagsFilho = _estadoInterno?.pagamentosPorHon
+            ? (_estadoInterno.pagamentosPorHon.get(filho.id) || [])
+            : this.data.honorario_pagamentos.filter(p => p.honorario_id === filho.id);
+          const pagoNoFilho = pagsFilho.reduce((acc, p) => acc + Number(p.valor || 0), 0);
+          if (saldoAberto <= 0.009 && pagoNoFilho <= 0) {
+            // Quitado integralmente no mês anterior -> remove automaticamente os transportes futuros sem baixa
+            this._removerAvulsosTransportadosSemBaixa(filho.id);
+            mudou = true;
+          } else {
+            filho.avulso_pai_id = hon.id;
+            const resFilho = this.recalcularHonorario(filho.id, false, _estadoInterno);
+            if (resFilho && _estadoInterno && _estadoInterno.algumMudou) {
+              mudou = true;
+            }
+          }
+        }
       }
 
       if (_estadoInterno && mudou) {
@@ -4907,6 +4960,99 @@
         this.saveLocalData();
       }
       return hon;
+    }
+
+    _removerAvulsosTransportadosSemBaixa(honIdInicial) {
+      let atualId = honIdInicial;
+      while (atualId) {
+        const alvo = this.data.honorarios.find(h => h.id === atualId);
+        if (!alvo) break;
+        const temPag = (this.data.honorario_pagamentos || []).some(p => p.honorario_id === alvo.id && Number(p.valor || 0) > 0);
+        if (temPag) break;
+        const proximo = this.data.honorarios.find(h => h.avulso_pai_id === alvo.id && h.avulso_transportado);
+        this.data.honorarios = this.data.honorarios.filter(h => h.id !== alvo.id);
+        atualId = proximo ? proximo.id : null;
+      }
+    }
+
+    _sincronizarAvulsosDoMesAnterior(competencia, estadoInterno = null) {
+      if (!competencia) return 0;
+      const compAnt = this.obterCompetenciaAnterior(competencia);
+      const avulsosAnt = (this.data.honorarios || []).filter(
+        h => h && h.competencia === compAnt && h.tipo_lancamento === 'AVULSO'
+      );
+      if (avulsosAnt.length === 0) return 0;
+
+      // Recalcula primeiro os avulsos do mês anterior para ter saldo_aberto exato
+      for (let i = 0; i < avulsosAnt.length; i++) {
+        this.recalcularHonorario(avulsosAnt[i].id, false, estadoInterno);
+      }
+
+      let criadosOuAlterados = 0;
+      avulsosAnt.forEach((honAnt, idx) => {
+        const origemId = honAnt.avulso_origem_id || honAnt.id;
+        const saldoRem = Math.max(0, Number((honAnt.saldo_aberto || 0).toFixed(2)));
+        const existente = this.data.honorarios.find(
+          h => h.competencia === competencia && h.tipo_lancamento === 'AVULSO' && (h.avulso_pai_id === honAnt.id || (h.avulso_origem_id && h.avulso_origem_id === origemId))
+        );
+
+        if (saldoRem > 0.009) {
+          if (!existente) {
+            const diaBase = Number(honAnt.dia_base_vencimento || Number(String(honAnt.data_vencimento || '').slice(-2)) || 10);
+            const vencSeg = this.calcularVencimentoHonorarioUtil(competencia, diaBase);
+            const novoTransp = {
+              id: `hon-avulso-tr-${competencia.replace('/', '')}-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+              avulso_transportado: true,
+              avulso_pai_id: honAnt.id,
+              avulso_origem_id: origemId,
+              empresa_id: honAnt.empresa_id || null,
+              cliente_avulso: Boolean(honAnt.cliente_avulso),
+              nome_cliente: honAnt.nome_cliente || '',
+              documento_cliente: honAnt.documento_cliente || '',
+              contato_cliente: honAnt.contato_cliente || '',
+              tipo_lancamento: 'AVULSO',
+              descricao_cobranca: honAnt.descricao_cobranca || 'HONORÁRIO MENSAL',
+              competencia,
+              competencia_referencia: honAnt.competencia_referencia || honAnt.competencia,
+              canal_pagamento: honAnt.canal_pagamento || 'PIX_PRINCIPAL',
+              dia_base_vencimento: diaBase,
+              data_vencimento: vencSeg,
+              valor_mensal: 0,
+              saldo_anterior: saldoRem,
+              competencia_saldo_anterior: compAnt,
+              servicos_extras: 0,
+              desconto: 0,
+              valor_pago: 0,
+              saldo_aberto: saldoRem,
+              status: 'ABERTO',
+              observacoes: honAnt.observacoes || ''
+            };
+            this.data.honorarios.unshift(novoTransp);
+            this.recalcularHonorario(novoTransp.id, false, estadoInterno);
+            if (estadoInterno) estadoInterno.algumMudou = true;
+            criadosOuAlterados++;
+          } else if (existente.avulso_transportado) {
+            existente.avulso_pai_id = honAnt.id;
+            existente.avulso_origem_id = origemId;
+            if (existente.saldo_anterior !== saldoRem || existente.competencia_saldo_anterior !== compAnt) {
+              existente.saldo_anterior = saldoRem;
+              existente.competencia_saldo_anterior = compAnt;
+              if (estadoInterno) estadoInterno.algumMudou = true;
+              criadosOuAlterados++;
+            }
+            this.recalcularHonorario(existente.id, false, estadoInterno);
+          }
+        } else if (existente && existente.avulso_transportado) {
+          const temPagFilho = (this.data.honorario_pagamentos || []).some(p => p.honorario_id === existente.id && Number(p.valor || 0) > 0);
+          if (!temPagFilho) {
+            this._removerAvulsosTransportadosSemBaixa(existente.id);
+            if (estadoInterno) estadoInterno.algumMudou = true;
+            criadosOuAlterados++;
+          }
+        }
+      });
+
+      return criadosOuAlterados;
     }
 
     sincronizarSaldosAnterioresHonorarios(competencia) {
@@ -4931,6 +5077,10 @@
       }
 
       const estadoInterno = { pagamentosPorHon, hoje, algumMudou: false };
+
+      // Transporta automaticamente recibos/cobranças avulsas em aberto ou parciais do mês imediatamente anterior
+      this._sincronizarAvulsosDoMesAnterior(competencia, estadoInterno);
+
       const lista = (this.data.honorarios || []).filter(h => h.competencia === competencia);
       for (let i = 0; i < lista.length; i++) {
         this.recalcularHonorario(lista[i].id, false, estadoInterno);
@@ -4991,6 +5141,9 @@
           this.recalcularHonorario(existente.id, false);
         }
       });
+
+      const avulsosTransportados = this._sincronizarAvulsosDoMesAnterior(competencia);
+      criados += avulsosTransportados;
 
       if (criados > 0) {
         this._honMutVersion = (this._honMutVersion || 0) + 1;
@@ -5133,8 +5286,11 @@
       const liquido = Math.max(0, Number((valorBase + extras - desconto).toFixed(2)));
       const descricao = String(dados.descricao_cobranca || 'HONORÁRIO MENSAL').trim() || 'HONORÁRIO MENSAL';
 
+      const idNovo = `hon-avulso-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const novo = {
-        id: `hon-avulso-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: idNovo,
+        avulso_origem_id: idNovo,
+        avulso_transportado: false,
         empresa_id: isClienteAvulso ? null : emp.id,
         cliente_avulso: isClienteAvulso,
         nome_cliente: isClienteAvulso ? nomeAvulso : (emp.razao_social || emp.nome_fantasia),
@@ -5345,6 +5501,10 @@
       if (!hon) return false;
       if (Number(hon.valor_pago || 0) > 0) {
         throw new Error('Estorne os pagamentos registrados antes de excluir este lançamento de honorário.');
+      }
+      const filhoDireto = this.data.honorarios.find(h => h.avulso_pai_id === honorarioId && h.avulso_transportado);
+      if (filhoDireto) {
+        this._removerAvulsosTransportadosSemBaixa(filhoDireto.id);
       }
       this.data.honorarios = this.data.honorarios.filter(h => h.id !== honorarioId);
       this._honMutVersion = (this._honMutVersion || 0) + 1;
@@ -5626,6 +5786,13 @@
       if (!Array.isArray(this.data.modelos_tarefas) || this.data.modelos_tarefas.length === 0) {
         this.data.modelos_tarefas = JSON.parse(JSON.stringify(window.ZGESTOR_MODELS.modelosTarefasMensais));
         this.saveLocalData();
+      } else if (window.ZGESTOR_MODELS && Array.isArray(window.ZGESTOR_MODELS.modelosTarefasMensais)) {
+        // Garante injeção automática de novos modelos oficiais (ex: Folha Doméstica eSocial) em bases existentes
+        const modDom = window.ZGESTOR_MODELS.modelosTarefasMensais.find(m => m.id === 'mod-dp-domestica-esocial');
+        if (modDom && !this.data.modelos_tarefas.some(m => m.id === 'mod-dp-domestica-esocial')) {
+          this.data.modelos_tarefas.push(JSON.parse(JSON.stringify(modDom)));
+          this.saveLocalData();
+        }
       }
       return this.data.modelos_tarefas;
     }

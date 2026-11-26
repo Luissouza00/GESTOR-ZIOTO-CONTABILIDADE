@@ -1179,6 +1179,13 @@ window.ZGestorViews = {
           : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'}">
                 👤 MEI
               </button>
+              <button
+                onclick="ZGestorApp.setNotionRegime('Pessoa Física (Doméstica)')"
+                class="px-3 py-1.5 rounded-xl font-bold transition text-xs ${fRegimeAtual === 'Pessoa Física (Doméstica)'
+          ? 'bg-teal-700 text-white shadow-xs'
+          : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200'}">
+                🏠 PF / Doméstica
+              </button>
             </div>
 
             ${fRegimeAtual !== 'TODOS' ? `
@@ -3958,10 +3965,12 @@ window.ZGestorViews = {
       empresas = empresas.filter(e => e.regime_tributario === regime);
     }
     if (busca) {
+      const buscaNum = busca.replace(/\D/g, '');
       empresas = empresas.filter(e =>
-        e.razao_social.toLowerCase().includes(busca) ||
+        (e.razao_social || '').toLowerCase().includes(busca) ||
         (e.nome_fantasia || '').toLowerCase().includes(busca) ||
-        e.cnpj.toLowerCase().includes(busca) ||
+        (e.cnpj || '').toLowerCase().includes(busca) ||
+        (buscaNum.length >= 3 && (e.cnpj || '').replace(/\D/g, '').includes(buscaNum)) ||
         (e.codigo_interno || '').toLowerCase().includes(busca)
       );
     }
@@ -3972,16 +3981,19 @@ window.ZGestorViews = {
       <div class="space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <div>
-            <h1 class="text-lg font-bold text-slate-900">Cadastro de Empresas do Escritório</h1>
+            <h1 class="text-lg font-bold text-slate-900">Cadastro de Empresas & Pessoas Físicas do Escritório</h1>
             <p class="text-xs text-slate-500">
-              Gerencie os dados cadastrais, regime tributário, Inscrição Estadual e configurações de folha.
+              Gerencie empresas (CNPJ), empregadores domésticos / pessoas físicas (CPF), regime tributário e folha.
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <button onclick="ZGestorReports.emitirRelatorioAba('empresas', ZGestorApp.state)" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
               <i data-lucide="printer" class="w-3.5 h-3.5"></i> Relatório de Empresas
             </button>
-            <button onclick="ZGestorApp.openModalEmpresa()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
+            <button onclick="ZGestorApp.openModalEmpresa(null, false, 'PF')" class="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer" title="Cadastrar Empregador Doméstico ou Pessoa Física (CPF)">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> + Pessoa Física (Doméstica)
+            </button>
+            <button onclick="ZGestorApp.openModalEmpresa()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer">
               <i data-lucide="building" class="w-3.5 h-3.5"></i> + Cadastrar Nova Empresa
             </button>
           </div>
@@ -4144,9 +4156,9 @@ window.ZGestorViews = {
             <table class="w-full min-w-[800px] text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
-                <th class="py-3 px-3 ${canSeeHon ? 'w-[18%]' : 'w-[20%]'}">Cód / Empresa</th>
-                <th class="py-3 px-2.5 ${canSeeHon ? 'w-[16%]' : 'w-[18%]'}">CNPJ & Município</th>
-                <th class="py-3 px-2.5 ${canSeeHon ? 'w-[18%]' : 'w-[20%]'}">Regime, Pró-Labore & CLT</th>
+                <th class="py-3 px-3 ${canSeeHon ? 'w-[18%]' : 'w-[20%]'}">Cód / Empresa ou PF</th>
+                <th class="py-3 px-2.5 ${canSeeHon ? 'w-[16%]' : 'w-[18%]'}">CNPJ / CPF & Município</th>
+                <th class="py-3 px-2.5 ${canSeeHon ? 'w-[18%]' : 'w-[20%]'}">Regime, Pró-Labore & Folha</th>
                 <th class="py-3 px-2.5 ${canSeeHon ? 'w-[15%]' : 'w-[16%]'}">Certificado & Proc.</th>
                 <th class="py-3 px-2.5 ${canSeeHon ? 'w-[12%]' : 'w-[14%]'}">Responsável & Contato</th>
                 ${canSeeHon ? `<th class="py-3 px-2.5 w-[9%]">Honorário</th>` : ''}
@@ -4155,7 +4167,8 @@ window.ZGestorViews = {
             </thead>
             <tbody class="divide-y divide-slate-100 text-xs">
               ${empresas.map(e => {
-      const temProLabore = e.possui_pro_labore !== false;
+      const ehLinhaPF = e.tipo_pessoa === 'PF' || e.regime_tributario === 'Pessoa Física (Doméstica)' || String(e.cnpj || '').replace(/\D/g, '').length === 11;
+      const temProLabore = ehLinhaPF ? Boolean(e.possui_pro_labore) : (e.possui_pro_labore !== false);
       const temFunc = Boolean(e.possui_funcionarios);
       const statusCert = this.calcularStatusCertificado(e.validade_certificado);
       const codChamada = this.codLimpo(e.codigo_interno);
@@ -4166,41 +4179,54 @@ window.ZGestorViews = {
                       <div class="flex items-start gap-2">
                         <span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[11px] font-extrabold shrink-0" title="Código de Chamada">${this.escapeHtml(codChamada || '—')}</span>
                         <div class="min-w-0">
-                          <div class="font-bold text-slate-900 leading-snug">${this.escapeHtml(e.razao_social || e.nome_fantasia)}</div>
-                          <div class="text-[11px] text-slate-500 mt-0.5">Fantasia: ${this.escapeHtml(e.nome_fantasia || '—')}</div>
+                          <div class="font-bold text-slate-900 leading-snug flex flex-wrap items-center gap-1">
+                            ${ehLinhaPF ? `<span class="px-1.5 py-0.2 rounded bg-teal-100 text-teal-900 border border-teal-300 text-[9.5px] font-extrabold">PF</span>` : ''}
+                            <span>${this.escapeHtml(e.razao_social || e.nome_fantasia)}</span>
+                          </div>
+                          <div class="text-[11px] text-slate-500 mt-0.5">${ehLinhaPF ? `Identificação: ${this.escapeHtml(e.nome_fantasia || e.razao_social || '—')}` : `Fantasia: ${this.escapeHtml(e.nome_fantasia || '—')}`}</div>
                         </div>
                       </div>
                     </td>
                     <td class="py-3 px-2.5">
-                      <div class="font-mono font-semibold text-slate-800">${e.cnpj}</div>
+                      <div class="font-mono font-semibold text-slate-800">${this.escapeHtml(e.cnpj || '—')}</div>
                       <div class="text-[11px] font-medium text-slate-600 flex items-center gap-1 mt-0.5">
                         <i data-lucide="map-pin" class="w-3 h-3 text-slate-400"></i>
                         <span>${this.escapeHtml(municipioExib)}</span>
                       </div>
-                      <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
-                        <button
-                          type="button"
-                          onclick="ZGestorApp.alternarIEEmpresa('${e.id}')"
-                          title="Clique para marcar/desmarcar ou informar Inscrição Estadual (controla ICMS, DeSTDA e EFD-ICMS)"
-                          class="px-1.5 py-0.5 rounded font-bold border transition cursor-pointer ${db.empresaPossuiIE(e) ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}">
-                          IE: ${db.empresaPossuiIE(e) ? this.escapeHtml(e.inscricao_estadual || 'Ativa') : 'Sem I.E. (+ Ativar)'}
-                        </button>
-                        <span>IM: ${e.inscricao_municipal || '—'}</span>
-                      </div>
+                      ${ehLinhaPF ? `
+                        <div class="text-[10px] text-teal-700 font-semibold mt-1">CPF • Empregador Doméstico (eSocial)</div>
+                      ` : `
+                        <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onclick="ZGestorApp.alternarIEEmpresa('${e.id}')"
+                            title="Clique para marcar/desmarcar ou informar Inscrição Estadual (controla ICMS, DeSTDA e EFD-ICMS)"
+                            class="px-1.5 py-0.5 rounded font-bold border transition cursor-pointer ${db.empresaPossuiIE(e) ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'}">
+                            IE: ${db.empresaPossuiIE(e) ? this.escapeHtml(e.inscricao_estadual || 'Ativa') : 'Sem I.E. (+ Ativar)'}
+                          </button>
+                          <span>IM: ${e.inscricao_municipal || '—'}</span>
+                        </div>
+                      `}
                     </td>
                     <td class="py-3 px-2.5">
                       <div>
-                        <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          ${e.regime_tributario}
+                        <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold border ${ehLinhaPF ? 'bg-teal-50 text-teal-800 border-teal-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}">
+                          ${this.escapeHtml(e.regime_tributario)}
                         </span>
                       </div>
                       <div class="flex flex-wrap gap-1 mt-1.5">
-                        <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${temProLabore ? 'bg-blue-50 text-blue-800 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'}">
-                          ${temProLabore ? '✓ Pró-Labore (DARF)' : 'Sem Pró-Labore'}
-                        </span>
-                        <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${temFunc ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-slate-100 text-slate-500 border-slate-200'}">
-                          ${temFunc ? '✓ CLT (FGTS)' : 'Sem CLT'}
-                        </span>
+                        ${ehLinhaPF ? `
+                          <span class="px-2 py-0.5 rounded text-[10px] font-bold border bg-teal-50 text-teal-800 border-teal-200">
+                            ✓ Doméstica (DAE eSocial)
+                          </span>
+                        ` : `
+                          <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${temProLabore ? 'bg-blue-50 text-blue-800 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'}">
+                            ${temProLabore ? '✓ Pró-Labore (DARF)' : 'Sem Pró-Labore'}
+                          </span>
+                          <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${temFunc ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-slate-100 text-slate-500 border-slate-200'}">
+                            ${temFunc ? '✓ CLT (FGTS)' : 'Sem CLT'}
+                          </span>
+                        `}
                       </div>
                     </td>
                     <td class="py-3 px-2.5">
@@ -4932,7 +4958,9 @@ window.ZGestorViews = {
                       ${h.observacoes ? `<div class="text-[10px] text-slate-500 mt-0.5 italic">"${this.escapeHtml(h.observacoes)}"</div>` : ''}
                     </td>
                     <td class="py-3 px-2.5">
-                      <div class="font-bold text-slate-800">${this.formatCurrency(h.valor_mensal)}</div>
+                      ${h.avulso_transportado && Number(h.valor_mensal || 0) === 0 ? `
+                        <span class="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">Transp. Avulso</span>
+                      ` : `<div class="font-bold text-slate-800">${this.formatCurrency(h.valor_mensal)}</div>`}
                       ${Number(h.servicos_extras) > 0 ? `<div class="text-[11px] text-indigo-700">+ ${this.formatCurrency(h.servicos_extras)} extra</div>` : ''}
                       ${Number(h.desconto) > 0 ? `<div class="text-[11px] text-amber-700">- ${this.formatCurrency(h.desconto)} desc.</div>` : ''}
                     </td>
@@ -5549,7 +5577,7 @@ window.ZGestorViews = {
           <div class="zg-auth-footer mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="zg-auth-version inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.4.9'}
+              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.0'}
             </span>
           </div>
         </div>
