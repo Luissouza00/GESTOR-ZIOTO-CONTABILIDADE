@@ -31,8 +31,11 @@
     *, *::before, *::after {
       box-sizing: border-box;
     }
-    [hidden], .hidden {
+    [hidden] {
       display: none !important;
+    }
+    .hidden {
+      display: none;
     }
     html, body {
       margin: 0;
@@ -305,8 +308,8 @@
       class="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-slate-900 text-white flex flex-col justify-between shrink-0 min-h-screen transition-transform duration-300 ease-in-out -translate-x-full md:translate-x-0 md:static md:w-56 lg:w-56 xl:w-60 md:max-w-none md:min-h-screen shadow-2xl md:shadow-none">
       <div>
         <!-- Logo Oficial do Escritório Zioto Contabilidade -->
-        <div class="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
-          <div class="flex items-center gap-2.5 min-w-0" id="sidebar-brand-block">
+        <div id="sidebar-header-bar" class="p-3.5 border-b border-slate-800 flex items-center justify-between gap-2 bg-slate-950/40">
+          <div class="flex items-center gap-2.5 flex-1 min-w-0" id="sidebar-brand-block">
             <div class="w-10 h-10 rounded-xl bg-[#0f172a] border border-slate-700/60 p-1 flex items-center justify-center shrink-0 shadow-md">
               <img
                 id="sidebar-brand-logo"
@@ -325,23 +328,23 @@
               <div id="sidebar-brand-subtitle" class="text-[9px] text-amber-400 font-bold uppercase tracking-widest leading-tight truncate">CONTABILIDADE</div>
             </div>
           </div>
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1 shrink-0">
             <!-- Botão fechar drawer no mobile -->
             <button
               type="button"
               onclick="window.ZGestorApp.fecharMenuMobile()"
               class="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
               title="Fechar menu lateral">
-              <i data-lucide="x" class="w-5 h-5"></i>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
-            <!-- Botão discreto para recolher/expandir o menu no desktop -->
+            <!-- Botão para recolher/expandir o menu lateral no desktop -->
             <button
               id="sidebar-toggle-btn"
               onclick="window.ZGestorApp.toggleSidebar()"
               type="button"
-              class="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              class="hidden md:inline-flex items-center justify-center p-1.5 rounded-lg bg-slate-800/80 border border-slate-700/80 text-slate-200 hover:text-white hover:bg-indigo-600 hover:border-indigo-500 transition cursor-pointer shrink-0"
               title="Recolher menu lateral">
-              <i data-lucide="chevrons-left" id="sidebar-toggle-icon" class="w-4 h-4"></i>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>
             </button>
           </div>
         </div>
@@ -360,8 +363,9 @@
         </div>
         <div class="flex items-center justify-between sidebar-footer-text text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
           <span>Versão do Sistema:</span>
-          <span class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/80">v1.4.0</span>
+          <span id="sidebar-system-version" class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/80">v1.4.9</span>
         </div>
+        <div id="sidebar-collapsed-version" class="hidden text-center font-mono font-bold text-[10px] text-indigo-400">v1.4.9</div>
         <button
           onclick="window.zgestorDB.resetToSeedData(); window.ZGestorApp.renderAll(); window.ZGestorApp.showToast('Base de demonstração restaurada!', 'info');"
           class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer">
@@ -389,19 +393,22 @@
   <div id="modal-root"></div>
   <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
-  <!-- Scripts da Aplicação -->
-  <script src="./src/data/seedData.js"></script>
-  <script src="./src/data/carteiraOficial.js"></script>
-  <script src="./src/lib/dbEngine.js"></script>
-  <script src="./src/ui/views.js"></script>
-  <script src="./src/ui/reports.js"></script>
-  <script src="./src/app.js"></script>
+  <!-- Versão Oficial Unificada e Scripts da Aplicação (Cache-Busting Automático) -->
+  <script>window.ZGESTOR_VERSION = 'v1.4.9';</script>
+  <script src="./src/data/seedData.js?v=1.4.9"></script>
+  <script src="./src/data/carteiraOficial.js?v=1.4.9"></script>
+  <script src="./src/lib/dbEngine.js?v=1.4.9"></script>
+  <script src="./src/ui/views.js?v=1.4.9"></script>
+  <script src="./src/ui/reports.js?v=1.4.9"></script>
+  <script src="./src/app.js?v=1.4.9"></script>
 
   <!-- Registro do Service Worker PWA para Suporte Mobile & Instalação -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js').catch(function() {});
+        navigator.serviceWorker.register('./sw.js?v=1.4.9').then(function(reg) {
+          if (reg && typeof reg.update === 'function') reg.update();
+        }).catch(function() {});
       });
     }
   </script>

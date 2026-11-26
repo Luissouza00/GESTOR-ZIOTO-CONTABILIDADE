@@ -44,6 +44,7 @@ window.ZGestorApp = {
     filtroGuiaPreferenciaEnvio: 'TODOS',
     guiasSelecionadas: [],
     tarefasSelecionadas: [],
+    honorariosSelecionados: [],
     filtroCNDCliente: 'TODOS',
     filtroCNDOrgao: 'TODOS',
     filtroCNDStatus: 'TODOS',
@@ -345,9 +346,15 @@ window.ZGestorApp = {
     // 2. Oculta COMPLETAMENTE o menu lateral interno do escritório
     if (isCliente || isSimulacao) {
       this.state.currentTab = 'central_cliente';
-      if (sidebar) sidebar.classList.add('hidden');
+      if (sidebar) {
+        sidebar.hidden = true;
+        sidebar.classList.add('hidden');
+      }
     } else {
-      if (sidebar) sidebar.classList.remove('hidden');
+      if (sidebar) {
+        sidebar.hidden = false;
+        sidebar.classList.remove('hidden');
+      }
     }
 
     // Renderiza banner discreto de simulação no topo se estiver ativo
@@ -1034,19 +1041,50 @@ window.ZGestorApp = {
     if (brandSubEl) brandSubEl.textContent = esc.marca_subtitulo || 'CONTABILIDADE';
     if (brandLogoEl) brandLogoEl.src = esc.logo_customizada || './assets/logo-contabil.svg';
 
-    // Ajusta a largura e classes visuais da Sidebar
+    // Ajusta a largura e classes visuais da Sidebar em todas as telas desktop (md, lg e xl)
     const sidebarEl = document.getElementById('main-sidebar');
+    const headerBarEl = document.getElementById('sidebar-header-bar');
+    const brandBlockEl = document.getElementById('sidebar-brand-block');
     const brandTexts = (typeof document.querySelectorAll === 'function') ? document.querySelectorAll('.sidebar-brand-text') : [];
     const toggleBtnEl = document.getElementById('sidebar-toggle-btn');
-    const toggleIconEl = document.getElementById('sidebar-toggle-icon');
+    const versionEl = document.getElementById('sidebar-system-version');
+    const versionCollapsedEl = document.getElementById('sidebar-collapsed-version');
+    const versaoAtual = window.ZGESTOR_VERSION || 'v1.4.9';
+
+    if (versionEl) versionEl.textContent = versaoAtual;
+    if (versionCollapsedEl) {
+      versionCollapsedEl.textContent = versaoAtual;
+      if (collapsed) versionCollapsedEl.classList.remove('hidden');
+      else versionCollapsedEl.classList.add('hidden');
+    }
 
     if (sidebarEl) {
       if (collapsed) {
-        sidebarEl.classList.remove('lg:w-56', 'xl:w-60');
-        sidebarEl.classList.add('lg:w-20');
+        sidebarEl.classList.remove('md:w-56', 'lg:w-56', 'xl:w-60');
+        sidebarEl.classList.add('md:w-20', 'lg:w-20', 'xl:w-20');
       } else {
-        sidebarEl.classList.remove('lg:w-20');
-        sidebarEl.classList.add('lg:w-56', 'xl:w-60');
+        sidebarEl.classList.remove('md:w-20', 'lg:w-20', 'xl:w-20');
+        sidebarEl.classList.add('md:w-56', 'lg:w-56', 'xl:w-60');
+      }
+    }
+
+    if (headerBarEl) {
+      if (collapsed) {
+        headerBarEl.classList.remove('p-3.5', 'justify-between');
+        headerBarEl.classList.add('py-3', 'px-2', 'flex-col', 'justify-center');
+      } else {
+        headerBarEl.classList.remove('py-3', 'px-2', 'flex-col', 'justify-center');
+        headerBarEl.classList.add('p-3.5', 'justify-between');
+      }
+    }
+
+    if (brandBlockEl) {
+      if (collapsed) {
+        brandBlockEl.classList.remove('flex-1');
+        brandBlockEl.classList.add('justify-center');
+      } else {
+        brandBlockEl.classList.remove('justify-center');
+        brandBlockEl.classList.add('flex-1');
       }
     }
 
@@ -1059,9 +1097,9 @@ window.ZGestorApp = {
 
     if (toggleBtnEl) {
       toggleBtnEl.title = collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral';
-    }
-    if (toggleIconEl && typeof toggleIconEl.setAttribute === 'function') {
-      toggleIconEl.setAttribute('data-lucide', collapsed ? 'chevrons-right' : 'chevrons-left');
+      toggleBtnEl.innerHTML = collapsed
+        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m13 17 5-5-5-5"/><path d="m6 17 5-5-5-5"/></svg>'
+        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>';
     }
 
     // Rodapé técnico: exibido SOMENTE para Administrador
@@ -1448,6 +1486,9 @@ window.ZGestorApp = {
             <span class="hidden sm:inline">Relatório da Aba Atual</span>
             <span class="sm:hidden">Relatório</span>
           </button>
+          <span class="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold text-[10.5px]" title="Versão ativa do ZGestor">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.4.9'}
+          </span>
         </div>
 
         <div class="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
@@ -10017,6 +10058,109 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
     link.click();
     document.body.removeChild(link);
     this.showToast(`Download iniciado: ${link.download}`, 'success');
+  },
+
+  // ===========================================================================
+  // SELEÇÃO PERSONALIZADA DE RECIBOS PIX EM HONORÁRIOS (IMPRESSÃO EM LOTE)
+  // ===========================================================================
+  toggleSelecaoHonorario(honorarioId, marcado) {
+    if (!honorarioId) return;
+    const setSel = new Set(Array.isArray(this.state.honorariosSelecionados) ? this.state.honorariosSelecionados : []);
+    if (marcado) setSel.add(honorarioId);
+    else setSel.delete(honorarioId);
+    this.state.honorariosSelecionados = Array.from(setSel);
+    this.renderContentOnly();
+  },
+
+  _obterHonorariosVisiveisEmAberto() {
+    const db = window.zgestorDB;
+    const comp = this.state.competencia;
+    const base = (db.data.honorarios || []).filter(h => h && h.competencia === comp);
+    const fStatus = this.state.filtroHonorarioStatus || 'TODOS';
+    const fTipo = this.state.filtroHonorarioTipo || 'TODOS';
+    const fVenc = this.state.filtroHonorarioVencimento || 'TODOS';
+    const fCanal = this.state.filtroHonorarioCanal || 'TODOS';
+    const fPref = this.state.filtroHonorarioPreferencia || 'TODOS';
+    const busca = (this.state.filtroHonorarioBusca || '').trim().toLowerCase();
+    const buscaDigitos = busca.replace(/\D/g, '');
+
+    return base.filter(h => {
+      if (!h || Number(h.saldo_aberto) <= 0 || h.status === 'PAGO') return false;
+      const emp = h.empresa_id ? (db.obterEmpresaSegura ? db.obterEmpresaSegura(h.empresa_id, h) : db.data.empresas.find(e => e.id === h.empresa_id)) : null;
+
+      if (busca) {
+        const cod = emp ? String(emp.codigo_interno || '').replace(/^#+/, '').toLowerCase() : '';
+        const razao = emp ? (emp.razao_social || '').toLowerCase() : (h.nome_cliente || '').toLowerCase();
+        const fantasia = emp ? (emp.nome_fantasia || '').toLowerCase() : '';
+        const doc = (emp ? (emp.cnpj || '') : (h.documento_cliente || '')).toLowerCase();
+        const docDigitos = doc.replace(/\D/g, '');
+        const desc = (h.descricao_cobranca || '').toLowerCase();
+        const bateTexto = cod.includes(busca) || razao.includes(busca) || fantasia.includes(busca) || doc.includes(busca) || desc.includes(busca);
+        const bateDigitos = buscaDigitos.length >= 2 && (docDigitos.includes(buscaDigitos) || cod === buscaDigitos);
+        if (!bateTexto && !bateDigitos) return false;
+      }
+
+      if (fTipo !== 'TODOS') {
+        const tp = h.tipo_lancamento || 'MENSAL';
+        if (tp !== fTipo) return false;
+      }
+
+      if (fStatus === 'PENDENTES') {
+        if (Number(h.saldo_aberto) <= 0 || h.status === 'PAGO') return false;
+      } else if (fStatus === 'COM_SALDO_ANT') {
+        if (Number(h.saldo_anterior || 0) <= 0) return false;
+      } else if (fStatus !== 'TODOS' && h.status !== fStatus) {
+        return false;
+      }
+
+      if (fVenc !== 'TODOS') {
+        const diaBase = Number(h.dia_base_vencimento || (emp && emp.dia_vencimento_honorario) || Number(String(h.data_vencimento || '').slice(-2)));
+        if (fVenc === 'DIA_10' && diaBase !== 10) return false;
+        if (fVenc === 'DIA_20' && diaBase !== 20) return false;
+        if (fVenc === 'OUTROS' && (diaBase === 10 || diaBase === 20)) return false;
+      }
+
+      if (fCanal !== 'TODOS') {
+        const canalEfetivo = h.canal_pagamento || (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
+        if (canalEfetivo !== fCanal) return false;
+      }
+
+      if (fPref !== 'TODOS' && db.ehOperadorInterno && db.ehOperadorInterno()) {
+        const prefObj = (emp && db.obterPreferenciaEnvioEmpresa) ? db.obterPreferenciaEnvioEmpresa(emp, comp) : null;
+        const canalPref = (prefObj && prefObj.canal) ? prefObj.canal : 'NAO_DEFINIDO';
+        if (canalPref !== fPref) return false;
+      }
+      return true;
+    });
+  },
+
+  selecionarTodosHonorariosVisiveis(marcar = true) {
+    const visiveis = this._obterHonorariosVisiveisEmAberto();
+    const setSel = new Set(Array.isArray(this.state.honorariosSelecionados) ? this.state.honorariosSelecionados : []);
+    if (marcar) {
+      visiveis.forEach(h => setSel.add(h.id));
+    } else {
+      visiveis.forEach(h => setSel.delete(h.id));
+    }
+    this.state.honorariosSelecionados = Array.from(setSel);
+    this.renderContentOnly();
+  },
+
+  limparSelecaoHonorarios() {
+    this.state.honorariosSelecionados = [];
+    this.renderContentOnly();
+  },
+
+  imprimirHonorariosSelecionados() {
+    const comp = this.state.competencia;
+    const base = (window.zgestorDB.data.honorarios || []).filter(h => h && h.competencia === comp);
+    const abertosSet = new Set(base.filter(h => Number(h.saldo_aberto) > 0 && h.status !== 'PAGO').map(h => h.id));
+    const ids = (Array.isArray(this.state.honorariosSelecionados) ? this.state.honorariosSelecionados : []).filter(id => abertosSet.has(id));
+    if (ids.length === 0) {
+      this.showToast('Selecione ao menos um recibo com saldo em aberto para imprimir.', 'info');
+      return;
+    }
+    window.ZGestorReports.imprimirLoteRecibosPixMes(comp, ids);
   }
 };
 

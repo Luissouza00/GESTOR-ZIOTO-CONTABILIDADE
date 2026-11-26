@@ -4572,6 +4572,28 @@ window.ZGestorViews = {
     const totalRecebidoMes = listaHon.reduce((acc, h) => acc + Number(h.valor_pago), 0);
     const totalSaldoAberto = listaHon.reduce((acc, h) => acc + Number(h.saldo_aberto), 0);
 
+    // Controle de seleção de recibos para impressão personalizada em lote
+    const selBruto = new Set(Array.isArray(appState.honorariosSelecionados) ? appState.honorariosSelecionados : []);
+    const mapAbertosComp = new Map();
+    for (let i = 0; i < listaHonBase.length; i++) {
+      const itemBase = listaHonBase[i];
+      if (itemBase && Number(itemBase.saldo_aberto) > 0 && itemBase.status !== 'PAGO') {
+        mapAbertosComp.set(itemBase.id, itemBase);
+      }
+    }
+    const idsSelecionadosValidos = [];
+    let totalValorSelecionados = 0;
+    selBruto.forEach(idSel => {
+      const hSel = mapAbertosComp.get(idSel);
+      if (hSel) {
+        idsSelecionadosValidos.push(idSel);
+        totalValorSelecionados += Number(hSel.saldo_aberto || 0);
+      }
+    });
+    const selecionadosSet = new Set(idsSelecionadosValidos);
+    const listaImprimiveisVisiveis = listaHon.filter(h => Number(h.saldo_aberto) > 0 && h.status !== 'PAGO');
+    const todosVisiveisSelecionados = listaImprimiveisVisiveis.length > 0 && listaImprimiveisVisiveis.every(h => selecionadosSet.has(h.id));
+
     const statusHonBadge = (st) => {
       const map = {
         PAGO: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -4608,7 +4630,12 @@ window.ZGestorViews = {
             <button onclick="ZGestorReports.emitirRelatorioNFSe('${comp}')" class="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
               <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Relatório para Emissão de NFS-e
             </button>
-            <button onclick="ZGestorReports.imprimirLoteRecibosPixMes('${comp}', ${temFiltroHonAtivo ? JSON.stringify(listaHon.map(h => h.id)).replace(/"/g, "'") : 'null'})" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
+            ${idsSelecionadosValidos.length > 0 ? `
+              <button onclick="ZGestorApp.imprimirHonorariosSelecionados()" class="px-3.5 py-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm ring-2 ring-teal-500/30 cursor-pointer">
+                <i data-lucide="printer" class="w-3.5 h-3.5"></i> Imprimir Selecionados (${idsSelecionadosValidos.length})
+              </button>
+            ` : ''}
+            <button onclick="ZGestorReports.imprimirLoteRecibosPixMes('${comp}', ${temFiltroHonAtivo ? JSON.stringify(listaHon.map(h => h.id)).replace(/"/g, "'") : 'null'})" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer">
               <i data-lucide="printer" class="w-3.5 h-3.5"></i> ${temFiltroHonAtivo ? `Imprimir Recibos Filtrados (${comp})` : `Imprimir Todos Recibos PIX (${comp})`}
             </button>
             <button onclick="ZGestorReports.emitirRelatorioAba('honorarios', ZGestorApp.state)" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
@@ -4749,15 +4776,73 @@ window.ZGestorViews = {
           </div>
         </div>
 
+        <!-- Barra de Seleção de Recibos para Impressão em Lote (Sempre presente no DOM para preservar foco da busca) -->
+        <div id="barra-selecao-honorarios">
+          ${idsSelecionadosValidos.length > 0 ? `
+            <div class="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-md border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div class="flex flex-wrap items-center gap-3">
+                <label class="inline-flex items-center gap-2 cursor-pointer font-bold">
+                  <input
+                    type="checkbox"
+                    ${todosVisiveisSelecionados ? 'checked' : ''}
+                    onchange="ZGestorApp.selecionarTodosHonorariosVisiveis(this.checked)"
+                    class="w-4 h-4 rounded accent-emerald-500 cursor-pointer"
+                  />
+                  <span>Selecionar visíveis (${listaImprimiveisVisiveis.length})</span>
+                </label>
+                <span class="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-extrabold">
+                  ${idsSelecionadosValidos.length} recibo(s) selecionado(s) • Total: ${this.formatCurrency(totalValorSelecionados)}
+                </span>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onclick="ZGestorApp.imprimirHonorariosSelecionados()"
+                  class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer">
+                  🖨️ Imprimir Recibos Selecionados (${idsSelecionadosValidos.length})
+                </button>
+                <button
+                  type="button"
+                  onclick="ZGestorApp.limparSelecaoHonorarios()"
+                  class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs cursor-pointer">
+                  Limpar Seleção
+                </button>
+              </div>
+            </div>
+          ` : (listaImprimiveisVisiveis.length > 0 ? `
+            <div class="bg-emerald-50/70 border border-emerald-200 px-4 py-2 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-950">
+              <div class="flex items-center gap-2 font-medium">
+                <span>☑️ Marque os clientes na primeira coluna abaixo para escolher quais recibos PIX deseja imprimir (1 recibo por página).</span>
+              </div>
+              <button
+                type="button"
+                onclick="ZGestorApp.selecionarTodosHonorariosVisiveis(true)"
+                class="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-[11px] cursor-pointer">
+                Selecionar em aberto visíveis (${listaImprimiveisVisiveis.length})
+              </button>
+            </div>
+          ` : '')}
+        </div>
+
         <!-- Tabela Principal de Honorários (Responsiva com rolagem horizontal) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div class="overflow-x-auto w-full">
-            <table class="w-full min-w-[820px] text-left border-collapse">
+            <table class="w-full min-w-[850px] text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
+                <th class="py-3 px-2.5 w-10 text-center" title="Selecionar recibos em aberto visíveis">
+                  <input
+                    type="checkbox"
+                    ${todosVisiveisSelecionados ? 'checked' : ''}
+                    ${listaImprimiveisVisiveis.length === 0 ? 'disabled' : ''}
+                    onchange="ZGestorApp.selecionarTodosHonorariosVisiveis(this.checked)"
+                    class="w-4 h-4 rounded accent-emerald-600 cursor-pointer disabled:opacity-40"
+                    title="Selecionar ou desmarcar todos os recibos em aberto visíveis"
+                  />
+                </th>
                 <th class="py-3 px-3 w-[20%]">Cliente & Vencimento</th>
-                <th class="py-3 px-2.5 w-[15%]">Mensal & Extras</th>
-                <th class="py-3 px-2.5 w-[14%]">Saldo Mês Ant.</th>
+                <th class="py-3 px-2.5 w-[14%]">Mensal & Extras</th>
+                <th class="py-3 px-2.5 w-[13%]">Saldo Mês Ant.</th>
                 <th class="py-3 px-2.5 w-[13%]">Total a Pagar</th>
                 <th class="py-3 px-2.5 w-[14%]">Pagamentos</th>
                 <th class="py-3 px-2.5 w-[11%]">Em Aberto</th>
@@ -4767,7 +4852,7 @@ window.ZGestorViews = {
             <tbody class="divide-y divide-slate-100 text-xs">
               ${listaHon.length === 0 ? `
                 <tr>
-                  <td colspan="7" class="py-8 text-center text-slate-400">
+                  <td colspan="8" class="py-8 text-center text-slate-400">
                     Nenhum lançamento de honorário encontrado para os filtros aplicados.
                   </td>
                 </tr>
@@ -4797,8 +4882,28 @@ window.ZGestorViews = {
         const totalLiquido = Math.max(0, Number(h.valor_mensal) + saldoAnt + Number(h.servicos_extras) - Number(h.desconto));
         const tpLanc = h.tipo_lancamento || 'MENSAL';
         const docLinha = emp ? emp.cnpj : (h.documento_cliente || '');
+        const podeImprimirRecibo = Number(h.saldo_aberto) > 0 && h.status !== 'PAGO';
+        const linhaSelecionada = podeImprimirRecibo && selecionadosSet.has(h.id);
         return `
-                  <tr class="hover:bg-slate-50 ${saldoAnt > 0 ? 'bg-amber-50/20' : tpLanc === 'DECIMO_TERCEIRO' ? 'bg-rose-50/20' : ''}">
+                  <tr class="hover:bg-slate-50 ${linhaSelecionada ? 'bg-emerald-50/60 ring-1 ring-inset ring-emerald-200' : saldoAnt > 0 ? 'bg-amber-50/20' : tpLanc === 'DECIMO_TERCEIRO' ? 'bg-rose-50/20' : ''}">
+                    <td class="py-3 px-2.5 text-center align-middle">
+                      ${podeImprimirRecibo ? `
+                        <input
+                          type="checkbox"
+                          ${linhaSelecionada ? 'checked' : ''}
+                          onchange="ZGestorApp.toggleSelecaoHonorario('${h.id}', this.checked)"
+                          class="w-4 h-4 rounded accent-emerald-600 cursor-pointer"
+                          title="Selecionar este recibo para impressão em lote"
+                        />
+                      ` : `
+                        <input
+                          type="checkbox"
+                          disabled
+                          class="w-4 h-4 rounded opacity-30 cursor-not-allowed"
+                          title="Honorário já quitado (sem saldo a cobrar)"
+                        />
+                      `}
+                    </td>
                     <td class="py-3 px-3">
                       <div class="font-bold text-slate-900 flex flex-wrap items-center gap-1">
                         ${codHon ? `<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[10px] font-extrabold">${this.escapeHtml(codHon)}</span>` : ''}
@@ -5444,7 +5549,7 @@ window.ZGestorViews = {
           <div class="zg-auth-footer mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="zg-auth-version inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> v1.4.5
+              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.4.9'}
             </span>
           </div>
         </div>

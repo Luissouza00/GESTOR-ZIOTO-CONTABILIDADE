@@ -1,5 +1,5 @@
 // ZGESTOR - Service Worker PWA (Instalação e Suporte Mobile Offline)
-const CACHE_NAME = 'zgestor-pwa-v1.4.8';
+const CACHE_NAME = 'zgestor-pwa-v1.4.9';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-cache' })
       .then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
