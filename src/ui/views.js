@@ -4512,26 +4512,32 @@ window.ZGestorViews = {
     const fBuscaHon = String(appState.filtroHonorarioBusca || '').toLowerCase().trim();
     const fBuscaHonNum = fBuscaHon.replace(/\D/g, '');
     const fStatusHon = appState.filtroHonorarioStatus || 'TODOS';
+    const fTipoHon = appState.filtroHonorarioTipo || 'TODOS';
     const fVencHon = appState.filtroHonorarioVencimento || 'TODOS';
     const fCanalHon = appState.filtroHonorarioCanal || 'TODOS';
     const fPrefHon = appState.filtroHonorarioPreferencia || 'TODOS';
-    const temFiltroHonAtivo = Boolean(fBuscaHon || fStatusHon !== 'TODOS' || fVencHon !== 'TODOS' || fCanalHon !== 'TODOS' || fPrefHon !== 'TODOS');
+    const temFiltroHonAtivo = Boolean(fBuscaHon || fStatusHon !== 'TODOS' || fTipoHon !== 'TODOS' || fVencHon !== 'TODOS' || fCanalHon !== 'TODOS' || fPrefHon !== 'TODOS');
 
     const qtdAtrasadosBase = listaHonBase.filter(h => h.status === 'ATRASADO').length;
     const qtdAbertosBase = listaHonBase.filter(h => h.status === 'ABERTO' || h.status === 'PARCIAL').length;
     const qtdPagosBase = listaHonBase.filter(h => h.status === 'PAGO').length;
 
     const listaHon = listaHonBase.filter(h => {
-      const emp = this.obterEmp(db, h.empresa_id, h);
+      const emp = h.empresa_id ? this.obterEmp(db, h.empresa_id, h) : null;
       if (fBuscaHon) {
         const cod = emp ? this.codLimpo(emp.codigo_interno).toLowerCase() : '';
-        const razao = emp ? String(emp.razao_social || '').toLowerCase() : '';
+        const razao = emp ? String(emp.razao_social || '').toLowerCase() : String(h.nome_cliente || '').toLowerCase();
         const fantasia = emp ? String(emp.nome_fantasia || '').toLowerCase() : '';
-        const cnpjFmt = emp ? String(emp.cnpj || '').toLowerCase() : '';
+        const cnpjFmt = emp ? String(emp.cnpj || '').toLowerCase() : String(h.documento_cliente || '').toLowerCase();
+        const descCob = String(h.descricao_cobranca || '').toLowerCase();
         const cnpjNum = cnpjFmt.replace(/\D/g, '');
-        const matchTexto = cod.includes(fBuscaHon) || razao.includes(fBuscaHon) || fantasia.includes(fBuscaHon) || cnpjFmt.includes(fBuscaHon);
+        const matchTexto = cod.includes(fBuscaHon) || razao.includes(fBuscaHon) || fantasia.includes(fBuscaHon) || cnpjFmt.includes(fBuscaHon) || descCob.includes(fBuscaHon);
         const matchNum = fBuscaHonNum.length >= 2 && (cnpjNum.includes(fBuscaHonNum) || cod === fBuscaHonNum);
         if (!matchTexto && !matchNum) return false;
+      }
+      if (fTipoHon !== 'TODOS') {
+        const tpLanc = h.tipo_lancamento || 'MENSAL';
+        if (fTipoHon !== tpLanc) return false;
       }
       if (fStatusHon !== 'TODOS') {
         if (fStatusHon === 'PENDENTES') {
@@ -4550,7 +4556,7 @@ window.ZGestorViews = {
         if (fVencHon === 'OUTROS' && (diaBase === 10 || diaBase === 20 || diaStr === '10' || diaStr === '20')) return false;
       }
       if (fCanalHon !== 'TODOS') {
-        const canalEmp = (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
+        const canalEmp = h.canal_pagamento || (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
         if (canalEmp !== fCanalHon) return false;
       }
       if (fPrefHon !== 'TODOS' && db.ehOperadorInterno && db.ehOperadorInterno()) {
@@ -4608,7 +4614,13 @@ window.ZGestorViews = {
             <button onclick="ZGestorReports.emitirRelatorioAba('honorarios', ZGestorApp.state)" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
               <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Relatório Financeiro
             </button>
-            <button onclick="ZGestorApp.gerarHonorariosMesAtual()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
+            <button onclick="ZGestorApp.openModalHonorarioAvulso()" class="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer" title="Lançar recibo ou cobrança avulsa para empresa pendente/cadastrada ou cliente avulso">
+              <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> + Cobrança / Recibo Avulso
+            </button>
+            <button onclick="ZGestorApp.openModalHonorario13()" class="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer" title="Gerar 13º Honorário em 2 parcelas (1ª Dezembro e 2ª Janeiro)">
+              <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> + 13º Honorário (Dez/Jan)
+            </button>
+            <button onclick="ZGestorApp.gerarHonorariosMesAtual()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer">
               <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Gerar Honorários ${comp}
             </button>
           </div>
@@ -4670,7 +4682,7 @@ window.ZGestorViews = {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
             <div>
               <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Buscar Cliente, Código ou CNPJ</label>
               <input
@@ -4678,9 +4690,18 @@ window.ZGestorViews = {
                 id="input-filtro-honorario-busca"
                 value="${this.escapeHtml(appState.filtroHonorarioBusca || '')}"
                 oninput="ZGestorApp.setFiltro('filtroHonorarioBusca', this.value)"
-                placeholder="Ex: 625, Razão Social ou CNPJ..."
+                placeholder="Ex: 625, Razão, Avulso..."
                 class="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500"
               />
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Tipo de Lançamento</label>
+              <select onchange="ZGestorApp.setFiltro('filtroHonorarioTipo', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 bg-white">
+                <option value="TODOS" ${fTipoHon === 'TODOS' ? 'selected' : ''}>Todos os Tipos</option>
+                <option value="MENSAL" ${fTipoHon === 'MENSAL' ? 'selected' : ''}>📄 Honorário Mensal</option>
+                <option value="DECIMO_TERCEIRO" ${fTipoHon === 'DECIMO_TERCEIRO' ? 'selected' : ''}>🎄 13º Honorário (Dez/Jan)</option>
+                <option value="AVULSO" ${fTipoHon === 'AVULSO' ? 'selected' : ''}>⚡ Cobrança / Recibo Avulso</option>
+              </select>
             </div>
             <div>
               <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Status de Cobrança</label>
@@ -4765,26 +4786,33 @@ window.ZGestorViews = {
       }
       const svgPrint = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>';
       const svgSliders = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>';
+      const svgTrashHon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
 
       return listaHon.map(h => {
-        const emp = this.obterEmp(db, h.empresa_id, h);
+        const emp = h.empresa_id ? this.obterEmp(db, h.empresa_id, h) : null;
         const codHon = emp ? this.codLimpo(emp.codigo_interno) : '';
         const pags = pagsPorHon.get(h.id) || [];
         const saldoAnt = Number(h.saldo_anterior || 0);
         const compRefAnt = h.competencia_saldo_anterior || compAnt;
         const totalLiquido = Math.max(0, Number(h.valor_mensal) + saldoAnt + Number(h.servicos_extras) - Number(h.desconto));
+        const tpLanc = h.tipo_lancamento || 'MENSAL';
+        const docLinha = emp ? emp.cnpj : (h.documento_cliente || '');
         return `
-                  <tr class="hover:bg-slate-50 ${saldoAnt > 0 ? 'bg-amber-50/20' : ''}">
+                  <tr class="hover:bg-slate-50 ${saldoAnt > 0 ? 'bg-amber-50/20' : tpLanc === 'DECIMO_TERCEIRO' ? 'bg-rose-50/20' : ''}">
                     <td class="py-3 px-3">
-                      <div class="font-bold text-slate-900">
-                        ${codHon ? `<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[10px] font-extrabold mr-1">${this.escapeHtml(codHon)}</span>` : ''}
-                        <span>${this.escapeHtml(this.nomeEmp(emp, { fallbackObj: h }))}</span>
+                      <div class="font-bold text-slate-900 flex flex-wrap items-center gap-1">
+                        ${codHon ? `<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[10px] font-extrabold">${this.escapeHtml(codHon)}</span>` : ''}
+                        ${h.cliente_avulso ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[9.5px] font-extrabold">Não Cliente</span>` : ''}
+                        ${tpLanc === 'AVULSO' && !h.cliente_avulso ? `<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[9.5px] font-extrabold">Avulso</span>` : ''}
+                        ${tpLanc === 'DECIMO_TERCEIRO' ? `<span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-900 border border-rose-300 text-[9.5px] font-extrabold">🎄 13º (${h.parcela_13 || 1}/${h.total_parcelas_13 || 2})</span>` : ''}
+                        <span>${this.escapeHtml(emp ? this.nomeEmp(emp, { fallbackObj: h }) : (h.nome_cliente || 'Cliente Avulso'))}</span>
                       </div>
-                      ${emp ? `<div class="text-[10px] text-slate-500 font-mono mt-0.5">${this.escapeHtml(emp.cnpj)}</div>` : ''}
+                      ${docLinha ? `<div class="text-[10px] text-slate-500 font-mono mt-0.5">${this.escapeHtml(docLinha)}</div>` : ''}
+                      ${h.descricao_cobranca && h.descricao_cobranca !== 'HONORÁRIO MENSAL' ? `<div class="text-[10.5px] font-bold text-slate-700 mt-0.5">${this.escapeHtml(h.descricao_cobranca)}${h.competencia_referencia && h.competencia_referencia !== h.competencia ? ` (Ref. ${this.escapeHtml(h.competencia_referencia)})` : ''}</div>` : (h.competencia_referencia && h.competencia_referencia !== h.competencia ? `<div class="text-[10.5px] font-bold text-amber-800 mt-0.5">Ref. Competência ${this.escapeHtml(h.competencia_referencia)}</div>` : '')}
                       <div class="text-[11px] text-indigo-700 font-semibold">Venc: ${this.formatDate(h.data_vencimento)}</div>
                       <div class="mt-1 flex flex-wrap items-center gap-1">
                         ${(() => {
-                          const c = (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
+                          const c = h.canal_pagamento || (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
                           const map = {
                             PIX_PRINCIPAL: { label: 'PIX Principal', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
                             PIX_SECUNDARIO: { label: 'PIX Secundário', cls: 'bg-blue-50 text-blue-800 border-blue-200' },
@@ -4794,7 +4822,7 @@ window.ZGestorViews = {
                           const item = map[c] || map.PIX_PRINCIPAL;
                           return `<span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold border ${item.cls}" title="Canal de Recebimento">${item.label}</span>`;
                         })()}
-                        ${emp ? this.renderBadgePreferenciaEnvio(emp, comp, true) : ''}
+                        ${emp ? this.renderBadgePreferenciaEnvio(emp, comp, true) : (h.contato_cliente && db.ehOperadorInterno && db.ehOperadorInterno() ? `<span class="text-[10px] text-slate-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium">Contato: ${this.escapeHtml(h.contato_cliente)}</span>` : '')}
                       </div>
                       ${h.observacoes ? `<div class="text-[10px] text-slate-500 mt-0.5 italic">"${this.escapeHtml(h.observacoes)}"</div>` : ''}
                     </td>
@@ -4837,9 +4865,14 @@ window.ZGestorViews = {
                             Baixar
                           </button>
                         ` : ''}
-                        <button onclick="ZGestorApp.openModalEditarHonorario('${h.id}')" class="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100" title="Ajustar">
+                        <button onclick="ZGestorApp.openModalEditarHonorario('${h.id}')" class="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer" title="Ajustar">
                           ${svgSliders}
                         </button>
+                        ${Number(h.valor_pago || 0) <= 0 ? `
+                          <button onclick="ZGestorApp.excluirHonorarioConfirmado('${h.id}')" class="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer" title="Excluir lançamento">
+                            ${svgTrashHon}
+                          </button>
+                        ` : ''}
                       </div>
                     </td>
                   </tr>

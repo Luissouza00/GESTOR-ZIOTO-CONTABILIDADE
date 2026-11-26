@@ -62,6 +62,7 @@ window.ZGestorApp = {
     filtroEmpresaRegime: 'TODOS',
     filtroHonorarioBusca: '',
     filtroHonorarioStatus: 'TODOS',
+    filtroHonorarioTipo: 'TODOS',
     filtroHonorarioVencimento: 'TODOS',
     filtroHonorarioCanal: 'TODOS',
     filtroHonorarioPreferencia: 'TODOS',
@@ -420,6 +421,7 @@ window.ZGestorApp = {
   limparFiltrosHonorarios() {
     this.state.filtroHonorarioBusca = '';
     this.state.filtroHonorarioStatus = 'TODOS';
+    this.state.filtroHonorarioTipo = 'TODOS';
     this.state.filtroHonorarioVencimento = 'TODOS';
     this.state.filtroHonorarioCanal = 'TODOS';
     this.state.filtroHonorarioPreferencia = 'TODOS';
@@ -6184,7 +6186,21 @@ window.ZGestorApp = {
                 <input id="f-pix-tel" type="text" value="${escapeHtml(esc.telefone_escritorio || '')}" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 bg-white" />
               </div>
               <input id="f-pix-crc" type="hidden" value="${escapeHtml(esc.crc_escritorio || '')}" />
-              <input id="f-pix-cid" type="hidden" value="${escapeHtml(esc.cidade_uf || '')}" />
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-slate-700 mb-1">Rua / Logradouro</label>
+                <input id="f-pix-logradouro" type="text" value="${escapeHtml(esc.logradouro || esc.endereco_escritorio || '')}" placeholder="Ex: Rua Olegário Maciel" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 bg-white" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Número</label>
+                <input id="f-pix-numero" type="text" value="${escapeHtml(esc.numero || '')}" placeholder="Ex: 150" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 bg-white font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Bairro / Cidade-UF</label>
+                <div class="grid grid-cols-2 gap-1.5">
+                  <input id="f-pix-bairro" type="text" value="${escapeHtml(esc.bairro || '')}" placeholder="Bairro" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 bg-white" />
+                  <input id="f-pix-cid" type="text" value="${escapeHtml(esc.cidade_uf || '')}" placeholder="Mutum/MG" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 bg-white" />
+                </div>
+              </div>
               <div class="sm:col-span-4">
                 <label class="block font-bold text-slate-700 mb-1">Instrução / Mensagem no Recibo</label>
                 <input id="f-pix-msg" type="text" value="${escapeHtml(esc.mensagem_recibo || '')}" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 bg-white" />
@@ -6212,11 +6228,18 @@ window.ZGestorApp = {
 
   _coletarCamposAbertosModalPix(atual) {
     if (!document.getElementById('form-modal-config-pix')) return {};
+    const logr = (document.getElementById('f-pix-logradouro')?.value ?? atual.logradouro ?? atual.endereco_escritorio ?? '').trim();
+    const num = (document.getElementById('f-pix-numero')?.value ?? atual.numero ?? '').trim();
+    const bairro = (document.getElementById('f-pix-bairro')?.value ?? atual.bairro ?? '').trim();
     return {
       nome_escritorio: (document.getElementById('f-pix-esc')?.value || atual.nome_escritorio || '').trim(),
       cnpj_escritorio: (document.getElementById('f-pix-cnpj')?.value || atual.cnpj_escritorio || '').trim(),
       crc_escritorio: (document.getElementById('f-pix-crc')?.value || atual.crc_escritorio || '').trim(),
       telefone_escritorio: (document.getElementById('f-pix-tel')?.value || atual.telefone_escritorio || '').trim(),
+      logradouro: logr,
+      numero: num,
+      bairro,
+      endereco_escritorio: [logr, num ? `nº ${num}` : '', bairro].filter(Boolean).join(', '),
       cidade_uf: (document.getElementById('f-pix-cid')?.value || atual.cidade_uf || '').trim(),
       mensagem_recibo: (document.getElementById('f-pix-msg')?.value || atual.mensagem_recibo || '').trim(),
       pix_principal: {
@@ -6273,7 +6296,12 @@ window.ZGestorApp = {
       crc_escritorio: (document.getElementById('f-esc-crc')?.value || atual.crc_escritorio).trim(),
       cep: (document.getElementById('f-esc-cep')?.value || atual.cep || '').trim(),
       logradouro: (document.getElementById('f-esc-logradouro')?.value || atual.logradouro || '').trim(),
-      endereco_escritorio: (document.getElementById('f-esc-logradouro')?.value || atual.endereco_escritorio || '').trim(),
+      endereco_escritorio: [
+        (document.getElementById('f-esc-logradouro')?.value || atual.logradouro || atual.endereco_escritorio || '').trim(),
+        (document.getElementById('f-esc-numero')?.value || atual.numero || '').trim() ? `nº ${(document.getElementById('f-esc-numero')?.value || atual.numero || '').trim()}` : '',
+        (document.getElementById('f-esc-comp')?.value || atual.complemento || '').trim(),
+        (document.getElementById('f-esc-bairro')?.value || atual.bairro || '').trim()
+      ].filter(Boolean).join(', '),
       numero: (document.getElementById('f-esc-numero')?.value || atual.numero || '').trim(),
       complemento: (document.getElementById('f-esc-comp')?.value || atual.complemento || '').trim(),
       bairro: (document.getElementById('f-esc-bairro')?.value || atual.bairro || '').trim(),
@@ -6726,6 +6754,405 @@ window.ZGestorApp = {
     this.closeModal();
     this.showToast('Valores e canal PIX do honorário atualizados!', 'success');
     this.renderAll();
+  },
+
+  // ===========================================================================
+  // COBRANÇA / RECIBO AVULSO (EMPRESAS PENDENTES, CARTEIRA OU NÃO CLIENTES)
+  // ===========================================================================
+  openModalHonorarioAvulso() {
+    const db = window.zgestorDB;
+    if (!db.canAccessModule('honorarios')) {
+      this.showToast('Acesso restrito ao setor Financeiro e Administradores.', 'error');
+      return;
+    }
+    const comp = this.state.competencia || '10/2026';
+    const vencPadrao = db.calcularVencimentoHonorarioUtil(comp, 10);
+    const empInicial = (db.data.empresas || [])[0] || null;
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 max-h-[94vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-700">Lançamento Manual & Avulso no Controle</span>
+              <h3 class="text-base font-bold text-slate-900">Nova Cobrança / Recibo Avulso</h3>
+              <p class="text-xs text-slate-500">Lance recibos pendentes/retroativos de empresas da carteira ou cobrança avulsa para não clientes</p>
+            </div>
+            <button type="button" onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitHonorarioAvulso(event, false)" class="space-y-4 mt-4 text-xs">
+            <div>
+              <label class="block font-bold text-slate-800 mb-1.5">Tipo de Pagador *</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="cursor-pointer">
+                  <input type="radio" name="f-av-vinculo" value="CARTEIRA" checked onchange="ZGestorApp.alternarVinculoHonorarioAvulso(this.value)" class="sr-only peer" />
+                  <div class="p-2.5 rounded-xl border-2 border-slate-200 text-center font-bold transition peer-checked:border-indigo-600 peer-checked:bg-indigo-50 peer-checked:text-indigo-950">
+                    🏢 Empresa Cadastrada / Pendente
+                  </div>
+                </label>
+                <label class="cursor-pointer">
+                  <input type="radio" name="f-av-vinculo" value="AVULSO" onchange="ZGestorApp.alternarVinculoHonorarioAvulso(this.value)" class="sr-only peer" />
+                  <div class="p-2.5 rounded-xl border-2 border-slate-200 text-center font-bold transition peer-checked:border-amber-600 peer-checked:bg-amber-50 peer-checked:text-amber-950">
+                    👤 Cliente Avulso / Não Cliente
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Bloco 1: Empresa da Carteira -->
+            <div id="box-hon-av-carteira" class="space-y-2">
+              <label class="block font-bold text-slate-700">Empresa / Cliente (inclui Ativas, Onboarding e Pendentes) *</label>
+              ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                uid: 'hon-avulso-emp',
+                inputId: 'f-av-empresa-id',
+                selectedId: empInicial ? empInicial.id : '',
+                placeholder: 'Digite código de chamada, razão social ou CNPJ...',
+                onChangeFn: 'aoSelecionarEmpresaHonorarioAvulso'
+              })}
+            </div>
+
+            <!-- Bloco 2: Cliente Avulso / Não Cadastrado -->
+            <div id="box-hon-av-externo" class="hidden space-y-3 p-3.5 rounded-xl bg-amber-50/60 border border-amber-200">
+              <div>
+                <label class="block font-bold text-slate-800 mb-1">Nome Completo / Razão Social do Pagador *</label>
+                <input id="f-av-nome" type="text" placeholder="Ex: João da Silva ou Empresa XYZ Ltda" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-bold" />
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-bold text-slate-800 mb-1">CPF ou CNPJ (sai no recibo)</label>
+                  <input id="f-av-doc" type="text" placeholder="000.000.000-00 ou 00.000.000/0001-00" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-mono" />
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-800 mb-1">Contato Interno (WhatsApp / E-mail)</label>
+                  <input id="f-av-contato" type="text" placeholder="Visível só p/ operadores" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white" />
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Controlar na Competência *</label>
+                <input id="f-av-comp-controle" type="text" required value="${escapeHtml(comp)}" placeholder="MM/AAAA (ex: 10/2026)" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono font-bold" />
+                <span class="text-[10px] text-slate-400">Aba de mês onde este lançamento aparecerá</span>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Competência Impressa no Recibo *</label>
+                <input id="f-av-comp-recibo" type="text" required value="${escapeHtml(comp)}" placeholder="Ex: 09/2026 se retroativo" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono font-bold text-indigo-900" />
+                <span class="text-[10px] text-slate-400">Altere caso seja recibo pendente de mês anterior</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Descrição Impressa no Recibo *</label>
+              <input
+                id="f-av-descricao"
+                type="text"
+                list="lista-descricoes-recibo-avulso"
+                required
+                value="HONORÁRIO MENSAL"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold text-slate-900"
+              />
+              <datalist id="lista-descricoes-recibo-avulso">
+                <option value="HONORÁRIO MENSAL"></option>
+                <option value="HONORÁRIO CONTÁBIL PENDENTE"></option>
+                <option value="ABERTURA DE EMPRESA"></option>
+                <option value="ALTERAÇÃO CONTRATUAL"></option>
+                <option value="BAIXA / ENCERRAMENTO DE EMPRESA"></option>
+                <option value="DECLARAÇÃO DE IMPOSTO DE RENDA (IRPF)"></option>
+                <option value="DECLARAÇÃO ITR / CCIR"></option>
+                <option value="SERVIÇO CONTÁBIL / FISCAL AVULSO"></option>
+              </datalist>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Valor a Cobrar (R$) *</label>
+                <input id="f-av-valor" type="number" step="0.01" min="0.01" required value="${empInicial && empInicial.valor_honorario_padrao ? empInicial.valor_honorario_padrao : ''}" placeholder="0,00" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-extrabold text-slate-900" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Vencimento *</label>
+                <input id="f-av-venc" type="date" required value="${vencPadrao}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Conta / Canal PIX</label>
+                <select id="f-av-canal" class="w-full rounded-xl border border-slate-300 px-2.5 py-2 bg-white font-semibold">
+                  <option value="PIX_PRINCIPAL" ${(empInicial?.canal_pagamento_padrao || 'PIX_PRINCIPAL') === 'PIX_PRINCIPAL' ? 'selected' : ''}>PIX Principal (Conta 1)</option>
+                  <option value="PIX_SECUNDARIO" ${empInicial?.canal_pagamento_padrao === 'PIX_SECUNDARIO' ? 'selected' : ''}>PIX Secundário (Conta 2)</option>
+                  <option value="PIX_AUTONOMO" ${empInicial?.canal_pagamento_padrao === 'PIX_AUTONOMO' ? 'selected' : ''}>PIX Autônomo (Conta 3)</option>
+                  <option value="DINHEIRO" ${empInicial?.canal_pagamento_padrao === 'DINHEIRO' ? 'selected' : ''}>Dinheiro</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Observações no Recibo (Opcional)</label>
+              <input id="f-av-obs" type="text" placeholder="Ex: Referente a abertura empresarial / honorário pendente..." class="w-full rounded-xl border border-slate-300 px-3 py-2" />
+            </div>
+
+            <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-200">
+              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+              <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow cursor-pointer">
+                Salvar no Controle
+              </button>
+              <button type="button" onclick="ZGestorApp.submitHonorarioAvulso(null, true)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow cursor-pointer">
+                🖨️ Salvar e Imprimir Recibo PIX
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  alternarVinculoHonorarioAvulso(tipo) {
+    const boxCart = document.getElementById('box-hon-av-carteira');
+    const boxExt = document.getElementById('box-hon-av-externo');
+    if (tipo === 'AVULSO') {
+      if (boxCart) boxCart.classList.add('hidden');
+      if (boxExt) boxExt.classList.remove('hidden');
+      const desc = document.getElementById('f-av-descricao');
+      if (desc && desc.value === 'HONORÁRIO MENSAL') desc.value = 'SERVIÇO CONTÁBIL / FISCAL AVULSO';
+    } else {
+      if (boxCart) boxCart.classList.remove('hidden');
+      if (boxExt) boxExt.classList.add('hidden');
+    }
+  },
+
+  aoSelecionarEmpresaHonorarioAvulso(empresaId) {
+    const emp = window.zgestorDB.obterEmpresaSegura(empresaId);
+    if (!emp) return;
+    const valEl = document.getElementById('f-av-valor');
+    const canalEl = document.getElementById('f-av-canal');
+    const vencEl = document.getElementById('f-av-venc');
+    const compCtrl = document.getElementById('f-av-comp-controle')?.value || this.state.competencia;
+    if (valEl && Number(emp.valor_honorario_padrao) > 0) {
+      valEl.value = emp.valor_honorario_padrao;
+    }
+    if (canalEl && emp.canal_pagamento_padrao) {
+      canalEl.value = emp.canal_pagamento_padrao;
+    }
+    if (vencEl && emp.dia_vencimento_honorario) {
+      vencEl.value = window.zgestorDB.calcularVencimentoHonorarioUtil(compCtrl, emp.dia_vencimento_honorario);
+    }
+  },
+
+  submitHonorarioAvulso(e, imprimirImediato = false) {
+    if (e && e.preventDefault) e.preventDefault();
+    try {
+      const vinculo = document.querySelector('input[name="f-av-vinculo"]:checked')?.value || 'CARTEIRA';
+      const isAvulso = vinculo === 'AVULSO';
+      const novo = window.zgestorDB.lancarHonorarioAvulso({
+        cliente_avulso: isAvulso,
+        empresa_id: isAvulso ? null : document.getElementById('f-av-empresa-id')?.value,
+        nome_cliente: isAvulso ? document.getElementById('f-av-nome')?.value : '',
+        documento_cliente: isAvulso ? document.getElementById('f-av-doc')?.value : '',
+        contato_cliente: isAvulso ? document.getElementById('f-av-contato')?.value : '',
+        competencia: document.getElementById('f-av-comp-controle')?.value,
+        competencia_referencia: document.getElementById('f-av-comp-recibo')?.value,
+        descricao_cobranca: document.getElementById('f-av-descricao')?.value,
+        valor_mensal: document.getElementById('f-av-valor')?.value,
+        data_vencimento: document.getElementById('f-av-venc')?.value,
+        canal_pagamento: document.getElementById('f-av-canal')?.value,
+        observacoes: document.getElementById('f-av-obs')?.value
+      });
+      this.state.competencia = novo.competencia;
+      this.closeModal();
+      this.showToast('Cobrança avulsa lançada com sucesso no controle!', 'success');
+      this.renderAll();
+      if (imprimirImediato && window.ZGestorReports) {
+        window.ZGestorReports.imprimirReciboHonorarioPix(novo.id);
+      }
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  excluirHonorarioConfirmado(honorarioId) {
+    if (!confirm('Deseja realmente excluir este lançamento de honorário?')) return;
+    try {
+      window.zgestorDB.excluirHonorarioLancamento(honorarioId);
+      this.showToast('Lançamento removido.', 'info');
+      this.renderContentOnly();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  // ===========================================================================
+  // 13º HONORÁRIO EM DUAS PARCELAS (1ª EM DEZEMBRO E 2ª EM JANEIRO)
+  // ===========================================================================
+  openModalHonorario13() {
+    const db = window.zgestorDB;
+    if (!db.canAccessModule('honorarios')) {
+      this.showToast('Acesso restrito ao setor Financeiro e Administradores.', 'error');
+      return;
+    }
+    const partesComp = String(this.state.competencia || '10/2026').split('/');
+    const anoBase = parseInt(partesComp[1], 10) || 2026;
+    const empresasComHon = (db.data.empresas || []).filter(e => e && (e.status === 'ATIVA' || e.status === 'EM_ONBOARDING'));
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 max-h-[94vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <span class="text-[10px] font-extrabold uppercase tracking-wider text-rose-700">Cobrança Anual em 2 Parcelas (Dezembro e Janeiro)</span>
+              <h3 class="text-base font-bold text-slate-900">Gerar / Lançar 13º Honorário</h3>
+              <p class="text-xs text-slate-500">1ª Parcela (50%) vence em <strong>Dezembro</strong> (Comp. 11) • 2ª Parcela (50%) vence em <strong>Janeiro</strong> (Comp. 12)</p>
+            </div>
+            <button type="button" onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitHonorario13(event)" class="space-y-4 mt-4 text-xs">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-rose-50/60 border border-rose-200">
+              <div>
+                <label class="block font-bold text-rose-950 mb-1">Ano Base do 13º *</label>
+                <input id="f-13-ano" type="number" min="2024" max="2035" required value="${anoBase}" class="w-full rounded-xl border border-rose-300 px-3 py-2 bg-white font-extrabold text-rose-950" />
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-rose-950 mb-1">Parcelas a Lançar *</label>
+                <select id="f-13-modo" class="w-full rounded-xl border border-rose-300 px-3 py-2 bg-white font-bold text-slate-900">
+                  <option value="AMBAS">✅ Ambas: 1ª em Dezembro/${anoBase} (50%) + 2ª em Janeiro/${anoBase + 1} (50%)</option>
+                  <option value="SOMENTE_1_DEZ">Somente 1ª Parcela — Vence em Dezembro/${anoBase} (Comp. 11/${anoBase})</option>
+                  <option value="SOMENTE_2_JAN">Somente 2ª Parcela — Vence em Janeiro/${anoBase + 1} (Comp. 12/${anoBase})</option>
+                  <option value="UNICA_DEZ">Parcela Única (100%) — Vence em Dezembro/${anoBase}</option>
+                </select>
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-slate-700 mb-1">Dia de Vencimento das Parcelas (prorroga se não útil)</label>
+                <select id="f-13-dia" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
+                  <option value="">Usar o dia de vencimento padrão de cada cliente (Dia 10 ou Dia 20)</option>
+                  <option value="10">Fixar Dia 10 (Dezembro e Janeiro, prorrogando p/ dia útil)</option>
+                  <option value="15">Fixar Dia 15 (Dezembro e Janeiro, prorrogando p/ dia útil)</option>
+                  <option value="20" selected>Fixar Dia 20 (Dezembro e Janeiro, prorrogando p/ dia útil)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Valor Total 13º (se 1 cliente)</label>
+                <input id="f-13-valor-custom" type="number" step="0.01" min="0" placeholder="Automático (mensal)" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold" />
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <label class="font-bold text-slate-800">Selecione as Empresas que terão 13º Honorário:</label>
+                <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <button type="button" onclick="ZGestorApp.selecionarLoteEmpresasModal13('COM_HON')" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold cursor-pointer">Todas c/ Valor</button>
+                  <button type="button" onclick="ZGestorApp.selecionarLoteEmpresasModal13('EXCETO_MEI')" class="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold cursor-pointer">Exceto MEI</button>
+                  <button type="button" onclick="ZGestorApp.selecionarLoteEmpresasModal13('NENHUMA')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold cursor-pointer">Limpar</button>
+                </div>
+              </div>
+
+              <input
+                type="text"
+                placeholder="Filtrar empresa na lista por código, razão social ou regime..."
+                oninput="ZGestorApp.filtrarEmpresasModal13(this.value)"
+                class="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs"
+              />
+
+              <div id="lista-empresas-modal-13" class="max-h-60 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100 bg-slate-50/40">
+                ${empresasComHon.map(emp => {
+                  const valM = Number(emp.valor_honorario_padrao || 0);
+                  const metade = (valM / 2).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  const cod = String(emp.codigo_interno || '').replace(/^#+/, '').trim();
+                  const textoFiltro = `${cod} ${emp.razao_social || ''} ${emp.nome_fantasia || ''} ${emp.cnpj || ''} ${emp.regime_tributario || ''}`.toLowerCase();
+                  return `
+                    <label data-busca="${escapeHtml(textoFiltro)}" data-regime="${escapeHtml(emp.regime_tributario || '')}" data-val="${valM}" class="item-emp-13 flex items-center justify-between gap-2 px-3 py-2 hover:bg-white cursor-pointer">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <input type="checkbox" name="chk-emp-13" value="${escapeHtml(emp.id)}" ${valM > 0 ? 'checked' : ''} class="w-4 h-4 rounded text-rose-600" />
+                        <span class="truncate font-semibold text-slate-900">${cod ? `<strong class="font-mono text-indigo-700">${escapeHtml(cod)}</strong> — ` : ''}${escapeHtml(emp.razao_social || emp.nome_fantasia)}</span>
+                        <span class="px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 text-[10px] shrink-0">${escapeHtml(emp.regime_tributario || '')}</span>
+                      </div>
+                      <div class="text-right shrink-0 font-mono text-[11px]">
+                        <span class="font-bold text-slate-800">${valM.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                        <span class="text-rose-700 text-[10px] ml-1">(2x ${metade})</span>
+                      </div>
+                    </label>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              <span class="text-[11px] text-slate-500">Parcelas já lançadas para o mesmo cliente/ano são ignoradas automaticamente (sem duplicar).</span>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+                <button type="submit" class="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold shadow cursor-pointer">
+                  Gerar Cobranças de 13º
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  filtrarEmpresasModal13(termo) {
+    const q = String(termo || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('.item-emp-13');
+    rows.forEach(r => {
+      const b = r.getAttribute('data-busca') || '';
+      if (!q || b.includes(q)) r.classList.remove('hidden');
+      else r.classList.add('hidden');
+    });
+  },
+
+  selecionarLoteEmpresasModal13(modo) {
+    const rows = document.querySelectorAll('.item-emp-13');
+    rows.forEach(r => {
+      const chk = r.querySelector('input[type="checkbox"]');
+      if (!chk) return;
+      const val = Number(r.getAttribute('data-val') || 0);
+      const reg = r.getAttribute('data-regime') || '';
+      if (modo === 'NENHUMA') chk.checked = false;
+      else if (modo === 'COM_HON') chk.checked = val > 0;
+      else if (modo === 'EXCETO_MEI') chk.checked = val > 0 && reg !== 'MEI';
+    });
+  },
+
+  submitHonorario13(e) {
+    e.preventDefault();
+    try {
+      const ano = parseInt(document.getElementById('f-13-ano')?.value, 10) || 2026;
+      const modoParcelas = document.getElementById('f-13-modo')?.value || 'AMBAS';
+      const diaFixo = document.getElementById('f-13-dia')?.value || null;
+      const valCustom = document.getElementById('f-13-valor-custom')?.value || null;
+      const selecionadas = Array.from(document.querySelectorAll('input[name="chk-emp-13"]:checked')).map(el => el.value);
+
+      if (selecionadas.length === 0) {
+        this.showToast('Selecione ao menos uma empresa para gerar o 13º Honorário.', 'error');
+        return;
+      }
+
+      const res = window.zgestorDB.gerarHonorariosDecimoTerceiro({
+        ano,
+        empresaIds: selecionadas,
+        modoParcelas,
+        diaFixo,
+        valorTotalCustom: valCustom
+      });
+
+      this.closeModal();
+      if (modoParcelas === 'SOMENTE_2_JAN') {
+        this.state.competencia = res.compParcela2;
+      } else {
+        this.state.competencia = res.compParcela1;
+      }
+      this.showToast(
+        `13º Honorário (${ano}): ${res.criadas1} 1ª parcela(s) p/ Dezembro (${res.compParcela1}) e ${res.criadas2} 2ª parcela(s) p/ Janeiro (${res.compParcela2}) geradas!`,
+        'success'
+      );
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
   },
 
   // ===========================================================================

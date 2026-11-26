@@ -1485,6 +1485,47 @@
       return this.data.escritorio;
     }
 
+    formatarEnderecoCompletoEscritorio(escInput = null) {
+      const esc = escInput || this.getEscritorioConfig() || {};
+      const logradouroBase = String(esc.logradouro || esc.endereco_escritorio || '').trim();
+      const numero = String(esc.numero || '').trim();
+      const complemento = String(esc.complemento || '').trim();
+      const bairro = String(esc.bairro || '').trim();
+      const municipio = String(esc.municipio || '').trim();
+      const uf = String(esc.uf || '').trim().toUpperCase();
+      const cidadeUf = (municipio && uf)
+        ? `${municipio}/${uf}`
+        : String(esc.cidade_uf || municipio || uf || '').trim();
+      const cep = String(esc.cep || '').trim();
+
+      let partesEnd = [];
+      if (logradouroBase) {
+        let linhaRua = logradouroBase;
+        if (numero) {
+          const numLower = numero.toLowerCase();
+          const jaContemNum = new RegExp(`(^|\\D)${numero.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\D|$)`).test(linhaRua);
+          if (!jaContemNum) {
+            linhaRua += (numLower.startsWith('n') || numLower === 's/n' || numLower === 'sn') ? `, ${numero}` : `, nº ${numero}`;
+          }
+        }
+        if (complemento && !linhaRua.toLowerCase().includes(complemento.toLowerCase())) {
+          linhaRua += ` - ${complemento}`;
+        }
+        if (bairro && !linhaRua.toLowerCase().includes(bairro.toLowerCase())) {
+          linhaRua += ` - ${bairro}`;
+        }
+        partesEnd.push(linhaRua);
+      }
+      if (cidadeUf) {
+        partesEnd.push(cidadeUf);
+      }
+      let resultado = partesEnd.join(' — ');
+      if (cep && !(cep === '01310-100' && !cidadeUf.toLowerCase().includes('paulo'))) {
+        resultado += (resultado ? ` • CEP: ${cep}` : `CEP: ${cep}`);
+      }
+      return resultado || 'Endereço não informado';
+    }
+
     salvarEscritorioConfig(novosDados) {
       const atual = this.getEscritorioConfig();
       const pPrincNovo = {
@@ -4762,9 +4803,10 @@
     // CONTROLE DE HONORÁRIOS MENSAIS COM TRANSPORTE DE SALDO DO MÊS ANTERIOR
     // =========================================================================
     obterSaldoAnteriorEmpresa(empresaId, competenciaAtual) {
+      if (!empresaId) return { valor: 0, competencia: '' };
       const compAnt = this.obterCompetenciaAnterior(competenciaAtual);
       const honAnt = this.data.honorarios.find(
-        h => h.empresa_id === empresaId && h.competencia === compAnt
+        h => h.empresa_id === empresaId && h.competencia === compAnt && (!h.tipo_lancamento || h.tipo_lancamento === 'MENSAL') && !h.cliente_avulso
       );
       if (honAnt && Number(honAnt.saldo_aberto) > 0) {
         return {
@@ -4780,18 +4822,21 @@
       if (!hon) return null;
 
       let mudou = false;
-      const ant = this.obterSaldoAnteriorEmpresa(hon.empresa_id, hon.competencia);
-      if (ant.valor > 0) {
-        if (hon.saldo_anterior !== ant.valor || hon.competencia_saldo_anterior !== ant.competencia) {
-          hon.saldo_anterior = ant.valor;
-          hon.competencia_saldo_anterior = ant.competencia;
-          mudou = true;
-        }
-      } else if (hon.competencia_saldo_anterior || Number(hon.saldo_anterior) > 0) {
-        if (hon.competencia_saldo_anterior) {
-          hon.saldo_anterior = 0;
-          hon.competencia_saldo_anterior = '';
-          mudou = true;
+      const ehMensalRegular = (!hon.tipo_lancamento || hon.tipo_lancamento === 'MENSAL') && !hon.cliente_avulso && Boolean(hon.empresa_id);
+      if (ehMensalRegular) {
+        const ant = this.obterSaldoAnteriorEmpresa(hon.empresa_id, hon.competencia);
+        if (ant.valor > 0) {
+          if (hon.saldo_anterior !== ant.valor || hon.competencia_saldo_anterior !== ant.competencia) {
+            hon.saldo_anterior = ant.valor;
+            hon.competencia_saldo_anterior = ant.competencia;
+            mudou = true;
+          }
+        } else if (hon.competencia_saldo_anterior || Number(hon.saldo_anterior) > 0) {
+          if (hon.competencia_saldo_anterior) {
+            hon.saldo_anterior = 0;
+            hon.competencia_saldo_anterior = '';
+            mudou = true;
+          }
         }
       }
 
@@ -4840,14 +4885,16 @@
         mudou = true;
       }
 
-      const compSeg = this.obterMesSubsequente(hon.competencia).label;
-      const honSeg = this.data.honorarios.find(
-        h => h.empresa_id === hon.empresa_id && h.competencia === compSeg
-      );
-      if (honSeg) {
-        const resSeg = this.recalcularHonorario(honSeg.id, false, _estadoInterno);
-        if (resSeg && _estadoInterno && _estadoInterno.algumMudou) {
-          mudou = true;
+      if (ehMensalRegular) {
+        const compSeg = this.obterMesSubsequente(hon.competencia).label;
+        const honSeg = this.data.honorarios.find(
+          h => h.empresa_id === hon.empresa_id && h.competencia === compSeg && (!h.tipo_lancamento || h.tipo_lancamento === 'MENSAL') && !h.cliente_avulso
+        );
+        if (honSeg) {
+          const resSeg = this.recalcularHonorario(honSeg.id, false, _estadoInterno);
+          if (resSeg && _estadoInterno && _estadoInterno.algumMudou) {
+            mudou = true;
+          }
         }
       }
 
@@ -4908,7 +4955,7 @@
 
       empresasAtivas.forEach(emp => {
         const existente = this.data.honorarios.find(
-          h => h.empresa_id === emp.id && h.competencia === competencia
+          h => h.empresa_id === emp.id && h.competencia === competencia && (!h.tipo_lancamento || h.tipo_lancamento === 'MENSAL') && !h.cliente_avulso
         );
         const saldoAnt = this.obterSaldoAnteriorEmpresa(emp.id, competencia);
 
@@ -4922,6 +4969,8 @@
             id: `hon-${Date.now()}-${criados}-${Math.random().toString(36).slice(2, 5)}`,
             empresa_id: emp.id,
             competencia,
+            tipo_lancamento: 'MENSAL',
+            descricao_cobranca: 'HONORÁRIO MENSAL',
             dia_base_vencimento: diaBaseHon,
             data_vencimento: vencimentoMesSeguinte,
             valor_mensal: valorPadrao,
@@ -4934,12 +4983,12 @@
             status: 'ABERTO',
             observacoes: saldoAnt.valor > 0
               ? `Inclui saldo remanescente em aberto de R$ ${saldoAnt.valor.toFixed(2)} da competência ${saldoAnt.competencia}.`
-              : `Honorário ref. competência ${competencia} com vencimento em ${sub.label}.`
+              : ''
           };
           this.data.honorarios.push(novoHon);
           criados++;
         } else {
-          this.recalcularHonorario(existente.id);
+          this.recalcularHonorario(existente.id, false);
         }
       });
 
@@ -4961,6 +5010,8 @@
         if (idx !== -1) {
           this.data.honorarios[idx] = {
             ...this.data.honorarios[idx],
+            descricao_cobranca: dadosHon.descricao_cobranca !== undefined ? String(dadosHon.descricao_cobranca || 'HONORÁRIO MENSAL').trim() : (this.data.honorarios[idx].descricao_cobranca || 'HONORÁRIO MENSAL'),
+            canal_pagamento: dadosHon.canal_pagamento || this.data.honorarios[idx].canal_pagamento || null,
             valor_mensal: Number(dadosHon.valor_mensal || 0),
             saldo_anterior: dadosHon.saldo_anterior !== undefined ? Number(dadosHon.saldo_anterior) : Number(this.data.honorarios[idx].saldo_anterior || 0),
             servicos_extras: Number(dadosHon.servicos_extras || 0),
@@ -4971,8 +5022,8 @@
           this._honMutVersion = (this._honMutVersion || 0) + 1;
           const atualizado = this.recalcularHonorario(dadosHon.id, false);
           this.saveLocalData();
-          const emp = this.data.empresas.find(e => e.id === atualizado.empresa_id);
-          this.registrarLog('EDICAO_HONORARIO', 'Honorários', `Honorário de ${emp ? emp.nome_fantasia : 'Cliente'} (${atualizado.competencia}) ajustado. Saldo em aberto: R$ ${atualizado.saldo_aberto.toFixed(2)}.`);
+          const emp = this.obterEmpresaSegura(atualizado.empresa_id, atualizado);
+          this.registrarLog('EDICAO_HONORARIO', 'Honorários', `Honorário de ${emp ? emp.razao_social : (atualizado.nome_cliente || 'Cliente')} (${atualizado.competencia}) ajustado. Saldo em aberto: R$ ${atualizado.saldo_aberto.toFixed(2)}.`);
           return atualizado;
         }
       }
@@ -5050,6 +5101,256 @@
       const atualizado = this.recalcularHonorario(honorarioId);
       this.registrarLog('ESTORNO_PAGAMENTO_HONORARIO', 'Honorários', `Estornado lançamento de R$ ${pag.valor.toFixed(2)}. Novo saldo em aberto: R$ ${atualizado.saldo_aberto.toFixed(2)}.`);
       return atualizado;
+    }
+
+    lancarHonorarioAvulso(dados = {}) {
+      if (!this.canAccessModule('honorarios')) {
+        throw new Error('Política de Segurança (RLS): Apenas Administradores ou Financeiro podem lançar cobranças avulsas.');
+      }
+      const isClienteAvulso = Boolean(dados.cliente_avulso);
+      const emp = !isClienteAvulso && dados.empresa_id ? this.obterEmpresaSegura(dados.empresa_id) : null;
+      if (!isClienteAvulso && !emp) {
+        throw new Error('Selecione a empresa cadastrada ou marque a opção Cliente Avulso / Não Cliente.');
+      }
+      const nomeAvulso = String(dados.nome_cliente || '').trim();
+      if (isClienteAvulso && !nomeAvulso) {
+        throw new Error('Informe o nome completo ou razão social do cliente avulso.');
+      }
+
+      const valorBase = Number(dados.valor_mensal || 0);
+      if (isNaN(valorBase) || valorBase <= 0) {
+        throw new Error('Informe um valor de cobrança maior que zero.');
+      }
+
+      const compControle = this.normalizarCompetencia(dados.competencia || '10/2026');
+      const compRefRecibo = dados.competencia_referencia
+        ? this.normalizarCompetencia(dados.competencia_referencia)
+        : compControle;
+      const vencBruto = dados.data_vencimento || this.calcularVencimentoHonorarioUtil(compControle, emp?.dia_vencimento_honorario || 10);
+      const vencFinal = dados.prorrogar_util !== false ? this.prorrogarParaProximoDiaUtil(vencBruto) : vencBruto;
+      const desconto = Math.max(0, Number(dados.desconto || 0));
+      const extras = Math.max(0, Number(dados.servicos_extras || 0));
+      const liquido = Math.max(0, Number((valorBase + extras - desconto).toFixed(2)));
+      const descricao = String(dados.descricao_cobranca || 'HONORÁRIO MENSAL').trim() || 'HONORÁRIO MENSAL';
+
+      const novo = {
+        id: `hon-avulso-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        empresa_id: isClienteAvulso ? null : emp.id,
+        cliente_avulso: isClienteAvulso,
+        nome_cliente: isClienteAvulso ? nomeAvulso : (emp.razao_social || emp.nome_fantasia),
+        documento_cliente: isClienteAvulso ? String(dados.documento_cliente || '').trim() : (emp.cnpj || ''),
+        contato_cliente: String(dados.contato_cliente || '').trim(),
+        tipo_lancamento: 'AVULSO',
+        descricao_cobranca: descricao,
+        competencia: compControle,
+        competencia_referencia: compRefRecibo,
+        canal_pagamento: dados.canal_pagamento || (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL',
+        dia_base_vencimento: Number(String(vencBruto).slice(-2)) || 10,
+        data_vencimento: vencFinal,
+        valor_mensal: Number(valorBase.toFixed(2)),
+        saldo_anterior: 0,
+        competencia_saldo_anterior: '',
+        servicos_extras: Number(extras.toFixed(2)),
+        desconto: Number(desconto.toFixed(2)),
+        valor_pago: 0,
+        saldo_aberto: liquido,
+        status: 'ABERTO',
+        observacoes: String(dados.observacoes || '').trim()
+      };
+
+      this.data.honorarios.unshift(novo);
+      this._honMutVersion = (this._honMutVersion || 0) + 1;
+      this.recalcularHonorario(novo.id, false);
+      this.saveLocalData();
+      this.registrarLog(
+        'NOVO_HONORARIO_AVULSO',
+        'Honorários',
+        `Cobrança avulsa lançada (${descricao} - R$ ${liquido.toFixed(2)}) para ${novo.nome_cliente} na competência ${compControle}.`
+      );
+      return novo;
+    }
+
+    gerarHonorariosDecimoTerceiro(opcoes = {}) {
+      if (!this.canAccessModule('honorarios')) {
+        throw new Error('Política de Segurança (RLS): Apenas Administradores ou Financeiro podem lançar o 13º Honorário.');
+      }
+
+      const ano = parseInt(opcoes.ano, 10) || 2026;
+      const modoParcelas = opcoes.modoParcelas || 'AMBAS'; // 'AMBAS' | 'SOMENTE_1_DEZ' | 'SOMENTE_2_JAN' | 'UNICA_DEZ'
+      const diaFixo = opcoes.diaFixo ? parseInt(opcoes.diaFixo, 10) : null;
+      const valorCustom = (opcoes.valorTotalCustom !== undefined && opcoes.valorTotalCustom !== null && opcoes.valorTotalCustom !== '')
+        ? Number(opcoes.valorTotalCustom)
+        : null;
+
+      const idsFiltro = Array.isArray(opcoes.empresaIds) && opcoes.empresaIds.length > 0
+        ? new Set(opcoes.empresaIds)
+        : null;
+
+      const empresasAlvo = (this.data.empresas || []).filter(e => {
+        if (!e) return false;
+        if (idsFiltro) return idsFiltro.has(e.id);
+        return (e.status === 'ATIVA' || e.status === 'EM_ONBOARDING') && Number(e.valor_honorario_padrao || 0) > 0;
+      });
+
+      const compParcela1 = `11/${ano}`; // Competência 11/AAAA -> Vence em Dezembro (12/AAAA)
+      const compParcela2 = `12/${ano}`; // Competência 12/AAAA -> Vence em Janeiro (01/AAAA+1)
+
+      let criadas1 = 0;
+      let criadas2 = 0;
+      let ignoradas = 0;
+
+      empresasAlvo.forEach((emp, idx) => {
+        const valorTotal13 = (valorCustom !== null && empresasAlvo.length === 1)
+          ? valorCustom
+          : Number(emp.valor_honorario_padrao || 0);
+        if (!valorTotal13 || valorTotal13 <= 0) {
+          ignoradas++;
+          return;
+        }
+
+        const diaBase = diaFixo || Number(emp.dia_vencimento_honorario || 10);
+
+        if (modoParcelas === 'UNICA_DEZ') {
+          const jaTemUnica = this.data.honorarios.some(
+            h => h.empresa_id === emp.id && h.tipo_lancamento === 'DECIMO_TERCEIRO' && Number(h.ano_13) === ano && Number(h.parcela_13) === 1
+          );
+          if (jaTemUnica) {
+            ignoradas++;
+            return;
+          }
+          const vencDez = this.calcularVencimentoHonorarioUtil(compParcela1, diaBase);
+          const honUnica = {
+            id: `hon-13u-${ano}-${Date.now()}-${idx}`,
+            empresa_id: emp.id,
+            tipo_lancamento: 'DECIMO_TERCEIRO',
+            ano_13: ano,
+            parcela_13: 1,
+            total_parcelas_13: 1,
+            descricao_cobranca: `13º HONORÁRIO ANUAL (${ano})`,
+            competencia: compParcela1,
+            competencia_referencia: `13º/${ano}`,
+            dia_base_vencimento: diaBase,
+            data_vencimento: vencDez,
+            valor_mensal: Number(valorTotal13.toFixed(2)),
+            saldo_anterior: 0,
+            competencia_saldo_anterior: '',
+            servicos_extras: 0,
+            desconto: 0,
+            valor_pago: 0,
+            saldo_aberto: Number(valorTotal13.toFixed(2)),
+            status: 'ABERTO',
+            observacoes: `Parcela única do 13º Honorário (${ano}) com vencimento em Dezembro/${ano}.`
+          };
+          this.data.honorarios.push(honUnica);
+          this.recalcularHonorario(honUnica.id, false);
+          criadas1++;
+          return;
+        }
+
+        const valorP1 = Number((valorTotal13 / 2).toFixed(2));
+        const valorP2 = Number((valorTotal13 - valorP1).toFixed(2));
+
+        // 1ª Parcela -> Vence em Dezembro (controlada na Competência 11/ano)
+        if (modoParcelas === 'AMBAS' || modoParcelas === 'SOMENTE_1_DEZ') {
+          const jaTemP1 = this.data.honorarios.some(
+            h => h.empresa_id === emp.id && h.tipo_lancamento === 'DECIMO_TERCEIRO' && Number(h.ano_13) === ano && Number(h.parcela_13) === 1
+          );
+          if (!jaTemP1) {
+            const vencDez = this.calcularVencimentoHonorarioUtil(compParcela1, diaBase);
+            const honP1 = {
+              id: `hon-13p1-${ano}-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+              empresa_id: emp.id,
+              tipo_lancamento: 'DECIMO_TERCEIRO',
+              ano_13: ano,
+              parcela_13: 1,
+              total_parcelas_13: 2,
+              descricao_cobranca: `13º HONORÁRIO — 1ª PARCELA (1/2)`,
+              competencia: compParcela1,
+              competencia_referencia: `13º/${ano}`,
+              dia_base_vencimento: diaBase,
+              data_vencimento: vencDez,
+              valor_mensal: valorP1,
+              saldo_anterior: 0,
+              competencia_saldo_anterior: '',
+              servicos_extras: 0,
+              desconto: 0,
+              valor_pago: 0,
+              saldo_aberto: valorP1,
+              status: 'ABERTO',
+              observacoes: `1ª parcela (50%) do 13º Honorário ${ano} — Vencimento em Dezembro/${ano}.`
+            };
+            this.data.honorarios.push(honP1);
+            this.recalcularHonorario(honP1.id, false);
+            criadas1++;
+          } else {
+            ignoradas++;
+          }
+        }
+
+        // 2ª Parcela -> Vence em Janeiro do ano seguinte (controlada na Competência 12/ano)
+        if (modoParcelas === 'AMBAS' || modoParcelas === 'SOMENTE_2_JAN') {
+          const jaTemP2 = this.data.honorarios.some(
+            h => h.empresa_id === emp.id && h.tipo_lancamento === 'DECIMO_TERCEIRO' && Number(h.ano_13) === ano && Number(h.parcela_13) === 2
+          );
+          if (!jaTemP2) {
+            const vencJan = this.calcularVencimentoHonorarioUtil(compParcela2, diaBase);
+            const honP2 = {
+              id: `hon-13p2-${ano}-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+              empresa_id: emp.id,
+              tipo_lancamento: 'DECIMO_TERCEIRO',
+              ano_13: ano,
+              parcela_13: 2,
+              total_parcelas_13: 2,
+              descricao_cobranca: `13º HONORÁRIO — 2ª PARCELA (2/2)`,
+              competencia: compParcela2,
+              competencia_referencia: `13º/${ano}`,
+              dia_base_vencimento: diaBase,
+              data_vencimento: vencJan,
+              valor_mensal: valorP2,
+              saldo_anterior: 0,
+              competencia_saldo_anterior: '',
+              servicos_extras: 0,
+              desconto: 0,
+              valor_pago: 0,
+              saldo_aberto: valorP2,
+              status: 'ABERTO',
+              observacoes: `2ª parcela (50%) do 13º Honorário ${ano} — Vencimento em Janeiro/${ano + 1}.`
+            };
+            this.data.honorarios.push(honP2);
+            this.recalcularHonorario(honP2.id, false);
+            criadas2++;
+          } else {
+            ignoradas++;
+          }
+        }
+      });
+
+      if (criadas1 > 0 || criadas2 > 0) {
+        this._honMutVersion = (this._honMutVersion || 0) + 1;
+        this.saveLocalData();
+        this.registrarLog(
+          'GERACAO_HONORARIO_13',
+          'Honorários',
+          `Gerado 13º Honorário (${ano}): ${criadas1} 1ª parcela(s) p/ Dezembro (${compParcela1}) e ${criadas2} 2ª parcela(s) p/ Janeiro (${compParcela2}).`
+        );
+      }
+      return { criadas1, criadas2, ignoradas, compParcela1, compParcela2 };
+    }
+
+    excluirHonorarioLancamento(honorarioId) {
+      if (!this.canAccessModule('honorarios')) {
+        throw new Error('Apenas Administradores ou Financeiro podem remover lançamentos de honorários.');
+      }
+      const hon = this.data.honorarios.find(h => h.id === honorarioId);
+      if (!hon) return false;
+      if (Number(hon.valor_pago || 0) > 0) {
+        throw new Error('Estorne os pagamentos registrados antes de excluir este lançamento de honorário.');
+      }
+      this.data.honorarios = this.data.honorarios.filter(h => h.id !== honorarioId);
+      this._honMutVersion = (this._honMutVersion || 0) + 1;
+      this.saveLocalData();
+      this.registrarLog('EXCLUSAO_HONORARIO', 'Honorários', `Lançamento de honorário (${hon.descricao_cobranca || 'HONORÁRIO MENSAL'} - ${hon.competencia}) excluído.`);
+      return true;
     }
 
     // =========================================================================

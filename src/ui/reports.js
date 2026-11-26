@@ -109,6 +109,13 @@ window.ZGestorReports = {
     win.document.close();
   },
 
+  formatarEnderecoRecibo(esc) {
+    if (window.zgestorDB && typeof window.zgestorDB.formatarEnderecoCompletoEscritorio === 'function') {
+      return window.zgestorDB.formatarEnderecoCompletoEscritorio(esc);
+    }
+    return `${esc.endereco_escritorio || ''} — ${esc.cidade_uf || ''}`;
+  },
+
   cabecalhoPadraoRelatorio(tituloRelatorio, subtitulo) {
     const esc = window.zgestorDB.getEscritorioConfig();
     const agora = new Date().toLocaleString('pt-BR');
@@ -119,6 +126,7 @@ window.ZGestorReports = {
         <div>
           <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-700">${esc.nome_escritorio}</div>
           <div class="text-[11px] text-slate-500">CNPJ: ${esc.cnpj_escritorio} • ${esc.crc_escritorio} • ${esc.telefone_escritorio}</div>
+          <div class="text-[10.5px] text-slate-500">${this.formatarEnderecoRecibo(esc)}</div>
           <h1 class="text-lg font-extrabold text-slate-900 mt-1.5">${tituloRelatorio}</h1>
           <p class="text-xs text-slate-600 font-medium">${subtitulo}</p>
         </div>
@@ -135,14 +143,21 @@ window.ZGestorReports = {
   // ===========================================================================
   gerarBlocoReciboPix(hon, emp, esc, numeroRecibo) {
     const V = window.ZGestorViews;
+    esc = esc || window.zgestorDB.getEscritorioConfig();
+    if (emp === undefined && hon.empresa_id) {
+      emp = window.zgestorDB.obterEmpresaSegura ? window.zgestorDB.obterEmpresaSegura(hon.empresa_id, hon) : window.zgestorDB.data.empresas.find(e => e.id === hon.empresa_id);
+    }
+    numeroRecibo = numeroRecibo || `${String(hon.competencia || '').replace('/', '')}-01`;
     const saldoAnterior = Number(hon.saldo_anterior || 0);
     const compAnterior = hon.competencia_saldo_anterior || window.zgestorDB.obterCompetenciaAnterior(hon.competencia);
+    const compExibicao = hon.competencia_referencia || hon.competencia;
+    const descricaoItem = String(hon.descricao_cobranca || 'HONORÁRIO MENSAL').trim() || 'HONORÁRIO MENSAL';
     const totalBruto = Math.max(0, Number(hon.valor_mensal || 0) + saldoAnterior + Number(hon.servicos_extras || 0) - Number(hon.desconto || 0));
     const valorCobrar = (hon.status === 'PAGO') ? 0 : Math.max(0, Number(hon.saldo_aberto !== undefined ? hon.saldo_aberto : totalBruto));
     const pags = window.zgestorDB.data.honorario_pagamentos.filter(p => p.honorario_id === hon.id);
 
-    // Canal de recebimento definido para a empresa (PIX Principal, Secundário ou Autônomo)
-    const canal = (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
+    // Canal de recebimento definido no lançamento ou para a empresa (PIX Principal, Secundário ou Autônomo)
+    const canal = hon.canal_pagamento || (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
     let contaPix = esc.pix_principal || {
       nome: 'Conta PJ Principal',
       banco: esc.banco_pix || 'Banco Inter / Itaú Empresas',
@@ -159,6 +174,12 @@ window.ZGestorReports = {
     }
 
     const qrImageSrc = contaPix.qrcode_img || (canal === 'PIX_PRINCIPAL' ? (esc.qrcode_img || '') : '');
+    const nomeTomador = emp ? emp.razao_social : (hon.nome_cliente || 'Cliente Avulso');
+    const subtituloTomador = emp
+      ? `Fantasia: ${emp.nome_fantasia || '—'} • Resp.: ${emp.responsavel_legal || '—'}`
+      : 'Cobrança / Recibo Avulso';
+    const docTomador = emp ? emp.cnpj : (hon.documento_cliente || '—');
+    const regimeTomador = emp ? emp.regime_tributario : (hon.cliente_avulso ? 'Avulso' : '');
 
     return `
       <div class="recibo-card border-2 border-slate-800 rounded-xl p-4 mb-4 bg-white">
@@ -166,12 +187,12 @@ window.ZGestorReports = {
           <div>
             <div class="text-xs font-extrabold text-slate-900 uppercase tracking-tight">${esc.nome_escritorio}</div>
             <div class="text-[11px] text-slate-600">CNPJ: ${esc.cnpj_escritorio} • Registro: ${esc.crc_escritorio}</div>
-            <div class="text-[11px] text-slate-500">${esc.endereco_escritorio} — ${esc.cidade_uf}</div>
+            <div class="text-[11px] text-slate-500">${V.escapeHtml(this.formatarEnderecoRecibo(esc))}</div>
             <div class="text-[11px] text-slate-500">Tel/WhatsApp: ${esc.telefone_escritorio} | ${esc.email_escritorio}</div>
           </div>
           <div class="text-right bg-slate-100 px-3 py-2 rounded-lg border border-slate-300 min-w-[205px]">
             <div class="text-[10px] font-bold uppercase text-slate-500">Recibo / Cobrança Nº ${numeroRecibo}</div>
-            <div class="text-[11px] font-bold text-slate-800">Competência: <span class="text-indigo-700">${hon.competencia}</span></div>
+            <div class="text-[11px] font-bold text-slate-800">Competência: <span class="text-indigo-700">${V.escapeHtml(compExibicao)}</span></div>
             <div class="text-[11px] font-bold text-rose-700">Vencimento: ${V.formatDate(hon.data_vencimento)}</div>
             <div class="text-sm font-extrabold text-slate-900 mt-1 pt-1 border-t border-slate-300">
               Total a Pagar: ${V.formatCurrency(valorCobrar)}
@@ -182,13 +203,13 @@ window.ZGestorReports = {
         <div class="mt-2.5 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 text-[11px] grid grid-cols-3 gap-2">
           <div class="col-span-2">
             <span class="text-slate-500 uppercase font-bold text-[9px] block">Cliente / Empresa:</span>
-            <strong class="text-slate-900 text-xs">${emp ? emp.razao_social : '—'}</strong>
-            <span class="text-slate-600 block">Fantasia: ${emp ? emp.nome_fantasia : '—'} • Resp.: ${emp ? (emp.responsavel_legal || '—') : '—'}</span>
+            <strong class="text-slate-900 text-xs">${V.escapeHtml(nomeTomador)}</strong>
+            <span class="text-slate-600 block">${V.escapeHtml(subtituloTomador)}</span>
           </div>
           <div>
-            <span class="text-slate-500 uppercase font-bold text-[9px] block">CNPJ / Regime Tributário:</span>
-            <strong class="text-slate-900 font-mono">${emp ? emp.cnpj : '—'}</strong>
-            <span class="text-slate-600 block">${emp ? emp.regime_tributario : ''}</span>
+            <span class="text-slate-500 uppercase font-bold text-[9px] block">CPF/CNPJ / Regime:</span>
+            <strong class="text-slate-900 font-mono">${V.escapeHtml(docTomador)}</strong>
+            <span class="text-slate-600 block">${V.escapeHtml(regimeTomador)}</span>
           </div>
         </div>
 
@@ -204,8 +225,8 @@ window.ZGestorReports = {
             </thead>
             <tbody class="divide-y divide-slate-100">
               <tr>
-                <td class="py-1.5 font-semibold text-slate-800">Honorários Contábeis, Fiscais e Departamento Pessoal Mensais</td>
-                <td class="py-1.5 text-center font-bold">${hon.competencia}</td>
+                <td class="py-1.5 font-bold text-slate-800">${V.escapeHtml(descricaoItem)}</td>
+                <td class="py-1.5 text-center font-bold">${V.escapeHtml(compExibicao)}</td>
                 <td class="py-1.5 text-center">${V.formatDate(hon.data_vencimento)}</td>
                 <td class="py-1.5 text-right font-semibold">${V.formatCurrency(hon.valor_mensal)}</td>
               </tr>
@@ -317,7 +338,7 @@ window.ZGestorReports = {
 
         <div class="mt-2.5 pt-2 border-t border-dashed border-slate-400 flex items-end justify-between gap-4 text-[10px] text-slate-600">
           <div>
-            Recebi(emos) o recibo de cobrança ref. à competência <strong>${hon.competencia}</strong> (Venc. <strong>${V.formatDate(hon.data_vencimento)}</strong>).
+            Recebi(emos) o recibo de cobrança ref. à competência <strong>${V.escapeHtml(compExibicao)}</strong> (Venc. <strong>${V.formatDate(hon.data_vencimento)}</strong>).
           </div>
           <div class="flex gap-4 shrink-0">
             <div>Data: ____/____/______</div>
@@ -340,12 +361,15 @@ window.ZGestorReports = {
       }
       return;
     }
-    const emp = db.data.empresas.find(e => e.id === hon.empresa_id);
+    const emp = hon.empresa_id ? (db.obterEmpresaSegura ? db.obterEmpresaSegura(hon.empresa_id, hon) : db.data.empresas.find(e => e.id === hon.empresa_id)) : null;
     const esc = db.getEscritorioConfig();
-    const num = `${hon.competencia.replace('/', '')}-${emp ? emp.codigo_interno : '01'}`;
+    const codLimpo = emp ? String(emp.codigo_interno || '').replace(/^#+/, '').trim() : 'AVULSO';
+    const sufixo13 = hon.tipo_lancamento === 'DECIMO_TERCEIRO' ? `-13P${hon.parcela_13 || 1}` : '';
+    const num = `${hon.competencia.replace('/', '')}-${codLimpo || '01'}${sufixo13}`;
+    const nomeTitulo = emp ? (emp.razao_social || emp.nome_fantasia) : (hon.nome_cliente || 'Cliente Avulso');
 
     const html = `<div class="print-sheet">${this.gerarBlocoReciboPix(hon, emp, esc, num)}</div>`;
-    this.abrirJanelaImpressao(`Recibo de Cobrança PIX - ${emp ? emp.nome_fantasia : ''} (${hon.competencia})`, html);
+    this.abrirJanelaImpressao(`Recibo de Cobrança PIX - ${nomeTitulo} (${hon.competencia_referencia || hon.competencia})`, html);
   },
 
   imprimirLoteRecibosPixMes(competencia, idsFiltrados = null) {
@@ -366,9 +390,10 @@ window.ZGestorReports = {
 
     // Emite estritamente 1 recibo por página A4 (.print-sheet individual por cliente)
     const paginasHtml = listaAlvo.map((hon, idx) => {
-      const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(hon.empresa_id, hon) : db.data.empresas.find(e => e.id === hon.empresa_id);
-      const cod = emp ? String(emp.codigo_interno || '').replace(/^#+/, '').trim() : '';
-      const num = `${hon.competencia.replace('/', '')}-${cod || String(idx + 1).padStart(2, '0')}`;
+      const emp = hon.empresa_id ? (db.obterEmpresaSegura ? db.obterEmpresaSegura(hon.empresa_id, hon) : db.data.empresas.find(e => e.id === hon.empresa_id)) : null;
+      const cod = emp ? String(emp.codigo_interno || '').replace(/^#+/, '').trim() : 'AV';
+      const sufixo13 = hon.tipo_lancamento === 'DECIMO_TERCEIRO' ? `-13P${hon.parcela_13 || 1}` : '';
+      const num = `${hon.competencia.replace('/', '')}-${cod || String(idx + 1).padStart(2, '0')}${sufixo13}`;
       return `<div class="print-sheet">${this.gerarBlocoReciboPix(hon, emp, esc, num)}</div>`;
     });
 
@@ -977,16 +1002,20 @@ window.ZGestorReports = {
     const empresasUnicas = new Set(pagamentosPJ.map(p => p.empresa_id)).size;
 
     const linhasHtml = pagamentosPJ.map((p, idx) => {
-      const emp = db.data.empresas.find(e => e.id === p.empresa_id);
+      const honRef = honorariosMes.find(h => h.id === p.honorario_id);
+      const emp = p.empresa_id ? (db.obterEmpresaSegura ? db.obterEmpresaSegura(p.empresa_id, honRef) : db.data.empresas.find(e => e.id === p.empresa_id)) : null;
+      const nomeTom = emp ? emp.razao_social : (honRef?.nome_cliente || 'Cliente Avulso');
+      const fantasiaTom = emp ? emp.nome_fantasia : (honRef?.descricao_cobranca || 'Cobrança Avulsa');
+      const docTom = emp ? emp.cnpj : (honRef?.documento_cliente || '—');
       const contaNome = p.conta_destino ? p.conta_destino.split('(')[0].trim() : 'Conta PJ Principal';
       return `
         <tr class="hover:bg-slate-50">
           <td class="py-2.5 px-2 text-center text-slate-500 font-mono">${idx + 1}</td>
           <td class="py-2.5 px-2">
-            <div class="font-bold text-slate-900">${emp ? emp.razao_social : '—'}</div>
-            <div class="text-[11px] text-slate-500">Fantasia: ${emp ? emp.nome_fantasia : '—'}</div>
+            <div class="font-bold text-slate-900">${V.escapeHtml(nomeTom)}</div>
+            <div class="text-[11px] text-slate-500">${V.escapeHtml(fantasiaTom)}</div>
           </td>
-          <td class="py-2.5 px-2 font-mono text-slate-800 text-[11px] font-semibold">${emp ? emp.cnpj : '—'}</td>
+          <td class="py-2.5 px-2 font-mono text-slate-800 text-[11px] font-semibold">${V.escapeHtml(docTom)}</td>
           <td class="py-2.5 px-2 text-slate-700 text-[11px]">${emp ? `${emp.municipio || 'Mutum'}/${emp.uf || 'MG'}` : '—'}</td>
           <td class="py-2.5 px-2 text-slate-800 text-center font-medium">${V.formatDate(p.data_pagamento)}</td>
           <td class="py-2.5 px-2 text-slate-700 text-[11px]">
