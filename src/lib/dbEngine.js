@@ -1487,21 +1487,47 @@
 
     salvarEscritorioConfig(novosDados) {
       const atual = this.getEscritorioConfig();
+      const pPrincNovo = {
+        ...(atual.pix_principal || {}),
+        ...(novosDados.pix_principal || {})
+      };
+      const pSecNovo = {
+        ...(atual.pix_secundario || {}),
+        ...(novosDados.pix_secundario || {})
+      };
+      const pAutNovo = {
+        ...(atual.pix_autonomo || {}),
+        ...(novosDados.pix_autonomo || {})
+      };
+
+      // Mantém sincronia bidirecional entre campos raiz legados e pix_principal
+      if (novosDados.chave_pix !== undefined && (!novosDados.pix_principal || novosDados.pix_principal.chave_pix === undefined)) {
+        pPrincNovo.chave_pix = novosDados.chave_pix;
+      }
+      if (novosDados.tipo_chave_pix !== undefined && (!novosDados.pix_principal || novosDados.pix_principal.tipo_chave === undefined)) {
+        pPrincNovo.tipo_chave = novosDados.tipo_chave_pix;
+      }
+      if (novosDados.favorecido_pix !== undefined && (!novosDados.pix_principal || novosDados.pix_principal.favorecido === undefined)) {
+        pPrincNovo.favorecido = novosDados.favorecido_pix;
+      }
+      if (novosDados.banco_pix !== undefined && (!novosDados.pix_principal || novosDados.pix_principal.banco === undefined)) {
+        pPrincNovo.banco = novosDados.banco_pix;
+      }
+      if (novosDados.qrcode_img !== undefined && (!novosDados.pix_principal || novosDados.pix_principal.qrcode_img === undefined)) {
+        pPrincNovo.qrcode_img = novosDados.qrcode_img;
+      }
+
       this.data.escritorio = {
         ...atual,
         ...novosDados,
-        pix_principal: {
-          ...(atual.pix_principal || {}),
-          ...(novosDados.pix_principal || {})
-        },
-        pix_secundario: {
-          ...(atual.pix_secundario || {}),
-          ...(novosDados.pix_secundario || {})
-        },
-        pix_autonomo: {
-          ...(atual.pix_autonomo || {}),
-          ...(novosDados.pix_autonomo || {})
-        },
+        chave_pix: pPrincNovo.chave_pix || novosDados.chave_pix || atual.chave_pix || '',
+        tipo_chave_pix: pPrincNovo.tipo_chave || novosDados.tipo_chave_pix || atual.tipo_chave_pix || 'CNPJ',
+        favorecido_pix: pPrincNovo.favorecido || novosDados.favorecido_pix || atual.favorecido_pix || '',
+        banco_pix: pPrincNovo.banco || novosDados.banco_pix || atual.banco_pix || '',
+        qrcode_img: pPrincNovo.qrcode_img !== undefined ? pPrincNovo.qrcode_img : (atual.qrcode_img || ''),
+        pix_principal: pPrincNovo,
+        pix_secundario: pSecNovo,
+        pix_autonomo: pAutNovo,
         api_integra_contador: {
           ...(atual.api_integra_contador || {}),
           ...(novosDados.api_integra_contador || {})
@@ -1511,8 +1537,26 @@
           ...(novosDados.ia_config || {})
         }
       };
+
+      this._escritorioUpdatedLocalAt = Date.now();
       this.saveLocalData();
-      this.registrarLog('CONFIG_ESCRITORIO_PIX', 'Honorários', `Dados do escritório e Contas/Chaves PIX atualizados.`);
+
+      // Envia imediatamente a configuração do escritório (incluindo QR Codes PIX) para o Supabase
+      if (this.supabaseConnected && this.supabase && this.supabaseConfig?.autoSync !== false) {
+        const agora = new Date().toISOString();
+        const escPayload = this.data.escritorio;
+        this.supabase
+          .from('zgestor_config')
+          .upsert([{ chave: 'escritorio', dados: escPayload, updated_at: agora }], { onConflict: 'chave' })
+          .then(({ error }) => {
+            if (!error) {
+              this._cloudCfgEscritorioJson = JSON.stringify(escPayload || {});
+            }
+          })
+          .catch(() => {});
+      }
+
+      this.registrarLog('CONFIG_ESCRITORIO_PIX', 'Honorários', `Dados do escritório e Contas/QR Codes PIX atualizados.`);
       return this.data.escritorio;
     }
 
@@ -1779,7 +1823,8 @@
           if (Array.isArray(configs) && configs.length > 0) {
             configs.forEach(c => {
               if (c.chave === 'escritorio' && c.dados && Object.keys(c.dados).length > 0) {
-                if (JSON.stringify(c.dados) !== JSON.stringify(this.data.escritorio || {})) {
+                const editouRecente = this._escritorioUpdatedLocalAt && (Date.now() - this._escritorioUpdatedLocalAt < 10000);
+                if (!editouRecente && JSON.stringify(c.dados) !== JSON.stringify(this.data.escritorio || {})) {
                   this.data.escritorio = { ...(this.data.escritorio || {}), ...c.dados };
                   atualizado = true;
                 }

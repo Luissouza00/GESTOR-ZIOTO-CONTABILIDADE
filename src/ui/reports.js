@@ -158,7 +158,7 @@ window.ZGestorReports = {
       contaPix = esc.pix_autonomo;
     }
 
-    const qrImageSrc = contaPix.qrcode_img || esc.qrcode_img || '';
+    const qrImageSrc = contaPix.qrcode_img || (canal === 'PIX_PRINCIPAL' ? (esc.qrcode_img || '') : '');
 
     return `
       <div class="recibo-card border-2 border-slate-800 rounded-xl p-4 mb-4 bg-white">
@@ -255,9 +255,9 @@ window.ZGestorReports = {
         <div class="mt-2.5 px-3.5 py-2.5 rounded-lg bg-emerald-50 border border-emerald-600 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <!-- Espaço e Imagem do QR Code PIX Oficial do Escritório -->
-            <div class="w-20 h-20 bg-white p-1 rounded-lg border border-emerald-400 flex flex-col items-center justify-center shrink-0 shadow-xs overflow-hidden">
+            <div class="w-24 h-24 bg-white p-1 rounded-lg border border-emerald-400 flex flex-col items-center justify-center shrink-0 shadow-xs overflow-hidden">
               ${qrImageSrc ? `
-                <img src="${qrImageSrc}" class="w-16 h-16 object-contain" alt="QR Code PIX Oficial" />
+                <img src="${qrImageSrc}" style="image-rendering:crisp-edges;image-rendering:pixelated;" class="w-20 h-20 object-contain" alt="QR Code PIX Oficial" />
                 <span class="text-[7px] font-extrabold text-emerald-900 tracking-tighter uppercase mt-0.5">PIX OFICIAL</span>
               ` : `
                 <svg class="w-16 h-16" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">

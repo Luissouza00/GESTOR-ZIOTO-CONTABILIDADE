@@ -4596,8 +4596,8 @@ window.ZGestorViews = {
             <button onclick="ZGestorApp.navigate('escritorio')" class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-semibold text-xs flex items-center gap-1.5 border border-indigo-200 shadow-xs" title="Cadastrar dados oficiais do escritório e anexar QR Code real">
               <i data-lucide="landmark" class="w-3.5 h-3.5 text-indigo-600"></i> Dados do Escritório & QR Codes
             </button>
-            <button onclick="ZGestorApp.openModalConfigPix()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs flex items-center gap-1.5">
-              <i data-lucide="qr-code" class="w-3.5 h-3.5 text-emerald-600"></i> Configurar PIX
+            <button onclick="ZGestorApp.openModalConfigPix()" class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs">
+              <i data-lucide="qr-code" class="w-3.5 h-3.5 text-emerald-600"></i> Configurar PIX & Anexar QR Code
             </button>
             <button onclick="ZGestorReports.emitirRelatorioNFSe('${comp}')" class="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
               <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Relatório para Emissão de NFS-e
@@ -5520,13 +5520,16 @@ window.ZGestorViews = {
                   Formatos aceitos: <strong>PNG, JPG, JPEG, SVG, WebP</strong> (até <strong>15 MB</strong>). Recomenda-se imagem com fundo transparente ou escuro para melhor legibilidade.
                 </p>
                 <div class="flex flex-wrap items-center gap-2">
-                  <label class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition">
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.acionarInputArquivo('input-file-logo-escritorio')"
+                    class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition">
                     <i data-lucide="upload" class="w-3.5 h-3.5"></i>
                     <span>${esc.logo_customizada ? 'Trocar Logotipo' : 'Enviar Novo Logotipo'}</span>
-                    <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" onchange="ZGestorApp.handleLogoUpload(event)" class="hidden" />
-                  </label>
+                  </button>
+                  <input id="input-file-logo-escritorio" type="file" accept="image/*" onchange="ZGestorApp.handleLogoUpload(event)" style="position:fixed;left:-9999px;width:1px;height:1px;opacity:0;" />
                   ${esc.logo_customizada ? `
-                    <button type="button" onclick="ZGestorApp.removerLogoEscritorio()" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs border border-rose-200 transition">
+                    <button type="button" onclick="ZGestorApp.removerLogoEscritorio()" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs border border-rose-200 transition cursor-pointer">
                       Restaurar Padrão
                     </button>
                   ` : ''}
@@ -5711,12 +5714,15 @@ window.ZGestorViews = {
                       `}
                     </div>
                     <div class="space-y-1.5 flex-1">
-                      <label class="block px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold text-center border border-indigo-200 cursor-pointer transition">
-                        <span>${pPrinc.qrcode_img ? 'Trocar Imagem' : 'Anexar Imagem'}</span>
-                        <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_principal', event)" class="hidden" />
-                      </label>
+                      <button
+                        type="button"
+                        onclick="ZGestorApp.acionarInputArquivo('input-qr-esc-pix_principal')"
+                        class="w-full px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold text-center shadow-2xs cursor-pointer transition">
+                        📎 ${pPrinc.qrcode_img ? 'Trocar QR Code' : 'Anexar QR Code'}
+                      </button>
+                      <input id="input-qr-esc-pix_principal" type="file" accept="image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_principal', event)" style="position:fixed;left:-9999px;width:1px;height:1px;opacity:0;" />
                       ${pPrinc.qrcode_img ? `
-                        <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_principal')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition">
+                        <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_principal')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition cursor-pointer">
                           Remover Imagem
                         </button>
                       ` : ''}
@@ -5775,12 +5781,15 @@ window.ZGestorViews = {
                       `}
                     </div>
                     <div class="space-y-1.5 flex-1">
-                      <label class="block px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold text-center border border-indigo-200 cursor-pointer transition">
-                        <span>${pSec.qrcode_img ? 'Trocar Imagem' : 'Anexar Imagem'}</span>
-                        <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_secundario', event)" class="hidden" />
-                      </label>
+                      <button
+                        type="button"
+                        onclick="ZGestorApp.acionarInputArquivo('input-qr-esc-pix_secundario')"
+                        class="w-full px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold text-center shadow-2xs cursor-pointer transition">
+                        📎 ${pSec.qrcode_img ? 'Trocar QR Code' : 'Anexar QR Code'}
+                      </button>
+                      <input id="input-qr-esc-pix_secundario" type="file" accept="image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_secundario', event)" style="position:fixed;left:-9999px;width:1px;height:1px;opacity:0;" />
                       ${pSec.qrcode_img ? `
-                        <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_secundario')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition">
+                        <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_secundario')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition cursor-pointer">
                           Remover Imagem
                         </button>
                       ` : ''}
@@ -5839,12 +5848,15 @@ window.ZGestorViews = {
                       `}
                     </div>
                     <div class="space-y-1.5 flex-1">
-                      <label class="block px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold text-center border border-indigo-200 cursor-pointer transition">
-                        <span>${pAut.qrcode_img ? 'Trocar Imagem' : 'Anexar Imagem'}</span>
-                        <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_autonomo', event)" class="hidden" />
-                      </label>
+                      <button
+                        type="button"
+                        onclick="ZGestorApp.acionarInputArquivo('input-qr-esc-pix_autonomo')"
+                        class="w-full px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold text-center shadow-2xs cursor-pointer transition">
+                        📎 ${pAut.qrcode_img ? 'Trocar QR Code' : 'Anexar QR Code'}
+                      </button>
+                      <input id="input-qr-esc-pix_autonomo" type="file" accept="image/*" onchange="ZGestorApp.handleQRCodeUpload('pix_autonomo', event)" style="position:fixed;left:-9999px;width:1px;height:1px;opacity:0;" />
                       ${pAut.qrcode_img ? `
-                        <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_autonomo')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition">
+                        <button type="button" onclick="ZGestorApp.removerQRCodePix('pix_autonomo')" class="w-full px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-semibold border border-rose-200 transition cursor-pointer">
                           Remover Imagem
                         </button>
                       ` : ''}

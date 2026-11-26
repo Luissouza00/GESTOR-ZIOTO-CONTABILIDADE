@@ -5964,83 +5964,245 @@ window.ZGestorApp = {
   // ===========================================================================
   // MODAIS DE HONORÁRIOS E CONFIGURAÇÃO DE CHAVE PIX
   // ===========================================================================
-  openModalConfigPix() {
+  acionarInputArquivo(inputId) {
+    const el = document.getElementById(inputId);
+    if (el && typeof el.click === 'function') {
+      el.value = '';
+      el.click();
+    }
+  },
+
+  _validarImagemQRCodeOuLogo(file, maxMb = 15) {
+    if (!file) return { valido: false, erro: 'Nenhum arquivo selecionado.' };
+    const maxBytes = maxMb * 1024 * 1024;
+    if (file.size > maxBytes) {
+      const mb = (file.size / (1024 * 1024)).toFixed(1);
+      return { valido: false, erro: `A imagem possui ${mb} MB e ultrapassa o limite de ${maxMb} MB.` };
+    }
+    const mime = String(file.type || '').toLowerCase();
+    const ext = '.' + String(file.name || '').split('.').pop().toLowerCase();
+    const extsImagem = ['.png', '.jpg', '.jpeg', '.jfif', '.webp', '.svg', '.bmp', '.gif'];
+    if (mime.startsWith('image/') || extsImagem.includes(ext)) {
+      return { valido: true };
+    }
+    return { valido: false, erro: 'Selecione um arquivo de imagem válido (PNG, JPG, JPEG, WebP ou SVG).' };
+  },
+
+  _otimizarDataUrlQRCode(dataUrl, callback) {
+    if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.startsWith('data:image/svg') || typeof Image === 'undefined' || typeof document === 'undefined') {
+      callback(dataUrl);
+      return;
+    }
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 520;
+          let w = img.naturalWidth || img.width || 300;
+          let h = img.naturalHeight || img.height || 300;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.max(120, Math.round(w * ratio));
+            h = Math.max(120, Math.round(h * ratio));
+          }
+          const canvas = document.createElement('canvas');
+          if (!canvas || typeof canvas.getContext !== 'function') {
+            callback(dataUrl);
+            return;
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx2d = canvas.getContext('2d');
+          if (!ctx2d) {
+            callback(dataUrl);
+            return;
+          }
+          ctx2d.fillStyle = '#FFFFFF';
+          ctx2d.fillRect(0, 0, w, h);
+          ctx2d.imageSmoothingEnabled = false;
+          ctx2d.drawImage(img, 0, 0, w, h);
+          const otimizada = canvas.toDataURL('image/png');
+          callback(otimizada && otimizada.startsWith('data:image/') ? otimizada : dataUrl);
+        } catch (_) {
+          callback(dataUrl);
+        }
+      };
+      img.onerror = () => callback(dataUrl);
+      img.src = dataUrl;
+    } catch (_) {
+      callback(dataUrl);
+    }
+  },
+
+  openModalConfigPix(contaFoco = 'pix_principal') {
     const esc = window.zgestorDB.getEscritorioConfig();
     const modal = document.getElementById('modal-root');
     if (!modal) return;
+    this._contaAtivaPasteQR = contaFoco || 'pix_principal';
+
+    const p1 = esc.pix_principal || {
+      nome: 'Conta PJ Principal (CNPJ Principal)',
+      banco: esc.banco_pix || 'Banco Inter / Itaú',
+      tipo_chave: esc.tipo_chave_pix || 'CNPJ',
+      chave_pix: esc.chave_pix || esc.cnpj_escritorio || '',
+      favorecido: esc.favorecido_pix || esc.nome_escritorio || '',
+      qrcode_img: esc.qrcode_img || ''
+    };
+    const p2 = esc.pix_secundario || {
+      nome: 'Conta PJ Secundária',
+      banco: '',
+      tipo_chave: 'CNPJ',
+      chave_pix: '',
+      favorecido: '',
+      qrcode_img: ''
+    };
+    const p3 = esc.pix_autonomo || {
+      nome: 'Conta Autônomo / Sócio',
+      banco: '',
+      tipo_chave: 'CPF',
+      chave_pix: '',
+      favorecido: '',
+      qrcode_img: ''
+    };
+
+    const renderCardContaModal = (chaveConta, tituloBadge, corCls, dados, prefixo) => {
+      const qrAtual = dados.qrcode_img || (chaveConta === 'pix_principal' ? (esc.qrcode_img || '') : '');
+      return `
+        <div
+          onclick="ZGestorApp._contaAtivaPasteQR = '${chaveConta}'"
+          ondragover="event.preventDefault(); this.classList.add('ring-2','ring-emerald-500');"
+          ondragleave="this.classList.remove('ring-2','ring-emerald-500');"
+          ondrop="ZGestorApp.handleQRCodeDrop('${chaveConta}', event); this.classList.remove('ring-2','ring-emerald-500');"
+          class="p-3.5 rounded-2xl border ${chaveConta === 'pix_principal' ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200 bg-slate-50/60'} space-y-2.5 flex flex-col justify-between">
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-1">
+              <span class="px-2 py-0.5 rounded font-extrabold text-[10px] uppercase ${corCls}">${tituloBadge}</span>
+              ${qrAtual ? '<span class="text-[10px] font-extrabold text-emerald-700">✓ QR Anexado</span>' : '<span class="text-[10px] text-slate-400">Sem QR</span>'}
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-0.5 text-[11px]">Identificação</label>
+              <input id="${prefixo}-nome" type="text" value="${escapeHtml(dados.nome || '')}" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 bg-white font-semibold text-xs" />
+            </div>
+            <div class="grid grid-cols-3 gap-1.5">
+              <div>
+                <label class="block font-bold text-slate-700 mb-0.5 text-[11px]">Tipo</label>
+                <select id="${prefixo}-tipo" class="w-full rounded-lg border border-slate-300 px-1.5 py-1.5 bg-white font-semibold text-xs">
+                  <option value="CNPJ" ${dados.tipo_chave === 'CNPJ' ? 'selected' : ''}>CNPJ</option>
+                  <option value="CPF" ${dados.tipo_chave === 'CPF' ? 'selected' : ''}>CPF</option>
+                  <option value="E-mail" ${dados.tipo_chave === 'E-mail' ? 'selected' : ''}>E-mail</option>
+                  <option value="Celular" ${(dados.tipo_chave === 'Celular' || dados.tipo_chave === 'Telefone') ? 'selected' : ''}>Celular</option>
+                  <option value="Aleatória" ${dados.tipo_chave === 'Aleatória' ? 'selected' : ''}>Aleatória</option>
+                </select>
+              </div>
+              <div class="col-span-2">
+                <label class="block font-bold text-slate-700 mb-0.5 text-[11px]">Chave PIX</label>
+                <input id="${prefixo}-chave" type="text" value="${escapeHtml(dados.chave_pix || '')}" class="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 bg-white font-mono font-bold text-xs text-slate-900" />
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-1.5">
+              <div>
+                <label class="block font-bold text-slate-700 mb-0.5 text-[11px]">Favorecido</label>
+                <input id="${prefixo}-fav" type="text" value="${escapeHtml(dados.favorecido || '')}" class="w-full rounded-lg border border-slate-300 px-2 py-1.5 bg-white text-xs" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-0.5 text-[11px]">Banco</label>
+                <input id="${prefixo}-banco" type="text" value="${escapeHtml(dados.banco || '')}" class="w-full rounded-lg border border-slate-300 px-2 py-1.5 bg-white text-xs" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Bloco de Anexo Direto do QR Code PIX -->
+          <div class="pt-2.5 border-t border-slate-200/80">
+            <label class="block font-extrabold text-slate-800 text-[11px] mb-1.5">QR Code PIX Oficial nos Recibos</label>
+            <div class="flex items-center gap-2.5">
+              <div id="modal-preview-box-${chaveConta}" class="w-20 h-20 rounded-xl bg-white border-2 border-dashed border-slate-300 flex items-center justify-center p-1 overflow-hidden shrink-0">
+                ${qrAtual ? `
+                  <img src="${qrAtual}" style="image-rendering:crisp-edges;image-rendering:pixelated;" class="w-full h-full object-contain" alt="QR Code ${tituloBadge}" />
+                ` : `
+                  <span class="text-[9.5px] text-slate-400 text-center leading-tight px-1">Sem QR<br/>anexado</span>
+                `}
+              </div>
+              <div class="flex-1 space-y-1.5">
+                <button
+                  type="button"
+                  onclick="ZGestorApp.acionarInputArquivo('input-qr-modal-${chaveConta}')"
+                  class="w-full px-2.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] shadow-xs cursor-pointer transition">
+                  📎 ${qrAtual ? 'Trocar QR Code' : 'Selecionar QR Code'}
+                </button>
+                <input
+                  id="input-qr-modal-${chaveConta}"
+                  type="file"
+                  accept="image/*"
+                  onchange="ZGestorApp.handleQRCodeUpload('${chaveConta}', event, true)"
+                  style="position:fixed;left:-9999px;width:1px;height:1px;opacity:0;"
+                />
+                ${qrAtual ? `
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.removerQRCodePix('${chaveConta}', true)"
+                    class="w-full px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[10px] border border-rose-200 cursor-pointer">
+                    Remover QR Code
+                  </button>
+                ` : `
+                  <div class="text-[9.5px] text-slate-500 leading-snug">
+                    Clique acima, arraste a imagem aqui ou clique no card e aperte <strong>Ctrl+V</strong>.
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
     modal.innerHTML = `
-      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+      <div
+        onpaste="ZGestorApp.handleQRCodePasteModal(event)"
+        class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+        <div class="bg-white rounded-2xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[94vh] overflow-y-auto">
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
             <div>
-              <h3 class="text-base font-bold text-slate-900">Configurar Dados do Escritório & Chave PIX dos Recibos</h3>
-              <p class="text-xs text-slate-500">Esses dados saem impressos no Recibo Mensal de Cobrança de Honorários</p>
+              <span class="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Recibos de Honorários em PDF / Impressão</span>
+              <h3 class="text-base font-bold text-slate-900">Configurar Contas PIX & Anexar QR Codes Oficiais</h3>
+              <p class="text-xs text-slate-500">Selecione a imagem PNG/JPG do QR Code (ou cole com <strong>Ctrl + V</strong>) — o salvamento da imagem é imediato!</p>
             </div>
-            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+            <button type="button" onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer">×</button>
           </div>
-          <form onsubmit="ZGestorApp.submitConfigPix(event)" class="space-y-3.5 mt-4 text-xs">
-            <div>
-              <label class="block font-bold text-slate-700 mb-1">Nome / Razão Social do Escritório Contábil *</label>
-              <input id="f-pix-esc" type="text" required value="${esc.nome_escritorio}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+          <form id="form-modal-config-pix" onsubmit="ZGestorApp.submitConfigPix(event)" class="space-y-4 mt-4 text-xs">
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-slate-700 mb-1">Nome / Razão Social do Escritório *</label>
+                <input id="f-pix-esc" type="text" required value="${escapeHtml(esc.nome_escritorio || '')}" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 bg-white font-bold" />
+              </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1">CNPJ do Escritório *</label>
-                <input id="f-pix-cnpj" type="text" required value="${esc.cnpj_escritorio}" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
+                <input id="f-pix-cnpj" type="text" required value="${escapeHtml(esc.cnpj_escritorio || '')}" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 bg-white font-mono" />
               </div>
               <div>
-                <label class="block font-bold text-slate-700 mb-1">Registro CRC</label>
-                <input id="f-pix-crc" type="text" value="${esc.crc_escritorio}" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
+                <label class="block font-bold text-slate-700 mb-1">Telefone / WhatsApp</label>
+                <input id="f-pix-tel" type="text" value="${escapeHtml(esc.telefone_escritorio || '')}" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 bg-white" />
               </div>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block font-bold text-slate-700 mb-1">Telefone / WhatsApp Financeiro</label>
-                <input id="f-pix-tel" type="text" value="${esc.telefone_escritorio}" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
-              </div>
-              <div>
-                <label class="block font-bold text-slate-700 mb-1">Cidade / UF</label>
-                <input id="f-pix-cid" type="text" value="${esc.cidade_uf}" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
+              <input id="f-pix-crc" type="hidden" value="${escapeHtml(esc.crc_escritorio || '')}" />
+              <input id="f-pix-cid" type="hidden" value="${escapeHtml(esc.cidade_uf || '')}" />
+              <div class="sm:col-span-4">
+                <label class="block font-bold text-slate-700 mb-1">Instrução / Mensagem no Recibo</label>
+                <input id="f-pix-msg" type="text" value="${escapeHtml(esc.mensagem_recibo || '')}" class="w-full rounded-xl border border-slate-300 px-3 py-1.5 bg-white" />
               </div>
             </div>
 
-            <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 space-y-3">
-              <div class="font-bold text-emerald-900 uppercase text-[11px]">Dados para Pagamento por PIX no Recibo (Sem Boleto)</div>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label class="block font-bold text-emerald-900 mb-1">Tipo da Chave</label>
-                  <select id="f-pix-tipo" class="w-full rounded-xl border border-emerald-400 px-3 py-2 bg-white">
-                    <option value="CNPJ" ${esc.tipo_chave_pix === 'CNPJ' ? 'selected' : ''}>CNPJ</option>
-                    <option value="E-mail" ${esc.tipo_chave_pix === 'E-mail' ? 'selected' : ''}>E-mail</option>
-                    <option value="Celular" ${esc.tipo_chave_pix === 'Celular' ? 'selected' : ''}>Telefone / Celular</option>
-                    <option value="CPF" ${esc.tipo_chave_pix === 'CPF' ? 'selected' : ''}>CPF</option>
-                    <option value="Aleatória" ${esc.tipo_chave_pix === 'Aleatória' ? 'selected' : ''}>Chave Aleatória</option>
-                  </select>
-                </div>
-                <div class="sm:col-span-2">
-                  <label class="block font-bold text-emerald-900 mb-1">Chave PIX Principal *</label>
-                  <input id="f-pix-chave" type="text" required value="${esc.chave_pix}" class="w-full rounded-xl border border-emerald-400 px-3 py-2 bg-white font-mono font-bold text-emerald-900" />
-                </div>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label class="block font-bold text-emerald-900 mb-1">Nome do Favorecido PIX *</label>
-                  <input id="f-pix-fav" type="text" required value="${esc.favorecido_pix}" class="w-full rounded-xl border border-emerald-300 px-3 py-2 bg-white" />
-                </div>
-                <div>
-                  <label class="block font-bold text-emerald-900 mb-1">Banco / Instituição</label>
-                  <input id="f-pix-banco" type="text" value="${esc.banco_pix}" class="w-full rounded-xl border border-emerald-300 px-3 py-2 bg-white" />
-                </div>
-              </div>
-              <div>
-                <label class="block font-bold text-emerald-900 mb-1">Instrução no Recibo</label>
-                <input id="f-pix-msg" type="text" value="${esc.mensagem_recibo}" class="w-full rounded-xl border border-emerald-300 px-3 py-2 bg-white" />
-              </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3.5">
+              ${renderCardContaModal('pix_principal', 'Conta 1: PIX Principal', 'bg-emerald-100 text-emerald-900', p1, 'f-mp1')}
+              ${renderCardContaModal('pix_secundario', 'Conta 2: PIX Secundário', 'bg-blue-100 text-blue-900', p2, 'f-mp2')}
+              ${renderCardContaModal('pix_autonomo', 'Conta 3: Autônomo / Sócio', 'bg-purple-100 text-purple-900', p3, 'f-mp3')}
             </div>
 
-            <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
-              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Cancelar</button>
-              <button type="submit" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow">Salvar Dados PIX</button>
+            <div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              <span class="text-[11px] text-slate-500">Dica: cada empresa usa o QR Code do canal PIX selecionado no cadastro/honorário dela.</span>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">Fechar</button>
+                <button type="submit" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow cursor-pointer">Salvar Dados PIX</button>
+              </div>
             </div>
           </form>
         </div>
@@ -6048,22 +6210,50 @@ window.ZGestorApp = {
     `;
   },
 
+  _coletarCamposAbertosModalPix(atual) {
+    if (!document.getElementById('form-modal-config-pix')) return {};
+    return {
+      nome_escritorio: (document.getElementById('f-pix-esc')?.value || atual.nome_escritorio || '').trim(),
+      cnpj_escritorio: (document.getElementById('f-pix-cnpj')?.value || atual.cnpj_escritorio || '').trim(),
+      crc_escritorio: (document.getElementById('f-pix-crc')?.value || atual.crc_escritorio || '').trim(),
+      telefone_escritorio: (document.getElementById('f-pix-tel')?.value || atual.telefone_escritorio || '').trim(),
+      cidade_uf: (document.getElementById('f-pix-cid')?.value || atual.cidade_uf || '').trim(),
+      mensagem_recibo: (document.getElementById('f-pix-msg')?.value || atual.mensagem_recibo || '').trim(),
+      pix_principal: {
+        ...(atual.pix_principal || {}),
+        nome: (document.getElementById('f-mp1-nome')?.value ?? atual.pix_principal?.nome ?? '').trim(),
+        tipo_chave: document.getElementById('f-mp1-tipo')?.value || atual.pix_principal?.tipo_chave || 'CNPJ',
+        chave_pix: (document.getElementById('f-mp1-chave')?.value ?? atual.pix_principal?.chave_pix ?? '').trim(),
+        favorecido: (document.getElementById('f-mp1-fav')?.value ?? atual.pix_principal?.favorecido ?? '').trim(),
+        banco: (document.getElementById('f-mp1-banco')?.value ?? atual.pix_principal?.banco ?? '').trim()
+      },
+      pix_secundario: {
+        ...(atual.pix_secundario || {}),
+        nome: (document.getElementById('f-mp2-nome')?.value ?? atual.pix_secundario?.nome ?? '').trim(),
+        tipo_chave: document.getElementById('f-mp2-tipo')?.value || atual.pix_secundario?.tipo_chave || 'CNPJ',
+        chave_pix: (document.getElementById('f-mp2-chave')?.value ?? atual.pix_secundario?.chave_pix ?? '').trim(),
+        favorecido: (document.getElementById('f-mp2-fav')?.value ?? atual.pix_secundario?.favorecido ?? '').trim(),
+        banco: (document.getElementById('f-mp2-banco')?.value ?? atual.pix_secundario?.banco ?? '').trim()
+      },
+      pix_autonomo: {
+        ...(atual.pix_autonomo || {}),
+        nome: (document.getElementById('f-mp3-nome')?.value ?? atual.pix_autonomo?.nome ?? '').trim(),
+        tipo_chave: document.getElementById('f-mp3-tipo')?.value || atual.pix_autonomo?.tipo_chave || 'CPF',
+        chave_pix: (document.getElementById('f-mp3-chave')?.value ?? atual.pix_autonomo?.chave_pix ?? '').trim(),
+        favorecido: (document.getElementById('f-mp3-fav')?.value ?? atual.pix_autonomo?.favorecido ?? '').trim(),
+        banco: (document.getElementById('f-mp3-banco')?.value ?? atual.pix_autonomo?.banco ?? '').trim()
+      }
+    };
+  },
+
   submitConfigPix(e) {
     e.preventDefault();
-    window.zgestorDB.salvarEscritorioConfig({
-      nome_escritorio: document.getElementById('f-pix-esc').value.trim(),
-      cnpj_escritorio: document.getElementById('f-pix-cnpj').value.trim(),
-      crc_escritorio: document.getElementById('f-pix-crc').value.trim(),
-      telefone_escritorio: document.getElementById('f-pix-tel').value.trim(),
-      cidade_uf: document.getElementById('f-pix-cid').value.trim(),
-      tipo_chave_pix: document.getElementById('f-pix-tipo').value,
-      chave_pix: document.getElementById('f-pix-chave').value.trim(),
-      favorecido_pix: document.getElementById('f-pix-fav').value.trim(),
-      banco_pix: document.getElementById('f-pix-banco').value.trim(),
-      mensagem_recibo: document.getElementById('f-pix-msg').value.trim()
-    });
+    const db = window.zgestorDB;
+    const atual = db.getEscritorioConfig();
+    const coletados = this._coletarCamposAbertosModalPix(atual);
+    db.salvarEscritorioConfig(coletados);
     this.closeModal();
-    this.showToast('Dados do escritório e Chave PIX atualizados!', 'success');
+    this.showToast('Contas PIX e QR Codes salvos com sucesso!', 'success');
     this.renderAll();
   },
 
@@ -6140,43 +6330,88 @@ window.ZGestorApp = {
     this.renderAll();
   },
 
-  handleQRCodeUpload(tipoConta, event) {
-    const file = event.target.files && event.target.files[0];
+  _processarArquivoQRCode(tipoConta, file, dentroDoModal = false) {
     if (!file) return;
-
-    const permitidos = ['.png', '.jpg', '.jpeg', '.svg', '.webp'];
-    const val = this.validarArquivoUpload(file, permitidos, 15);
+    const val = this._validarImagemQRCodeOuLogo(file, 15);
     if (!val.valido) {
       this.showToast(val.erro, 'error');
-      event.target.value = '';
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const dataUrl = e.target.result;
-      const db = window.zgestorDB;
-      const cfg = db.getEscritorioConfig();
-      if (!cfg[tipoConta]) cfg[tipoConta] = {};
-      cfg[tipoConta].qrcode_img = dataUrl;
-      db.salvarEscritorioConfig(cfg);
+      const rawDataUrl = e.target.result;
+      this._otimizarDataUrlQRCode(rawDataUrl, (dataUrlFinal) => {
+        const db = window.zgestorDB;
+        const atual = db.getEscritorioConfig();
+        const parciaisModal = dentroDoModal ? this._coletarCamposAbertosModalPix(atual) : {};
+        const contaExist = (parciaisModal[tipoConta] || atual[tipoConta] || {});
 
-      const previewBox = document.getElementById(`preview-box-${tipoConta}`);
-      if (previewBox) {
-        previewBox.innerHTML = `<img src="${dataUrl}" class="w-full h-full object-contain" alt="QR Code ${tipoConta}" />`;
-      }
-      this.showToast(`Imagem do QR Code da conta salva com sucesso! Os recibos de cobrança já utilizarão essa imagem oficial.`, 'success');
-      this.renderAll();
+        const payload = {
+          ...parciaisModal,
+          [tipoConta]: {
+            ...contaExist,
+            qrcode_img: dataUrlFinal
+          }
+        };
+        if (tipoConta === 'pix_principal') {
+          payload.qrcode_img = dataUrlFinal;
+        }
+        db.salvarEscritorioConfig(payload);
+
+        this.showToast('QR Code PIX anexado e salvo com sucesso! Os recibos já sairão com esta imagem.', 'success');
+
+        if (dentroDoModal && document.getElementById('form-modal-config-pix')) {
+          this.openModalConfigPix(tipoConta);
+        } else if (document.getElementById('form-cadastro-escritorio')) {
+          const previewBox = document.getElementById(`preview-box-${tipoConta}`);
+          if (previewBox) {
+            previewBox.innerHTML = `<img src="${dataUrlFinal}" class="w-full h-full object-contain" alt="QR Code ${tipoConta}" />`;
+          }
+        } else {
+          this.renderContentOnly();
+        }
+      });
+    };
+    reader.onerror = () => {
+      this.showToast('Não foi possível ler o arquivo de imagem selecionado.', 'error');
     };
     reader.readAsDataURL(file);
   },
 
+  handleQRCodeUpload(tipoConta, event, dentroDoModal = false) {
+    const file = event && event.target && event.target.files ? event.target.files[0] : null;
+    if (!file) return;
+    this._processarArquivoQRCode(tipoConta, file, dentroDoModal);
+  },
+
+  handleQRCodeDrop(tipoConta, event) {
+    if (event && event.preventDefault) event.preventDefault();
+    const files = event && event.dataTransfer ? event.dataTransfer.files : null;
+    if (files && files.length > 0) {
+      this._processarArquivoQRCode(tipoConta, files[0], Boolean(document.getElementById('form-modal-config-pix')));
+    }
+  },
+
+  handleQRCodePasteModal(event) {
+    const items = event && event.clipboardData ? event.clipboardData.items : null;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.startsWith('image/')) {
+        if (event.preventDefault) event.preventDefault();
+        const file = items[i].getAsFile();
+        const contaAlvo = this._contaAtivaPasteQR || 'pix_principal';
+        this._processarArquivoQRCode(contaAlvo, file, true);
+        return;
+      }
+    }
+  },
+
   handleLogoUpload(event) {
-    const file = event.target.files && event.target.files[0];
+    const file = event && event.target && event.target.files ? event.target.files[0] : null;
     if (!file) return;
 
-    const permitidos = ['.png', '.jpg', '.jpeg', '.svg', '.webp'];
-    const val = this.validarArquivoUpload(file, permitidos, 15);
+    const val = this._validarImagemQRCodeOuLogo(file, 15);
     if (!val.valido) {
       this.showToast(val.erro, 'error');
       event.target.value = '';
@@ -6187,38 +6422,46 @@ window.ZGestorApp = {
     reader.onload = (e) => {
       const dataUrl = e.target.result;
       const db = window.zgestorDB;
-      const cfg = db.getEscritorioConfig();
-      cfg.logo_customizada = dataUrl;
-      db.salvarEscritorioConfig(cfg);
+      db.salvarEscritorioConfig({ logo_customizada: dataUrl });
 
       const previewBox = document.getElementById('preview-box-logo');
       if (previewBox) {
-        previewBox.innerHTML = `<img src="${dataUrl}" class="w-full h-full object-contain" alt="Logo Escritório" />`;
+        previewBox.innerHTML = `<img src="${dataUrl}" class="max-w-full max-h-full object-contain" alt="Logo Escritório" />`;
       }
       this.showToast('Logotipo oficial do escritório atualizado com sucesso!', 'success');
-      this.renderAll();
+      this.renderSidebar();
     };
     reader.readAsDataURL(file);
   },
 
   removerLogoEscritorio() {
     const db = window.zgestorDB;
-    const cfg = db.getEscritorioConfig();
-    delete cfg.logo_customizada;
-    db.salvarEscritorioConfig(cfg);
+    db.salvarEscritorioConfig({ logo_customizada: '' });
     this.showToast('Logotipo do escritório restaurado para a marca padrão.', 'info');
     this.renderAll();
   },
 
-  removerQRCodePix(tipoConta) {
+  removerQRCodePix(tipoConta, dentroDoModal = false) {
     const db = window.zgestorDB;
-    const cfg = db.getEscritorioConfig();
-    if (cfg[tipoConta]) {
-      cfg[tipoConta].qrcode_img = '';
-      db.salvarEscritorioConfig(cfg);
+    const atual = db.getEscritorioConfig();
+    const parciaisModal = dentroDoModal ? this._coletarCamposAbertosModalPix(atual) : {};
+    const payload = {
+      ...parciaisModal,
+      [tipoConta]: {
+        ...(parciaisModal[tipoConta] || atual[tipoConta] || {}),
+        qrcode_img: ''
+      }
+    };
+    if (tipoConta === 'pix_principal') {
+      payload.qrcode_img = '';
     }
-    this.showToast('QR Code customizado removido. O sistema voltará a utilizar o código padrão.', 'info');
-    this.renderAll();
+    db.salvarEscritorioConfig(payload);
+    this.showToast('QR Code customizado removido.', 'info');
+    if (dentroDoModal && document.getElementById('form-modal-config-pix')) {
+      this.openModalConfigPix(tipoConta);
+    } else {
+      this.renderAll();
+    }
   },
 
   testarConexaoAPIIntegraContador() {
@@ -6433,12 +6676,26 @@ window.ZGestorApp = {
               </div>
             </div>
             <div>
+              <label class="block font-bold text-slate-700 mb-1">Canal PIX / Conta para este Cliente</label>
+              <div class="flex items-center gap-2">
+                <select id="f-hon-canal-pix" class="flex-1 rounded-xl border border-slate-300 px-3 py-2 font-semibold bg-white">
+                  <option value="PIX_PRINCIPAL" ${(emp?.canal_pagamento_padrao || 'PIX_PRINCIPAL') === 'PIX_PRINCIPAL' ? 'selected' : ''}>Conta 1: PIX Principal (Conta PJ)</option>
+                  <option value="PIX_SECUNDARIO" ${emp?.canal_pagamento_padrao === 'PIX_SECUNDARIO' ? 'selected' : ''}>Conta 2: PIX Secundário</option>
+                  <option value="PIX_AUTONOMO" ${emp?.canal_pagamento_padrao === 'PIX_AUTONOMO' ? 'selected' : ''}>Conta 3: PIX Autônomo / Sócio</option>
+                  <option value="DINHEIRO" ${emp?.canal_pagamento_padrao === 'DINHEIRO' ? 'selected' : ''}>Dinheiro</option>
+                </select>
+                <button type="button" onclick="ZGestorApp.openModalConfigPix()" class="px-2.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold whitespace-nowrap cursor-pointer">
+                  QR Codes PIX
+                </button>
+              </div>
+            </div>
+            <div>
               <label class="block font-bold text-slate-700 mb-1">Observações do Honorário (Sai no Recibo PIX)</label>
-              <input id="f-hon-obs" type="text" value="${hon.observacoes || ''}" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
+              <input id="f-hon-obs" type="text" value="${escapeHtml(hon.observacoes || '')}" class="w-full rounded-xl border border-slate-300 px-3 py-2" />
             </div>
             <div class="flex justify-end gap-2 pt-3 border-t border-slate-200">
-              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold">Cancelar</button>
-              <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold">Salvar Alterações</button>
+              <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+              <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold cursor-pointer">Salvar Alterações</button>
             </div>
           </form>
         </div>
@@ -6448,7 +6705,16 @@ window.ZGestorApp = {
 
   submitEditarHonorario(e, honorarioId) {
     e.preventDefault();
-    window.zgestorDB.salvarHonorario({
+    const db = window.zgestorDB;
+    const hon = db.data.honorarios.find(h => h.id === honorarioId);
+    const canalSel = document.getElementById('f-hon-canal-pix')?.value;
+    if (hon && canalSel) {
+      const emp = db.data.empresas.find(x => x.id === hon.empresa_id);
+      if (emp && emp.canal_pagamento_padrao !== canalSel) {
+        emp.canal_pagamento_padrao = canalSel;
+      }
+    }
+    db.salvarHonorario({
       id: honorarioId,
       valor_mensal: document.getElementById('f-hon-mensal').value,
       saldo_anterior: document.getElementById('f-hon-saldo-ant').value,
@@ -6458,7 +6724,7 @@ window.ZGestorApp = {
       observacoes: document.getElementById('f-hon-obs').value.trim()
     });
     this.closeModal();
-    this.showToast('Valores do honorário atualizados!', 'success');
+    this.showToast('Valores e canal PIX do honorário atualizados!', 'success');
     this.renderAll();
   },
 
