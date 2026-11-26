@@ -49,6 +49,59 @@ window.ZGestorViews = {
     return opcoes.vazioLabel || 'Cadastro não localizado';
   },
 
+  renderBadgePreferenciaEnvio(emp, competenciaRef = null, mostrarObsInline = true) {
+    const db = window.zgestorDB;
+    if (!db || typeof db.ehOperadorInterno !== 'function' || !db.ehOperadorInterno() || !emp) return '';
+    const comp = competenciaRef || (window.ZGestorApp?.state?.competencia || '10/2026');
+    const pref = db.obterPreferenciaEnvioEmpresa(emp, comp);
+    if (!pref) return '';
+
+    const configMap = {
+      IMPRESSO: {
+        icone: '🖨️',
+        label: 'Impresso',
+        cls: 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200'
+      },
+      WHATSAPP: {
+        icone: '💬',
+        label: 'WhatsApp',
+        cls: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+      },
+      EMAIL: {
+        icone: '✉️',
+        label: 'E-mail',
+        cls: 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-300'
+      },
+      NAO_DEFINIDO: {
+        icone: '⚙️',
+        label: 'Definir Envio',
+        cls: 'bg-slate-50 hover:bg-slate-100 text-slate-500 border-dashed border-slate-300'
+      }
+    };
+    const cfg = configMap[pref.canal] || configMap.NAO_DEFINIDO;
+    const obsTitle = pref.observacao
+      ? `Preferência (${pref.competencia_inicio} em diante): ${cfg.label} — Obs: ${pref.observacao} (Clique p/ alterar)`
+      : `Preferência interna de envio de guias/docs/honorários (${comp}). Clique para definir ou alterar de ${comp} p/ frente.`;
+
+    return `
+      <span class="inline-flex flex-wrap items-center gap-1">
+        <button
+          type="button"
+          onclick="event.stopPropagation(); ZGestorApp.openModalPreferenciaEnvio('${this.escapeHtml(emp.id)}', '${this.escapeHtml(comp)}')"
+          title="${this.escapeHtml(obsTitle)}"
+          class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${cfg.cls}">
+          <span>${cfg.icone}</span>
+          <span>${cfg.label}</span>
+        </button>
+        ${mostrarObsInline && pref.observacao && pref.canal !== 'NAO_DEFINIDO' ? `
+          <span class="text-[10px] text-slate-600 bg-amber-50/80 border border-amber-200 px-1.5 py-0.5 rounded font-medium max-w-[220px] truncate" title="${this.escapeHtml(pref.observacao)}">
+            Obs: ${this.escapeHtml(pref.observacao)}
+          </span>
+        ` : ''}
+      </span>
+    `;
+  },
+
   renderSeletorEmpresaBusca({
     uid,
     inputId,
@@ -691,6 +744,15 @@ window.ZGestorViews = {
       } else {
         listaGuiasImpostos = listaGuiasImpostos.filter(g => g.status_envio === fGuiaStatus);
       }
+    }
+    const fPrefGuia = appState.filtroGuiaPreferenciaEnvio || 'TODOS';
+    if (fPrefGuia !== 'TODOS' && db.ehOperadorInterno && db.ehOperadorInterno()) {
+      listaGuiasImpostos = listaGuiasImpostos.filter(g => {
+        const emp = this.obterEmp(db, g.empresa_id, g);
+        const pref = emp ? db.obterPreferenciaEnvioEmpresa(emp, comp) : null;
+        const canalPref = pref ? pref.canal : 'NAO_DEFINIDO';
+        return canalPref === fPrefGuia;
+      });
     }
     if (fBusca) {
       listaGuiasImpostos = listaGuiasImpostos.filter(g => {
@@ -1563,6 +1625,14 @@ window.ZGestorViews = {
                     </span>
                     <span class="font-semibold text-slate-800">${sidePeekTarefa.responsavel_nome || 'Não atribuído'}</span>
                   </div>
+                  ${db.ehOperadorInterno && db.ehOperadorInterno() ? `
+                    <div class="flex items-center justify-between pt-1.5 border-t border-slate-200/80">
+                      <span class="text-slate-500 flex items-center gap-1.5 font-mono text-[11px]">
+                        <span>📨</span> Envio Preferido (${comp})
+                      </span>
+                      <div>${this.renderBadgePreferenciaEnvio(sidePeekEmpresa, comp, false)}</div>
+                    </div>
+                  ` : ''}
                 </div>
 
                 <!-- Formulário de Alteração de Status & Observação rápida -->
@@ -2121,7 +2191,7 @@ window.ZGestorViews = {
                 </div>
 
                 <!-- Filtros & Ações -->
-                <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                   <div>
                     <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Empresa</label>
                     ${this.renderSeletorEmpresaBusca({
@@ -2153,6 +2223,18 @@ window.ZGestorViews = {
                       <option value="ARQUIVADA_ASSINADA" ${fGuiaStatus === 'ARQUIVADA_ASSINADA' ? 'selected' : ''}>📁 Assinadas e Arquivadas</option>
                     </select>
                   </div>
+                  ${db.ehOperadorInterno && db.ehOperadorInterno() ? `
+                    <div>
+                      <label class="block text-[10px] font-bold uppercase text-indigo-700 mb-1">Preferência do Cliente (Operador)</label>
+                      <select onchange="ZGestorApp.setFiltro('filtroGuiaPreferenciaEnvio', this.value)" class="w-full rounded-xl border border-indigo-200 bg-indigo-50/30 px-2.5 py-1.5 text-xs font-semibold text-slate-800">
+                        <option value="TODOS" ${fPrefGuia === 'TODOS' ? 'selected' : ''}>Todas as Preferências</option>
+                        <option value="IMPRESSO" ${fPrefGuia === 'IMPRESSO' ? 'selected' : ''}>🖨️ Prefere Impresso</option>
+                        <option value="WHATSAPP" ${fPrefGuia === 'WHATSAPP' ? 'selected' : ''}>💬 Prefere WhatsApp</option>
+                        <option value="EMAIL" ${fPrefGuia === 'EMAIL' ? 'selected' : ''}>✉️ Prefere E-mail</option>
+                        <option value="NAO_DEFINIDO" ${fPrefGuia === 'NAO_DEFINIDO' ? 'selected' : ''}>⚪ Sem preferência definida</option>
+                      </select>
+                    </div>
+                  ` : ''}
                   <div class="flex items-end gap-1.5">
                     <button onclick="ZGestorApp.openModalApuracaoIrpjCsll(null, 'TRANSMITIR')" title="Apurar IRPJ e CSLL Trimestral (Quota Única ou até 3 Quotas)" class="flex-1 py-1.5 px-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer">
                       <i data-lucide="layers" class="w-3.5 h-3.5"></i> IRPJ/CSLL Quotas
@@ -2247,6 +2329,7 @@ window.ZGestorViews = {
                                   ${ehAvulsoReal ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Avulso</span>` : ''}
                                 </div>
                                 <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : this.escapeHtml(g.documento || (ehAvulsoReal ? 'Parcelamento Avulso' : ''))}</div>
+                                ${emp ? `<div class="mt-1">${this.renderBadgePreferenciaEnvio(emp, comp, true)}</div>` : ''}
                               </td>
                               <td class="py-3 px-3">
                                 <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
@@ -3904,6 +3987,7 @@ window.ZGestorViews = {
                     <td class="py-3 px-2.5">
                       <div class="font-medium text-slate-800">${e.responsavel_legal || '—'}</div>
                       <div class="text-[11px] text-slate-500">${e.telefone || ''}</div>
+                      <div class="mt-1">${this.renderBadgePreferenciaEnvio(e, appState.competencia, true)}</div>
                     </td>
                     ${canSeeHon ? `
                       <td class="py-3 px-2.5">
@@ -4197,7 +4281,8 @@ window.ZGestorViews = {
     const fStatusHon = appState.filtroHonorarioStatus || 'TODOS';
     const fVencHon = appState.filtroHonorarioVencimento || 'TODOS';
     const fCanalHon = appState.filtroHonorarioCanal || 'TODOS';
-    const temFiltroHonAtivo = Boolean(fBuscaHon || fStatusHon !== 'TODOS' || fVencHon !== 'TODOS' || fCanalHon !== 'TODOS');
+    const fPrefHon = appState.filtroHonorarioPreferencia || 'TODOS';
+    const temFiltroHonAtivo = Boolean(fBuscaHon || fStatusHon !== 'TODOS' || fVencHon !== 'TODOS' || fCanalHon !== 'TODOS' || fPrefHon !== 'TODOS');
 
     const qtdAtrasadosBase = listaHonBase.filter(h => h.status === 'ATRASADO').length;
     const qtdAbertosBase = listaHonBase.filter(h => h.status === 'ABERTO' || h.status === 'PARCIAL').length;
@@ -4226,13 +4311,19 @@ window.ZGestorViews = {
       }
       if (fVencHon !== 'TODOS') {
         const diaStr = String(h.data_vencimento || '').slice(-2);
-        if (fVencHon === 'DIA_10' && diaStr !== '10') return false;
-        if (fVencHon === 'DIA_20' && diaStr !== '20') return false;
-        if (fVencHon === 'OUTROS' && (diaStr === '10' || diaStr === '20')) return false;
+        const diaBase = Number(h.dia_base_vencimento || (emp && emp.dia_vencimento_honorario) || diaStr);
+        if (fVencHon === 'DIA_10' && diaBase !== 10 && diaStr !== '10') return false;
+        if (fVencHon === 'DIA_20' && diaBase !== 20 && diaStr !== '20') return false;
+        if (fVencHon === 'OUTROS' && (diaBase === 10 || diaBase === 20 || diaStr === '10' || diaStr === '20')) return false;
       }
       if (fCanalHon !== 'TODOS') {
         const canalEmp = (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
         if (canalEmp !== fCanalHon) return false;
+      }
+      if (fPrefHon !== 'TODOS' && db.ehOperadorInterno && db.ehOperadorInterno()) {
+        const pref = emp ? db.obterPreferenciaEnvioEmpresa(emp, comp) : null;
+        const canalPref = pref ? pref.canal : 'NAO_DEFINIDO';
+        if (canalPref !== fPrefHon) return false;
       }
       return true;
     });
@@ -4278,8 +4369,8 @@ window.ZGestorViews = {
             <button onclick="ZGestorReports.emitirRelatorioNFSe('${comp}')" class="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
               <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Relatório para Emissão de NFS-e
             </button>
-            <button onclick="ZGestorReports.imprimirLoteRecibosPixMes('${comp}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
-              <i data-lucide="printer" class="w-3.5 h-3.5"></i> Imprimir Todos Recibos PIX (${comp})
+            <button onclick="ZGestorReports.imprimirLoteRecibosPixMes('${comp}', ${temFiltroHonAtivo ? JSON.stringify(listaHon.map(h => h.id)).replace(/"/g, "'") : 'null'})" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
+              <i data-lucide="printer" class="w-3.5 h-3.5"></i> ${temFiltroHonAtivo ? `Imprimir Recibos Filtrados (${comp})` : `Imprimir Todos Recibos PIX (${comp})`}
             </button>
             <button onclick="ZGestorReports.emitirRelatorioAba('honorarios', ZGestorApp.state)" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
               <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Relatório Financeiro
@@ -4346,7 +4437,7 @@ window.ZGestorViews = {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
             <div>
               <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Buscar Cliente, Código ou CNPJ</label>
               <input
@@ -4374,8 +4465,8 @@ window.ZGestorViews = {
               <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Dia de Vencimento</label>
               <select onchange="ZGestorApp.setFiltro('filtroHonorarioVencimento', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 bg-white">
                 <option value="TODOS" ${fVencHon === 'TODOS' ? 'selected' : ''}>Todos os Vencimentos</option>
-                <option value="DIA_10" ${fVencHon === 'DIA_10' ? 'selected' : ''}>Dia 10/${sub.label}</option>
-                <option value="DIA_20" ${fVencHon === 'DIA_20' ? 'selected' : ''}>Dia 20/${sub.label}</option>
+                <option value="DIA_10" ${fVencHon === 'DIA_10' ? 'selected' : ''}>Dia 10/${sub.label} (ou prorrog.)</option>
+                <option value="DIA_20" ${fVencHon === 'DIA_20' ? 'selected' : ''}>Dia 20/${sub.label} (ou prorrog.)</option>
                 <option value="OUTROS" ${fVencHon === 'OUTROS' ? 'selected' : ''}>Outros Dias</option>
               </select>
             </div>
@@ -4389,6 +4480,18 @@ window.ZGestorViews = {
                 <option value="DINHEIRO" ${fCanalHon === 'DINHEIRO' ? 'selected' : ''}>Dinheiro</option>
               </select>
             </div>
+            ${db.ehOperadorInterno && db.ehOperadorInterno() ? `
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-indigo-700 mb-1">Preferência de Envio (Operador)</label>
+                <select onchange="ZGestorApp.setFiltro('filtroHonorarioPreferencia', this.value)" class="w-full rounded-xl border border-indigo-200 bg-indigo-50/30 px-2.5 py-1.5 text-xs font-semibold text-slate-800">
+                  <option value="TODOS" ${fPrefHon === 'TODOS' ? 'selected' : ''}>Todas as Preferências</option>
+                  <option value="IMPRESSO" ${fPrefHon === 'IMPRESSO' ? 'selected' : ''}>🖨️ Prefere Impresso</option>
+                  <option value="WHATSAPP" ${fPrefHon === 'WHATSAPP' ? 'selected' : ''}>💬 Prefere WhatsApp</option>
+                  <option value="EMAIL" ${fPrefHon === 'EMAIL' ? 'selected' : ''}>✉️ Prefere E-mail</option>
+                  <option value="NAO_DEFINIDO" ${fPrefHon === 'NAO_DEFINIDO' ? 'selected' : ''}>⚪ Sem preferência definida</option>
+                </select>
+              </div>
+            ` : ''}
           </div>
         </div>
 
@@ -4430,7 +4533,7 @@ window.ZGestorViews = {
                       </div>
                       ${emp ? `<div class="text-[10px] text-slate-500 font-mono mt-0.5">${this.escapeHtml(emp.cnpj)}</div>` : ''}
                       <div class="text-[11px] text-indigo-700 font-semibold">Venc: ${this.formatDate(h.data_vencimento)}</div>
-                      <div class="mt-1 flex items-center gap-1">
+                      <div class="mt-1 flex flex-wrap items-center gap-1">
                         ${(() => {
                           const c = (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
                           const map = {
@@ -4442,6 +4545,7 @@ window.ZGestorViews = {
                           const item = map[c] || map.PIX_PRINCIPAL;
                           return `<span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold border ${item.cls}" title="Canal de Recebimento">${item.label}</span>`;
                         })()}
+                        ${emp ? this.renderBadgePreferenciaEnvio(emp, comp, true) : ''}
                       </div>
                       ${h.observacoes ? `<div class="text-[10px] text-slate-500 mt-0.5 italic">"${h.observacoes}"</div>` : ''}
                     </td>

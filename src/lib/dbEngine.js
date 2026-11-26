@@ -1068,6 +1068,127 @@
       return antecipar ? this.anteciparParaDiaUtil(bruta, considerar31Dez) : bruta;
     }
 
+    prorrogarParaProximoDiaUtil(dateStr) {
+      if (!dateStr || typeof dateStr !== 'string') return dateStr;
+      const parts = dateStr.slice(0, 10).split('-').map(Number);
+      if (parts.length !== 3 || parts.some(isNaN)) return dateStr;
+      let dt = new Date(parts[0], parts[1] - 1, parts[2]);
+      for (let guard = 0; guard < 12; guard++) {
+        const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        if (this.ehDiaUtilBrasil(iso, false)) {
+          return iso;
+        }
+        dt.setDate(dt.getDate() + 1);
+      }
+      return dateStr;
+    }
+
+    calcularVencimentoHonorarioUtil(competencia, dia = 10) {
+      const bruta = this.calcularDataMesSubsequente(competencia, dia);
+      return this.prorrogarParaProximoDiaUtil(bruta);
+    }
+
+    // =========================================================================
+    // PREFERÊNCIA DE ENVIO DO CLIENTE (EXCLUSIVO PARA OPERADORES DO ESCRITÓRIO)
+    // Vigência temporal: vale da competência em que foi definida para frente
+    // =========================================================================
+    ehOperadorInterno() {
+      const user = this.getCurrentUser();
+      if (!user || user.cargo === 'CLIENTE') return false;
+      if (typeof window !== 'undefined' && window.ZGestorApp?.state?.modoSimulacaoCliente) return false;
+      return true;
+    }
+
+    obterPreferenciaEnvioEmpresa(empresaOuId, competenciaRef = null) {
+      if (!this.ehOperadorInterno()) return null;
+      const emp = this.obterEmpresaSegura(empresaOuId);
+      if (!emp) return null;
+      const compAlvo = this.normalizarCompetencia(
+        competenciaRef || (typeof window !== 'undefined' && window.ZGestorApp?.state?.competencia) || '10/2026'
+      );
+      const hist = Array.isArray(emp.historico_preferencia_envio) ? emp.historico_preferencia_envio : [];
+      if (hist.length === 0) {
+        return { canal: 'NAO_DEFINIDO', observacao: '', competencia_inicio: '' };
+      }
+      const ordenado = [...hist]
+        .filter(it => it && it.competencia_inicio && it.canal)
+        .sort((a, b) => this.compararCompetencias(a.competencia_inicio, b.competencia_inicio));
+
+      let vigente = null;
+      ordenado.forEach(it => {
+        if (this.compararCompetencias(it.competencia_inicio, compAlvo) <= 0) {
+          vigente = it;
+        }
+      });
+
+      if (!vigente) {
+        return { canal: 'NAO_DEFINIDO', observacao: '', competencia_inicio: '' };
+      }
+      return {
+        canal: vigente.canal,
+        observacao: vigente.observacao || '',
+        competencia_inicio: vigente.competencia_inicio,
+        atualizado_por: vigente.atualizado_por || '',
+        atualizado_em: vigente.atualizado_em || ''
+      };
+    }
+
+    salvarPreferenciaEnvioEmpresa(empresaId, competenciaInicio, canal, observacao = '') {
+      if (!this.ehOperadorInterno()) {
+        throw new Error('Política de Segurança: A preferência operacional de envio é restrita aos operadores do escritório.');
+      }
+      const emp = (this.data.empresas || []).find(e => e.id === empresaId);
+      if (!emp) throw new Error('Empresa não encontrada.');
+
+      const compNorm = this.normalizarCompetencia(competenciaInicio || '10/2026');
+      const canalValido = ['IMPRESSO', 'WHATSAPP', 'EMAIL', 'NAO_DEFINIDO'].includes(canal) ? canal : 'NAO_DEFINIDO';
+      const obsLimpa = String(observacao || '').trim();
+      const user = this.getCurrentUser();
+      const agora = new Date().toISOString();
+
+      if (!Array.isArray(emp.historico_preferencia_envio)) {
+        emp.historico_preferencia_envio = [];
+      }
+
+      const idxExist = emp.historico_preferencia_envio.findIndex(it => it && it.competencia_inicio === compNorm);
+      const registro = {
+        competencia_inicio: compNorm,
+        canal: canalValido,
+        observacao: obsLimpa,
+        atualizado_por: user ? user.nome : 'Operador',
+        atualizado_em: agora
+      };
+
+      if (idxExist !== -1) {
+        emp.historico_preferencia_envio[idxExist] = registro;
+      } else {
+        emp.historico_preferencia_envio.push(registro);
+      }
+
+      emp.historico_preferencia_envio.sort((a, b) => this.compararCompetencias(a.competencia_inicio, b.competencia_inicio));
+      this.saveLocalData();
+
+      const mapNome = { IMPRESSO: 'Impresso (Office Boy)', WHATSAPP: 'WhatsApp', EMAIL: 'E-mail', NAO_DEFINIDO: 'Não definido' };
+      this.registrarLog(
+        'PREFERENCIA_ENVIO_CLIENTE',
+        'Empresas',
+        `Preferência de envio de ${this.nomeEmpresaPrioritario(emp)} definida como "${mapNome[canalValido]}" a partir de ${compNorm}${obsLimpa ? ` (${obsLimpa})` : ''}.`
+      );
+      return registro;
+    }
+
+    removerHistoricoPreferenciaEnvio(empresaId, competenciaInicio) {
+      if (!this.ehOperadorInterno()) {
+        throw new Error('Acesso restrito aos operadores do escritório.');
+      }
+      const emp = (this.data.empresas || []).find(e => e.id === empresaId);
+      if (!emp || !Array.isArray(emp.historico_preferencia_envio)) return null;
+      const compNorm = this.normalizarCompetencia(competenciaInicio);
+      emp.historico_preferencia_envio = emp.historico_preferencia_envio.filter(it => it && it.competencia_inicio !== compNorm);
+      this.saveLocalData();
+      return emp.historico_preferencia_envio;
+    }
+
     obterTrimestreDeCompetencia(competencia) {
       const partes = String(competencia || '09/2026').split('/');
       const mes = parseInt(partes[0], 10) || 9;
@@ -4294,6 +4415,11 @@
       hon.saldo_aberto = saldoAberto;
 
       const hoje = new Date().toISOString().slice(0, 10);
+      // Regra de honorários: se o vencimento cair em sábado, domingo ou feriado nacional, prorroga para o próximo dia útil
+      if (hon.data_vencimento && !this.ehDiaUtilBrasil(hon.data_vencimento, false)) {
+        hon.data_vencimento = this.prorrogarParaProximoDiaUtil(hon.data_vencimento);
+      }
+
       if (saldoAberto <= 0.009 && valorLiquido > 0) {
         hon.status = 'PAGO';
       } else if (somaPago > 0 && saldoAberto > 0) {
@@ -4337,7 +4463,8 @@
         const saldoAnt = this.obterSaldoAnteriorEmpresa(emp.id, competencia);
 
         if (!existente) {
-          const vencimentoMesSeguinte = this.calcularDataMesSubsequente(competencia, emp.dia_vencimento_honorario || 10);
+          const diaBaseHon = Number(emp.dia_vencimento_honorario || 10);
+          const vencimentoMesSeguinte = this.calcularVencimentoHonorarioUtil(competencia, diaBaseHon);
           const valorPadrao = Number(emp.valor_honorario_padrao || 0);
           const totalComAnterior = Number((valorPadrao + saldoAnt.valor).toFixed(2));
 
@@ -4345,6 +4472,7 @@
             id: `hon-${Date.now()}-${criados}-${Math.random().toString(36).slice(2, 5)}`,
             empresa_id: emp.id,
             competencia,
+            dia_base_vencimento: diaBaseHon,
             data_vencimento: vencimentoMesSeguinte,
             valor_mensal: valorPadrao,
             saldo_anterior: saldoAnt.valor,
@@ -4386,7 +4514,7 @@
             saldo_anterior: dadosHon.saldo_anterior !== undefined ? Number(dadosHon.saldo_anterior) : Number(this.data.honorarios[idx].saldo_anterior || 0),
             servicos_extras: Number(dadosHon.servicos_extras || 0),
             desconto: Number(dadosHon.desconto || 0),
-            data_vencimento: dadosHon.data_vencimento || this.data.honorarios[idx].data_vencimento,
+            data_vencimento: this.prorrogarParaProximoDiaUtil(dadosHon.data_vencimento || this.data.honorarios[idx].data_vencimento),
             observacoes: dadosHon.observacoes !== undefined ? dadosHon.observacoes : this.data.honorarios[idx].observacoes
           };
           const atualizado = this.recalcularHonorario(dadosHon.id);
@@ -4401,7 +4529,7 @@
         id: 'hon-' + Date.now(),
         empresa_id: dadosHon.empresa_id,
         competencia: dadosHon.competencia,
-        data_vencimento: dadosHon.data_vencimento,
+        data_vencimento: this.prorrogarParaProximoDiaUtil(dadosHon.data_vencimento),
         valor_mensal: Number(dadosHon.valor_mensal || 0),
         saldo_anterior: Number(dadosHon.saldo_anterior || 0),
         competencia_saldo_anterior: dadosHon.competencia_saldo_anterior || '',

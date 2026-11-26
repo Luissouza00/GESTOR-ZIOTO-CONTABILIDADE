@@ -1,8 +1,8 @@
 // =============================================================================
 // ZGESTOR - Motor de Emissão de Relatórios Gerenciais (Todas as Abas, incluindo
 // Controle de CNDs e Central do Cliente 360°) e Impressão de Recibos PIX
-// - Paginação A4 otimizada (2 recibos por folha A4 com break-inside: avoid
-//   para NUNCA cortar um recibo no meio da página ao imprimir em lote)
+// - Paginação A4 individual: 1 recibo por página A4 com break-after: page
+//   e break-inside: avoid para nunca cortar ou misturar recibos.
 // =============================================================================
 
 window.ZGestorReports = {
@@ -63,6 +63,9 @@ window.ZGestorReports = {
             .print-sheet {
               break-after: page !important;
               page-break-after: always !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+              padding-top: 2mm;
             }
             .print-sheet:last-child {
               break-after: auto !important;
@@ -345,11 +348,14 @@ window.ZGestorReports = {
     this.abrirJanelaImpressao(`Recibo de Cobrança PIX - ${emp ? emp.nome_fantasia : ''} (${hon.competencia})`, html);
   },
 
-  imprimirLoteRecibosPixMes(competencia) {
+  imprimirLoteRecibosPixMes(competencia, idsFiltrados = null) {
     const db = window.zgestorDB;
     db.sincronizarSaldosAnterioresHonorarios(competencia);
     const esc = db.getEscritorioConfig();
-    const listaAlvo = db.data.honorarios.filter(h => h.competencia === competencia && Number(h.saldo_aberto) > 0);
+    const setFiltro = Array.isArray(idsFiltrados) ? new Set(idsFiltrados) : null;
+    const listaAlvo = db.data.honorarios.filter(
+      h => h.competencia === competencia && Number(h.saldo_aberto) > 0 && (!setFiltro || setFiltro.has(h.id))
+    );
 
     if (listaAlvo.length === 0) {
       if (window.ZGestorApp?.showToast) {
@@ -358,18 +364,15 @@ window.ZGestorReports = {
       return;
     }
 
-    const paginasHtml = [];
-    for (let i = 0; i < listaAlvo.length; i += 2) {
-      const par = listaAlvo.slice(i, i + 2);
-      const blocosPar = par.map((hon, idx) => {
-        const emp = db.data.empresas.find(e => e.id === hon.empresa_id);
-        const num = `${hon.competencia.replace('/', '')}-${emp ? emp.codigo_interno : String(i + idx + 1).padStart(2, '0')}`;
-        return this.gerarBlocoReciboPix(hon, emp, esc, num);
-      }).join('');
-      paginasHtml.push(`<div class="print-sheet">${blocosPar}</div>`);
-    }
+    // Emite estritamente 1 recibo por página A4 (.print-sheet individual por cliente)
+    const paginasHtml = listaAlvo.map((hon, idx) => {
+      const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(hon.empresa_id, hon) : db.data.empresas.find(e => e.id === hon.empresa_id);
+      const cod = emp ? String(emp.codigo_interno || '').replace(/^#+/, '').trim() : '';
+      const num = `${hon.competencia.replace('/', '')}-${cod || String(idx + 1).padStart(2, '0')}`;
+      return `<div class="print-sheet">${this.gerarBlocoReciboPix(hon, emp, esc, num)}</div>`;
+    });
 
-    this.abrirJanelaImpressao(`Lote de Recibos de Cobrança PIX — Competência ${competencia} (${listaAlvo.length} recibos)`, paginasHtml.join(''));
+    this.abrirJanelaImpressao(`Lote de Recibos de Cobrança PIX — Competência ${competencia} (${listaAlvo.length} recibo(s), 1 por página)`, paginasHtml.join(''));
   },
 
   // ===========================================================================

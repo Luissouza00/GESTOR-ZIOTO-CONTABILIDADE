@@ -41,6 +41,7 @@ window.ZGestorApp = {
     filtroTarefaBusca: '',
     filtroGuiaImpostoTipo: 'TODOS',
     filtroGuiaImpostoStatus: 'TODOS',
+    filtroGuiaPreferenciaEnvio: 'TODOS',
     guiasSelecionadas: [],
     filtroCNDCliente: 'TODOS',
     filtroCNDOrgao: 'TODOS',
@@ -62,6 +63,7 @@ window.ZGestorApp = {
     filtroHonorarioStatus: 'TODOS',
     filtroHonorarioVencimento: 'TODOS',
     filtroHonorarioCanal: 'TODOS',
+    filtroHonorarioPreferencia: 'TODOS',
     empresaOnboardingId: null,
     filtroOnboardingSomentePendentes: true,
     filtroOnboardingItensPendentes: false,
@@ -407,7 +409,207 @@ window.ZGestorApp = {
     this.state.filtroHonorarioStatus = 'TODOS';
     this.state.filtroHonorarioVencimento = 'TODOS';
     this.state.filtroHonorarioCanal = 'TODOS';
+    this.state.filtroHonorarioPreferencia = 'TODOS';
     this.renderContentOnly();
+  },
+
+  // ===========================================================================
+  // MODAL RÁPIDO DE PREFERÊNCIA DE ENVIO DO CLIENTE (EXCLUSIVO PARA OPERADORES)
+  // ===========================================================================
+  openModalPreferenciaEnvio(empresaId, competenciaRef = null) {
+    const db = window.zgestorDB;
+    if (!db.ehOperadorInterno || !db.ehOperadorInterno()) {
+      this.showToast('Informação interna restrita aos operadores do escritório.', 'error');
+      return;
+    }
+    const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(empresaId) : (db.data.empresas || []).find(e => e.id === empresaId);
+    if (!emp) return;
+
+    const compInicial = competenciaRef || this.state.competencia || '10/2026';
+    const prefAtual = db.obterPreferenciaEnvioEmpresa(emp, compInicial) || { canal: 'NAO_DEFINIDO', observacao: '' };
+    const historico = Array.isArray(emp.historico_preferencia_envio)
+      ? [...emp.historico_preferencia_envio].sort((a, b) => db.compararCompetencias(b.competencia_inicio, a.competencia_inicio))
+      : [];
+
+    const mapLabels = {
+      IMPRESSO: '🖨️ Impresso (Office Boy)',
+      WHATSAPP: '💬 WhatsApp',
+      EMAIL: '✉️ E-mail',
+      NAO_DEFINIDO: '⚪ Não definido'
+    };
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-extrabold uppercase">
+                🔒 Visível Somente para Operadores
+              </span>
+              <h3 class="text-base font-bold text-slate-900 mt-1">Preferência de Envio do Cliente</h3>
+              <p class="text-xs text-slate-500">Guias de impostos, documentos e recibos de honorários</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitPreferenciaEnvio(event, '${escapeHtml(emp.id)}')" class="space-y-4 mt-4 text-xs">
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div class="font-bold text-slate-900">${emp.codigo_interno ? `<span class="font-mono text-indigo-700 mr-1">${escapeHtml(String(emp.codigo_interno).replace(/^#+/, ''))}</span>` : ''}${escapeHtml(emp.razao_social || emp.nome_fantasia)}</div>
+              <div class="text-[11px] text-slate-500 font-mono mt-0.5">CNPJ: ${escapeHtml(emp.cnpj || '—')}${emp.telefone ? ` • Tel: ${escapeHtml(emp.telefone)}` : ''}${emp.email ? ` • ${escapeHtml(emp.email)}` : ''}</div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-1.5">
+              <label class="block font-bold text-indigo-950">Válido a partir da Competência (Mês/Ano) *</label>
+              <input
+                id="f-pref-comp"
+                type="text"
+                required
+                value="${escapeHtml(compInicial)}"
+                placeholder="MM/AAAA (ex: 10/2026)"
+                class="w-40 rounded-xl border border-indigo-300 bg-white px-3 py-1.5 font-mono font-extrabold text-indigo-950"
+              />
+              <p class="text-[10px] text-indigo-800">
+                A preferência escolhida valerá <strong>deste mês para frente</strong> até que seja alterada novamente em algum mês futuro (mantendo o histórico dos meses anteriores).
+              </p>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-800 mb-2">Por onde o cliente prefere receber? *</label>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label class="cursor-pointer">
+                  <input type="radio" name="f-pref-canal" value="IMPRESSO" ${prefAtual.canal === 'IMPRESSO' ? 'checked' : ''} onchange="ZGestorApp.aoTrocarCanalPreferenciaEnvio(this.value)" class="sr-only peer" />
+                  <div class="p-3 rounded-xl border-2 text-center transition peer-checked:border-blue-600 peer-checked:bg-blue-50 peer-checked:text-blue-950 border-slate-200 hover:border-slate-300 font-bold">
+                    <div class="text-base">🖨️</div>
+                    <div class="mt-0.5">Impresso</div>
+                    <div class="text-[10px] font-normal text-slate-500">Protocolo / Office Boy</div>
+                  </div>
+                </label>
+
+                <label class="cursor-pointer">
+                  <input type="radio" name="f-pref-canal" value="WHATSAPP" ${prefAtual.canal === 'WHATSAPP' || prefAtual.canal === 'NAO_DEFINIDO' ? 'checked' : ''} onchange="ZGestorApp.aoTrocarCanalPreferenciaEnvio(this.value)" class="sr-only peer" />
+                  <div class="p-3 rounded-xl border-2 text-center transition peer-checked:border-emerald-600 peer-checked:bg-emerald-50 peer-checked:text-emerald-950 border-slate-200 hover:border-slate-300 font-bold">
+                    <div class="text-base">💬</div>
+                    <div class="mt-0.5">WhatsApp</div>
+                    <div class="text-[10px] font-normal text-slate-500">Envio digital c/ obs.</div>
+                  </div>
+                </label>
+
+                <label class="cursor-pointer">
+                  <input type="radio" name="f-pref-canal" value="EMAIL" ${prefAtual.canal === 'EMAIL' ? 'checked' : ''} onchange="ZGestorApp.aoTrocarCanalPreferenciaEnvio(this.value)" class="sr-only peer" />
+                  <div class="p-3 rounded-xl border-2 text-center transition peer-checked:border-indigo-600 peer-checked:bg-indigo-50 peer-checked:text-indigo-950 border-slate-200 hover:border-slate-300 font-bold">
+                    <div class="text-base">✉️</div>
+                    <div class="mt-0.5">E-mail</div>
+                    <div class="text-[10px] font-normal text-slate-500">Envio digital c/ obs.</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div id="wrap-pref-obs">
+              <label class="block font-bold text-slate-800 mb-1">
+                Observação Interna para os Operadores (WhatsApp / E-mail / Destinatário)
+              </label>
+              <textarea
+                id="f-pref-obs"
+                rows="2"
+                placeholder="Ex: Enviar no WhatsApp (33) 99999-0000 falar c/ Maria, ou e-mail financeiro@empresa.com.br..."
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+              >${escapeHtml(prefAtual.observacao || '')}</textarea>
+            </div>
+
+            ${historico.length > 0 ? `
+              <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div class="text-[10px] font-bold uppercase text-slate-500">Histórico de Vigência Salvo por Competência:</div>
+                <div class="divide-y divide-slate-200/70">
+                  ${historico.map(it => `
+                    <div class="py-1.5 flex items-center justify-between gap-2 text-[11px]">
+                      <div>
+                        <span class="font-mono font-extrabold text-indigo-800">De ${escapeHtml(it.competencia_inicio)} em diante:</span>
+                        <strong class="ml-1 text-slate-900">${mapLabels[it.canal] || it.canal}</strong>
+                        ${it.observacao ? `<span class="text-slate-600"> — ${escapeHtml(it.observacao)}</span>` : ''}
+                      </div>
+                      <button
+                        type="button"
+                        onclick="ZGestorApp.excluirHistoricoPreferenciaEnvio('${escapeHtml(emp.id)}', '${escapeHtml(it.competencia_inicio)}')"
+                        class="text-rose-500 hover:text-rose-700 font-bold px-1.5 cursor-pointer"
+                        title="Remover este marco de competência">
+                        ×
+                      </button>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onclick="ZGestorApp.limparPreferenciaEnvioMes('${escapeHtml(emp.id)}')"
+                class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold cursor-pointer">
+                Deixar Sem Preferência
+              </button>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="ZGestorApp.closeModal()" class="px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+                <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow cursor-pointer">
+                  Salvar Preferência
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  aoTrocarCanalPreferenciaEnvio(canal) {
+    const obsEl = document.getElementById('f-pref-obs');
+    if (!obsEl) return;
+    if (canal === 'WHATSAPP') {
+      obsEl.placeholder = 'Ex: Enviar no WhatsApp (33) 99999-0000 (Financeiro / Sócio)...';
+    } else if (canal === 'EMAIL') {
+      obsEl.placeholder = 'Ex: Enviar p/ financeiro@empresa.com.br c/ cópia p/ socio@empresa.com.br...';
+    } else {
+      obsEl.placeholder = 'Ex: Entregar na recepção em horário comercial (opcional)...';
+    }
+  },
+
+  submitPreferenciaEnvio(e, empresaId) {
+    e.preventDefault();
+    try {
+      const comp = document.getElementById('f-pref-comp')?.value.trim() || this.state.competencia;
+      const canal = document.querySelector('input[name="f-pref-canal"]:checked')?.value || 'WHATSAPP';
+      const obs = document.getElementById('f-pref-obs')?.value.trim() || '';
+      window.zgestorDB.salvarPreferenciaEnvioEmpresa(empresaId, comp, canal, obs);
+      this.closeModal();
+      this.showToast(`Preferência de envio salva de ${comp} em diante!`, 'success');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  limparPreferenciaEnvioMes(empresaId) {
+    try {
+      const comp = document.getElementById('f-pref-comp')?.value.trim() || this.state.competencia;
+      window.zgestorDB.salvarPreferenciaEnvioEmpresa(empresaId, comp, 'NAO_DEFINIDO', '');
+      this.closeModal();
+      this.showToast(`Preferência de envio limpa de ${comp} em diante.`, 'info');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  excluirHistoricoPreferenciaEnvio(empresaId, compInicio) {
+    try {
+      window.zgestorDB.removerHistoricoPreferenciaEnvio(empresaId, compInicio);
+      this.openModalPreferenciaEnvio(empresaId, this.state.competencia);
+      this.renderContentOnly();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
   },
 
   // ===========================================================================
