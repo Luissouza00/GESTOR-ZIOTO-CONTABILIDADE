@@ -151,11 +151,261 @@
     constructor() {
       this.supabase = null;
       this.supabaseConnected = false;
+      this._initialCloudSyncDone = false;
       this.supabaseConfig = this.loadSupabaseConfig();
       this.data = this.loadLocalData();
       this.initSupabaseClient();
+      if (!this.supabaseConnected) {
+        this._initialCloudSyncDone = true;
+      }
       // Remove qualquer resquício de sessão antiga em localStorage para garantir que a rota inicial seja a tela de login
       try { localStorage.removeItem(SESSION_USER_KEY); } catch (_) {}
+    }
+
+    limparCodigoInterno(cod) {
+      return String(cod === null || cod === undefined ? '' : cod).replace(/^#+/, '').trim();
+    }
+
+    obterEmpresaSegura(empresaIdOuObj, registroFallback = null) {
+      if (!empresaIdOuObj && !registroFallback) return null;
+      if (typeof empresaIdOuObj === 'object' && empresaIdOuObj !== null) return empresaIdOuObj;
+      const lista = Array.isArray(this.data?.empresas) ? this.data.empresas : [];
+      if (empresaIdOuObj) {
+        const porId = lista.find(e => e.id === empresaIdOuObj);
+        if (porId) return porId;
+      }
+      if (registroFallback) {
+        const docCand = String(registroFallback.cnpj || registroFallback.documento || '').replace(/\D/g, '');
+        if (docCand.length === 14) {
+          const porCnpj = lista.find(e => String(e.cnpj || '').replace(/\D/g, '') === docCand);
+          if (porCnpj) return porCnpj;
+        }
+      }
+      return null;
+    }
+
+    nomeEmpresaPrioritario(empresaOuId, opcoes = {}) {
+      const emp = this.obterEmpresaSegura(empresaOuId, opcoes.fallbackObj || null);
+      if (emp) {
+        const cod = this.limparCodigoInterno(emp.codigo_interno);
+        const nomeBase = String(emp.razao_social || emp.nome_fantasia || emp.cnpj || '').trim();
+        if (opcoes.comCodigo && cod) {
+          return `${cod} — ${nomeBase}`;
+        }
+        return nomeBase || 'Cadastro sem razão social';
+      }
+      const fb = opcoes.fallbackObj || {};
+      if (fb.cliente_avulso && fb.nome_cliente) return String(fb.nome_cliente).trim();
+      const cand = String(opcoes.fallbackNome || fb.razao_social || fb.empresa_razao_social || fb.empresa_nome || fb.nome_cliente || '').trim();
+      if (cand && cand.toLowerCase() !== 'empresa') return cand;
+      return opcoes.vazioLabel || 'Cadastro não localizado';
+    }
+
+    _normalizarDadosCarregados(target) {
+      if (!target || typeof target !== 'object') return false;
+      let mudou = false;
+
+      if (Array.isArray(target.empresas)) {
+        target.empresas.forEach(emp => {
+          if (!emp) return;
+          const codLimpo = this.limparCodigoInterno(emp.codigo_interno);
+          if (emp.codigo_interno !== codLimpo) {
+            emp.codigo_interno = codLimpo;
+            mudou = true;
+          }
+          if (!emp.razao_social && emp.nome_fantasia) {
+            emp.razao_social = emp.nome_fantasia;
+            mudou = true;
+          }
+          if (!emp.nome_fantasia && emp.razao_social) {
+            emp.nome_fantasia = emp.razao_social;
+          }
+          const cid = String(emp.cidade || emp.municipio || '').trim();
+          const uf = String(emp.uf || '').trim().toUpperCase().slice(0, 2);
+          if ((!emp.municipio_uf || emp.municipio_uf === 'Belo Horizonte/MG') && (cid || uf)) {
+            const novoMun = (cid && uf) ? `${cid.toUpperCase()}/${uf}` : (cid.toUpperCase() || uf);
+            if (emp.municipio_uf !== novoMun) {
+              emp.municipio_uf = novoMun;
+              mudou = true;
+            }
+          }
+          if (emp.validade_certificado === '2027-08-15' && String(emp.id || '').startsWith('emp-imp-')) {
+            emp.validade_certificado = '';
+            mudou = true;
+          }
+          if (emp.possui_pro_labore === undefined) {
+            emp.possui_pro_labore = emp.possui_prolabore !== undefined ? Boolean(emp.possui_prolabore) : (emp.regime_tributario !== 'MEI');
+          }
+        });
+      }
+
+      // Migração automática: protocolos enviados por WhatsApp ou E-mail ficam arquivados automaticamente
+      if (Array.isArray(target.guias_impostos)) {
+        target.guias_impostos.forEach(g => {
+          if (!g) return;
+          if (g.status_envio === 'ENVIADA_WHATSAPP' || g.status_envio === 'ENVIADA_EMAIL') {
+            if (!g.canal_envio) {
+              g.canal_envio = g.status_envio === 'ENVIADA_EMAIL' ? 'E-mail' : 'WhatsApp';
+            }
+            g.status_envio = 'ARQUIVADA_ASSINADA';
+            g.arquivada_digital = true;
+            if (!g.data_arquivamento) {
+              g.data_arquivamento = g.data_envio || new Date().toISOString().slice(0, 10);
+            }
+            mudou = true;
+          } else if (g.status_envio === 'ARQUIVADA_ASSINADA' && ['WhatsApp', 'E-mail'].includes(g.canal_envio) && !g.arquivada_digital) {
+            g.arquivada_digital = true;
+          }
+        });
+      }
+
+      return mudou;
+    }
+
+    reconciliarCarteiraOficial(target = this.data) {
+      if (!target || typeof window === 'undefined' || !Array.isArray(window.ZGESTOR_CARTEIRA_OFICIAL) || window.ZGESTOR_CARTEIRA_OFICIAL.length === 0) {
+        return false;
+      }
+      // Isola ambiente de testes automatizados (@example.test)
+      if (Array.isArray(target.profiles) && target.profiles.some(p => String(p.email || '').endsWith('@example.test'))) {
+        return false;
+      }
+      if (!Array.isArray(target.empresas)) target.empresas = [];
+
+      const excluidosManual = new Set(
+        ((target.escritorio && Array.isArray(target.escritorio.cnpjs_excluidos_manual)) ? target.escritorio.cnpjs_excluidos_manual : [])
+          .map(x => String(x || '').replace(/\D/g, ''))
+          .filter(Boolean)
+      );
+
+      let alterou = false;
+      const colecoesComVinculo = [
+        'onboarding_itens', 'tarefas', 'guias_impostos', 'parcelamentos', 'parcelamento_guias',
+        'cnds', 'alvaras', 'portal_arquivos', 'central_cliente_registros', 'honorarios',
+        'encerramentos_exercicio', 'convites', 'profiles'
+      ];
+
+      const relinkId = (oldId, newId) => {
+        if (!oldId || !newId || oldId === newId) return;
+        colecoesComVinculo.forEach(col => {
+          if (!Array.isArray(target[col])) return;
+          target[col].forEach(item => {
+            if (item && item.empresa_id === oldId) {
+              item.empresa_id = newId;
+              alterou = true;
+            }
+          });
+        });
+        if (Array.isArray(target.protocolos_guias)) {
+          target.protocolos_guias.forEach(prot => {
+            (prot.itens || []).forEach(it => {
+              if (it && it.empresa_id === oldId) {
+                it.empresa_id = newId;
+                alterou = true;
+              }
+            });
+          });
+        }
+      };
+
+      // Coleta todos os empresa_id órfãos atualmente referenciados em tarefas, guias, honorários, etc.
+      const idsReferenciados = new Set();
+      colecoesComVinculo.forEach(col => {
+        if (!Array.isArray(target[col])) return;
+        target[col].forEach(it => {
+          if (it && it.empresa_id) idsReferenciados.add(it.empresa_id);
+        });
+      });
+
+      const oficiaisGeraisIds = new Set(
+        window.ZGESTOR_CARTEIRA_OFICIAL
+          .filter(o => !String(o.id || '').startsWith('emp-imp-mei-'))
+          .map(o => o.id)
+      );
+      const oficiaisMei = window.ZGESTOR_CARTEIRA_OFICIAL.filter(o => String(o.id || '').startsWith('emp-imp-mei-'));
+
+      // 1. Reconcilia toda a carteira oficial (128 Gerais com ID exato do backup + 42 MEIs)
+      window.ZGESTOR_CARTEIRA_OFICIAL.forEach(oficial => {
+        const cnpjDigits = String(oficial.cnpj || '').replace(/\D/g, '');
+        if (!cnpjDigits || excluidosManual.has(cnpjDigits)) return;
+
+        const existente = target.empresas.find(
+          e => e.id === oficial.id || String(e.cnpj || '').replace(/\D/g, '') === cnpjDigits
+        );
+
+        if (existente) {
+          // Se for das 128 empresas gerais e algum registro órfão referencia o ID original do backup, unifica no ID original
+          if (oficiaisGeraisIds.has(oficial.id) && existente.id !== oficial.id && idsReferenciados.has(oficial.id)) {
+            const oldId = existente.id;
+            existente.id = oficial.id;
+            relinkId(oldId, oficial.id);
+            alterou = true;
+          }
+          const codAtual = this.limparCodigoInterno(existente.codigo_interno);
+          const codOficial = this.limparCodigoInterno(oficial.codigo_interno);
+          if (existente.codigo_interno !== codAtual) {
+            existente.codigo_interno = codAtual;
+            alterou = true;
+          }
+          if (!existente.codigo_interno && codOficial) {
+            existente.codigo_interno = codOficial;
+            alterou = true;
+          }
+          if ((!existente.municipio_uf || existente.municipio_uf === 'Belo Horizonte/MG') && oficial.municipio_uf) {
+            existente.municipio_uf = oficial.municipio_uf;
+            existente.cidade = existente.cidade || oficial.cidade;
+            existente.uf = existente.uf || oficial.uf;
+            alterou = true;
+          }
+          if (oficial.regime_tributario === 'MEI' && existente.regime_tributario === 'Simples Nacional') {
+            existente.regime_tributario = 'MEI';
+            existente.possui_pro_labore = false;
+            existente.possui_prolabore = false;
+            alterou = true;
+          }
+          if (!existente.razao_social && oficial.razao_social) {
+            existente.razao_social = oficial.razao_social;
+            alterou = true;
+          }
+        } else {
+          target.empresas.push(JSON.parse(JSON.stringify(oficial)));
+          alterou = true;
+        }
+      });
+
+      // 2. Reconcilia eventuais IDs órfãos do lote MEI (padrão emp-imp-<ts>-<indiceMei>-<hash>)
+      const idsEmpresasAtuais = new Set(target.empresas.map(e => e.id));
+      idsReferenciados.forEach(orphanId => {
+        if (idsEmpresasAtuais.has(orphanId)) return;
+        const m = /^emp-imp-(\d+)-(\d+)-[a-z0-9]+$/i.exec(String(orphanId));
+        if (!m) return;
+        const idxMei = parseInt(m[2], 10);
+        if (idxMei >= 0 && idxMei < oficiaisMei.length) {
+          const meiRef = oficiaisMei[idxMei];
+          const cnpjMei = String(meiRef.cnpj || '').replace(/\D/g, '');
+          const empMeiAtual = target.empresas.find(e => String(e.cnpj || '').replace(/\D/g, '') === cnpjMei);
+          if (empMeiAtual) {
+            relinkId(orphanId, empMeiAtual.id);
+          }
+        }
+      });
+
+      // 3. Remove apenas alvarás padrão em branco que eventualmente tenham ficado sem empresa e garante alvarás padrão das 170
+      const idsValidosFinal = new Set(target.empresas.map(e => e.id));
+      if (Array.isArray(target.alvaras)) {
+        const antes = target.alvaras.length;
+        target.alvaras = target.alvaras.filter(a => {
+          if (idsValidosFinal.has(a.empresa_id)) return true;
+          const ehPadraoVazio = !a.numero_documento && !a.anexo_nome && !a.protocolo_renovacao;
+          return !ehPadraoVazio;
+        });
+        if (target.alvaras.length !== antes) alterou = true;
+      }
+
+      if (alterou) {
+        this.garantirAlvarasPadrao(target);
+      }
+      return alterou;
     }
 
     _migrarCredenciais(target) {
@@ -311,13 +561,15 @@
               if (emp.possui_pro_labore === undefined) {
                 emp.possui_pro_labore = true;
               }
-              if (!emp.municipio_uf) {
+              if (!emp.municipio_uf || emp.municipio_uf === 'Belo Horizonte/MG') {
                 const seed = (window.ZGESTOR_INITIAL_DB?.empresas || []).find(e => e.id === emp.id);
-                emp.municipio_uf = seed?.municipio_uf || (emp.municipio && emp.uf ? `${emp.municipio}/${emp.uf}` : 'Belo Horizonte/MG');
+                const cid = String(emp.cidade || emp.municipio || '').trim();
+                const uf = String(emp.uf || '').trim().toUpperCase().slice(0, 2);
+                emp.municipio_uf = seed?.municipio_uf || ((cid && uf) ? `${cid.toUpperCase()}/${uf}` : (cid.toUpperCase() || uf || ''));
               }
               if (!emp.validade_certificado) {
                 const seed = (window.ZGESTOR_INITIAL_DB?.empresas || []).find(e => e.id === emp.id);
-                emp.validade_certificado = seed?.validade_certificado || '2027-08-15';
+                emp.validade_certificado = seed?.validade_certificado || '';
               }
               if (!emp.competencia_inicial) {
                 const seed = (window.ZGESTOR_INITIAL_DB?.empresas || []).find(e => e.id === emp.id);
@@ -329,6 +581,10 @@
                 emp.modelo_onboarding = seed?.modelo_onboarding || 'ABERTURA_EMPRESA';
               }
             });
+            this._normalizarDadosCarregados(parsed);
+            if (parsed.empresas.length > 0) {
+              this.reconciliarCarteiraOficial(parsed);
+            }
             this._migrarCredenciais(parsed);
             try { localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed)); } catch (_) {}
             return parsed;
@@ -338,6 +594,7 @@
         console.warn('Erro ao carregar dados locais, usando seed inicial:', e);
       }
       const initial = JSON.parse(JSON.stringify(window.ZGESTOR_INITIAL_DB));
+      this._normalizarDadosCarregados(initial);
       this.garantirAlvarasPadrao(initial);
       this._migrarCredenciais(initial);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
@@ -345,6 +602,7 @@
     }
 
     saveLocalData() {
+      this._normalizarDadosCarregados(this.data);
       this._migrarCredenciais(this.data);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
@@ -354,7 +612,7 @@
           window.ZGestorApp.showToast('Atenção: limite de armazenamento do navegador atingido! Exporte um Backup (.JSON) e evite anexar arquivos muito grandes.', 'error');
         }
       }
-      if (!this._suppressCloudSync && this.supabaseConnected && this.supabase && this.supabaseConfig?.autoSync !== false) {
+      if (!this._suppressCloudSync && this._initialCloudSyncDone && this.supabaseConnected && this.supabase && this.supabaseConfig?.autoSync !== false) {
         this._agendarSyncNuvem();
       }
     }
@@ -399,7 +657,7 @@
       return { empresas: novoBanco.empresas.length, tarefas: novoBanco.tarefas.length, cnds: novoBanco.cnds.length };
     }
 
-    importarEmpresasEmLote(linhas = [], atualizarExistentes = true) {
+    importarEmpresasEmLote(linhas = [], atualizarExistentes = true, opcoes = {}) {
       if (!this.isAdmin()) throw new Error('Apenas o Administrador Geral pode importar empresas em lote.');
       if (!Array.isArray(this.data.empresas)) this.data.empresas = [];
 
@@ -408,8 +666,10 @@
         if (d.length === 14) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12,14)}`;
         return String(raw || '').trim();
       };
+      const regimeFallback = opcoes.regimePadrao || 'Simples Nacional';
       const normRegime = (r) => {
-        const s = String(r || '').toLowerCase();
+        const s = String(r || '').trim().toLowerCase();
+        if (!s) return regimeFallback;
         if (s.includes('presumido')) return 'Lucro Presumido';
         if (s.includes('real')) return 'Lucro Real';
         if (s.includes('mei')) return 'MEI';
@@ -422,7 +682,7 @@
       let ignoradas = 0;
       const erros = [];
 
-      let maxCod = this.data.empresas.reduce((m, e) => Math.max(m, parseInt(e.codigo_interno, 10) || 0), 0);
+      let maxCod = this.data.empresas.reduce((m, e) => Math.max(m, parseInt(this.limparCodigoInterno(e.codigo_interno), 10) || 0), 0);
 
       linhas.forEach((row, idx) => {
         const razao = String(row.razao_social || '').trim();
@@ -435,7 +695,7 @@
         const cnpjFmt = formatarCnpj(cnpjLimpo);
         const existenteIdx = this.data.empresas.findIndex(e => (e.cnpj || '').replace(/\D/g, '') === cnpjLimpo);
 
-        const codInformado = String(row.codigo_interno || '').trim();
+        const codInformado = this.limparCodigoInterno(row.codigo_interno);
         const ieVal = String(row.inscricao_estadual || '').trim();
         const folhaStr = String(row.possui_folha || '').trim().toUpperCase();
         const possuiFolha = folhaStr === 'SIM' || folhaStr === 'S' || folhaStr === 'TRUE' || folhaStr === '1';
@@ -443,22 +703,29 @@
         const status = statusStr === 'INATIVA' ? 'INATIVA' : 'ATIVA';
         const valHon = Number(String(row.valor_honorario_padrao || '0').replace(/[^\d.,-]/g, '').replace(',', '.')) || 0;
         const diaVenc = Math.min(28, Math.max(1, parseInt(row.dia_vencimento_honorario, 10) || 10));
+        const regimeFinal = normRegime(row.regime_tributario);
+        const cidade = String(row.cidade || '').trim();
+        const uf = String(row.uf || '').trim().toUpperCase().slice(0, 2);
+        const municipioUf = (cidade && uf) ? `${cidade.toUpperCase()}/${uf}` : (cidade.toUpperCase() || uf || '');
+        const temProLabore = regimeFinal !== 'MEI';
 
         const payload = {
           razao_social: razao,
           nome_fantasia: String(row.nome_fantasia || '').trim() || razao,
           cnpj: cnpjFmt,
           inscricao_estadual: ieVal,
-          regime_tributario: normRegime(row.regime_tributario),
-          possui_prolabore: true,
+          regime_tributario: regimeFinal,
+          possui_pro_labore: temProLabore,
+          possui_prolabore: temProLabore,
           possui_funcionarios: possuiFolha,
           responsavel_legal: String(row.responsavel_legal || '').trim(),
           email: String(row.email || '').trim(),
           telefone: String(row.telefone || '').trim(),
           valor_honorario_padrao: valHon,
           dia_vencimento_honorario: diaVenc,
-          cidade: String(row.cidade || '').trim(),
-          uf: String(row.uf || '').trim().toUpperCase().slice(0, 2),
+          cidade,
+          uf,
+          municipio_uf: municipioUf,
           status
         };
 
@@ -467,7 +734,8 @@
             this.data.empresas[existenteIdx] = {
               ...this.data.empresas[existenteIdx],
               ...payload,
-              codigo_interno: codInformado || this.data.empresas[existenteIdx].codigo_interno
+              municipio_uf: municipioUf || this.data.empresas[existenteIdx].municipio_uf || '',
+              codigo_interno: codInformado || this.limparCodigoInterno(this.data.empresas[existenteIdx].codigo_interno)
             };
             atualizadas++;
           } else {
@@ -709,10 +977,36 @@
       ];
     }
 
+    async _fetchPaginatedRegistros(campos = 'colecao, id, dados', filtroColecao = null) {
+      const todos = [];
+      const pageSize = 1000;
+      let offset = 0;
+      while (true) {
+        let query = this.supabase.from('zgestor_registros').select(campos);
+        if (filtroColecao) {
+          query = query.eq('colecao', filtroColecao);
+        }
+        if (typeof query.range === 'function') {
+          query = query.range(offset, offset + pageSize - 1);
+        }
+        const { data: pagina, error } = await query;
+        if (error) throw new Error(error.message || 'Erro ao consultar zgestor_registros');
+        const lista = Array.isArray(pagina) ? pagina : [];
+        todos.push(...lista);
+        if (lista.length < pageSize || typeof this.supabase.from('zgestor_registros').select(campos).range !== 'function') {
+          break;
+        }
+        offset += pageSize;
+      }
+      return todos;
+    }
+
     _agendarSyncNuvem() {
+      if (!this._initialCloudSyncDone) return;
       if (this._cloudSyncTimer) clearTimeout(this._cloudSyncTimer);
       this.statusNuvem = 'SINCRONIZANDO';
       this._cloudSyncTimer = setTimeout(() => {
+        this._cloudSyncTimer = null;
         this.pushToSupabase({ silent: true }).catch(() => {});
       }, 1200);
     }
@@ -721,6 +1015,10 @@
       if (!this.supabaseConnected || !this.supabase) {
         this.statusNuvem = 'LOCAL';
         return { ok: false, message: 'Supabase não conectado.' };
+      }
+      // Evita que um navegador recém-aberto (ainda sem pull inicial) sobrescreva a nuvem com arrays vazios
+      if (!this._initialCloudSyncDone && !opts.forceManual) {
+        await this.syncFromSupabase();
       }
       try {
         this.statusNuvem = 'SINCRONIZANDO';
@@ -747,20 +1045,20 @@
             if (error) throw new Error(error.message || 'Erro ao enviar ' + col);
           }
 
-          // Remove registros excluídos localmente que ainda estejam na nuvem
-          const { data: existentes } = await this.supabase
-            .from('zgestor_registros')
-            .select('id')
-            .eq('colecao', col);
-          if (Array.isArray(existentes) && existentes.length > 0) {
-            const idsLocais = new Set(rows.map(r => r.id));
-            const idsRemover = existentes.map(x => x.id).filter(id => !idsLocais.has(id));
-            if (idsRemover.length > 0) {
-              await this.supabase
-                .from('zgestor_registros')
-                .delete()
-                .eq('colecao', col)
-                .in('id', idsRemover);
+          // Proteção anti-perda: nunca apaga uma coleção inteira na nuvem se localmente estiver zerada (exceto se forceEmpty explícito)
+          if (rows.length > 0 || opts.forceEmpty === true) {
+            const existentes = await this._fetchPaginatedRegistros('id', col);
+            if (Array.isArray(existentes) && existentes.length > 0) {
+              const idsLocais = new Set(rows.map(r => r.id));
+              const idsRemover = existentes.map(x => x.id).filter(id => !idsLocais.has(id));
+              for (let j = 0; j < idsRemover.length; j += 100) {
+                const delChunk = idsRemover.slice(j, j + 100);
+                await this.supabase
+                  .from('zgestor_registros')
+                  .delete()
+                  .eq('colecao', col)
+                  .in('id', delChunk);
+              }
             }
           }
         }
@@ -774,6 +1072,7 @@
           .upsert(configs, { onConflict: 'chave' });
         if (errCfg) throw new Error(errCfg.message);
 
+        this._initialCloudSyncDone = true;
         this.statusNuvem = 'CONECTADO';
         this.ultimaSyncNuvem = agora;
         this.ultimoErroNuvem = '';
@@ -788,75 +1087,93 @@
 
     async syncFromSupabase() {
       if (!this.supabaseConnected || !this.supabase) {
+        this._initialCloudSyncDone = true;
         this.statusNuvem = 'LOCAL';
         return { ok: false, message: 'Supabase não configurado.' };
       }
-      try {
-        const { data: registros, error } = await this.supabase
-          .from('zgestor_registros')
-          .select('colecao, id, dados');
-        if (error) throw new Error(error.message);
-
-        const { data: configs, error: errCfg } = await this.supabase
-          .from('zgestor_config')
-          .select('chave, dados');
-        if (errCfg) throw new Error(errCfg.message);
-
-        let atualizado = false;
-        if (Array.isArray(registros) && registros.length > 0) {
-          const porColecao = {};
-          registros.forEach(r => {
-            if (!porColecao[r.colecao]) porColecao[r.colecao] = [];
-            if (r.dados) porColecao[r.colecao].push(r.dados);
-          });
-          this._getCloudCollections().forEach(col => {
-            if (Array.isArray(porColecao[col])) {
-              const novoJson = JSON.stringify(porColecao[col]);
-              const atualJson = JSON.stringify(this.data[col] || []);
-              if (novoJson !== atualJson) {
-                this.data[col] = porColecao[col];
-                atualizado = true;
-              }
-            }
-          });
-        }
-
-        if (Array.isArray(configs) && configs.length > 0) {
-          configs.forEach(c => {
-            if (c.chave === 'escritorio' && c.dados) {
-              if (JSON.stringify(c.dados) !== JSON.stringify(this.data.escritorio || {})) {
-                this.data.escritorio = c.dados;
-                atualizado = true;
-              }
-            }
-            if (c.chave === 'modelos_tarefas' && Array.isArray(c.dados)) {
-              if (JSON.stringify(c.dados) !== JSON.stringify(this.data.modelos_tarefas || [])) {
-                this.data.modelos_tarefas = c.dados;
-                atualizado = true;
-              }
-            }
-          });
-        }
-
-        if (atualizado) {
-          this._suppressCloudSync = true;
-          try { this.saveLocalData(); } finally { this._suppressCloudSync = false; }
-        }
-        this.statusNuvem = 'CONECTADO';
-        this.ultimaSyncNuvem = new Date().toISOString();
-        this.ultimoErroNuvem = '';
-        return {
-          ok: true,
-          atualizado,
-          message: atualizado
-            ? 'Dados atualizados diretamente da nuvem Supabase!'
-            : 'Conectado ao Supabase! Clique em "Enviar Dados Locais p/ Nuvem" para subir a base inicial.'
-        };
-      } catch (e) {
-        this.statusNuvem = 'ERRO';
-        this.ultimoErroNuvem = e.message || String(e);
-        return { ok: false, message: 'Falha ao sincronizar com Supabase: ' + e.message };
+      if (this._syncInFlight) {
+        return this._syncInFlight;
       }
+      this._syncInFlight = (async () => {
+        try {
+          const registros = await this._fetchPaginatedRegistros('colecao, id, dados');
+
+          const { data: configs, error: errCfg } = await this.supabase
+            .from('zgestor_config')
+            .select('chave, dados');
+          if (errCfg) throw new Error(errCfg.message);
+
+          let atualizado = false;
+          let precisaSubirReconciliacao = false;
+
+          if (Array.isArray(configs) && configs.length > 0) {
+            configs.forEach(c => {
+              if (c.chave === 'escritorio' && c.dados && Object.keys(c.dados).length > 0) {
+                if (JSON.stringify(c.dados) !== JSON.stringify(this.data.escritorio || {})) {
+                  this.data.escritorio = { ...(this.data.escritorio || {}), ...c.dados };
+                  atualizado = true;
+                }
+              }
+              if (c.chave === 'modelos_tarefas' && Array.isArray(c.dados) && c.dados.length > 0) {
+                if (JSON.stringify(c.dados) !== JSON.stringify(this.data.modelos_tarefas || [])) {
+                  this.data.modelos_tarefas = c.dados;
+                  atualizado = true;
+                }
+              }
+            });
+          }
+
+          if (Array.isArray(registros) && registros.length > 0) {
+            const porColecao = {};
+            registros.forEach(r => {
+              if (!porColecao[r.colecao]) porColecao[r.colecao] = [];
+              if (r.dados) porColecao[r.colecao].push(r.dados);
+            });
+            this._getCloudCollections().forEach(col => {
+              if (Array.isArray(porColecao[col])) {
+                const novoJson = JSON.stringify(porColecao[col]);
+                const atualJson = JSON.stringify(this.data[col] || []);
+                if (novoJson !== atualJson) {
+                  this.data[col] = porColecao[col];
+                  atualizado = true;
+                }
+              }
+            });
+          }
+
+          const normMudou = this._normalizarDadosCarregados(this.data);
+          const reconciliou = this.reconciliarCarteiraOficial(this.data);
+          if (normMudou || reconciliou) {
+            atualizado = true;
+            precisaSubirReconciliacao = true;
+          }
+
+          this._initialCloudSyncDone = true;
+
+          if (atualizado) {
+            this._suppressCloudSync = !precisaSubirReconciliacao;
+            try { this.saveLocalData(); } finally { this._suppressCloudSync = false; }
+          }
+          this.statusNuvem = 'CONECTADO';
+          this.ultimaSyncNuvem = new Date().toISOString();
+          this.ultimoErroNuvem = '';
+          return {
+            ok: true,
+            atualizado,
+            message: atualizado
+              ? 'Dados atualizados diretamente da nuvem Supabase!'
+              : 'Conectado ao Supabase! Todos os registros estão sincronizados.'
+          };
+        } catch (e) {
+          this._initialCloudSyncDone = true;
+          this.statusNuvem = 'ERRO';
+          this.ultimoErroNuvem = e.message || String(e);
+          return { ok: false, message: 'Falha ao sincronizar com Supabase: ' + e.message };
+        } finally {
+          this._syncInFlight = null;
+        }
+      })();
+      return this._syncInFlight;
     }
 
     async uploadArquivoParaNuvem(nomeArquivo, base64DataUrl, pasta = 'anexos') {
@@ -1090,6 +1407,7 @@
           this.data.empresas[idx] = {
             ...this.data.empresas[idx],
             ...dadosEmpresa,
+            codigo_interno: this.limparCodigoInterno(dadosEmpresa.codigo_interno || this.data.empresas[idx].codigo_interno),
             municipio_uf: dadosEmpresa.municipio_uf || this.data.empresas[idx].municipio_uf || '',
             validade_certificado: dadosEmpresa.validade_certificado || this.data.empresas[idx].validade_certificado || '',
             competencia_inicial: compNorm,
@@ -1118,7 +1436,7 @@
       const nextNum = String(this.data.empresas.length + 1).padStart(3, '0');
       const novaEmpresa = {
         id: 'emp-' + Date.now(),
-        codigo_interno: dadosEmpresa.codigo_interno || nextNum,
+        codigo_interno: this.limparCodigoInterno(dadosEmpresa.codigo_interno) || nextNum,
         razao_social: dadosEmpresa.razao_social,
         nome_fantasia: dadosEmpresa.nome_fantasia || dadosEmpresa.razao_social,
         cnpj: dadosEmpresa.cnpj,
@@ -2048,12 +2366,12 @@
           g.canal_envio = 'Office Boy (Impresso)';
           g.data_envio = hoje;
           g.protocolo_codigo = codigo;
-          const emp = this.data.empresas.find(e => e.id === g.empresa_id);
+          const emp = this.obterEmpresaSegura(g.empresa_id, g);
           itensResumo.push({
             guia_id: g.id,
             empresa_id: g.empresa_id,
-            empresa_nome: emp ? emp.nome_fantasia : 'Empresa',
-            razao_social: emp ? emp.razao_social : 'Empresa',
+            empresa_nome: this.nomeEmpresaPrioritario(emp, { fallbackObj: g }),
+            razao_social: this.nomeEmpresaPrioritario(emp, { fallbackObj: g }),
             cnpj: emp ? emp.cnpj : '—',
             tipo_guia: g.tipo_guia,
             competencia_guia: g.competencia,
@@ -2096,25 +2414,46 @@
       const dtFinal = (dataEnvio || '').trim() || new Date().toISOString().slice(0, 10);
       const respFinal = (responsavelNome || '').trim() || (user ? user.nome : 'Escritório');
       const isEmail = canal === 'EMAIL';
-      const statusNovo = isEmail ? 'ENVIADA_EMAIL' : 'ENVIADA_WHATSAPP';
       const nomeCanal = isEmail ? 'E-mail' : 'WhatsApp';
 
       let atualizadas = 0;
+      const buscarGuia = (gid) => {
+        const gImp = (this.data.guias_impostos || []).find(item => item.id === gid);
+        if (gImp) return { ref: gImp, isParc: false };
+        const rawParcId = String(gid || '').startsWith('pguia-prot-') ? String(gid).replace(/^pguia-prot-/, '') : gid;
+        const gParc = (this.data.parcelamento_guias || []).find(item => item.id === rawParcId);
+        if (gParc) return { ref: gParc, isParc: true };
+        return null;
+      };
+
       ids.forEach(gid => {
-        const g = (this.data.guias_impostos || []).find(item => item.id === gid);
-        if (g) {
-          g.status_envio = statusNovo;
+        const achado = buscarGuia(gid);
+        if (achado && !achado.isParc) {
+          const g = achado.ref;
+          g.status_envio = 'ARQUIVADA_ASSINADA';
+          g.arquivada_digital = true;
           g.canal_envio = nomeCanal;
           g.data_envio = dtFinal;
+          g.data_arquivamento = dtFinal;
           g.enviado_por = respFinal;
           g.responsavel_nome = respFinal;
+          atualizadas++;
+        } else if (achado && achado.isParc) {
+          const gp = achado.ref;
+          gp.status_guia = 'ENVIADA_CLIENTE';
+          gp.status_envio_protocolo = 'ARQUIVADA_ASSINADA';
+          gp.arquivada_digital = true;
+          gp.canal_envio = nomeCanal;
+          gp.data_envio_cliente = dtFinal;
+          gp.data_arquivamento = dtFinal;
+          gp.enviado_por = respFinal;
           atualizadas++;
         }
       });
 
       if (atualizadas > 0) {
         this.saveLocalData();
-        this.registrarLog('ENVIO_DIGITAL_GUIAS', 'Guias/Protocolos', `${atualizadas} guia(s) marcada(s) como enviada(s) via ${nomeCanal}.`);
+        this.registrarLog('ENVIO_DIGITAL_GUIAS', 'Guias/Protocolos', `${atualizadas} guia(s) enviada(s) via ${nomeCanal} e arquivada(s) automaticamente.`);
       }
       return atualizadas;
     }

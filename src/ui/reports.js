@@ -479,13 +479,13 @@ window.ZGestorReports = {
           </thead>
           <tbody class="divide-y divide-slate-200">
             ${lista.map(t => {
-              const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+              const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(t.empresa_id, t) : db.data.empresas.find(e => e.id === t.empresa_id);
               const sit = t.data_entrega
                 ? (t.data_entrega <= t.prazo_entrega ? 'ENTREGUE NO PRAZO' : 'ENTREGUE C/ ATRASO')
                 : 'PENDENTE';
               return `
                 <tr>
-                  <td class="py-2 px-2 font-bold">${emp ? emp.nome_fantasia : '—'}</td>
+                  <td class="py-2 px-2 font-bold">${V.escapeHtml(V.nomeEmp ? V.nomeEmp(emp, { comCodigo: true, fallbackObj: t }) : (emp ? emp.razao_social : '—'))}</td>
                   <td class="py-2 px-2">${t.departamento} (${t.tipo})</td>
                   <td class="py-2 px-2">${t.titulo}</td>
                   <td class="py-2 px-2">${t.responsavel_nome || '—'}</td>
@@ -513,10 +513,10 @@ window.ZGestorReports = {
           </thead>
           <tbody class="divide-y divide-slate-200">
             ${guiasImp.map(g => {
-              const emp = db.data.empresas.find(e => e.id === g.empresa_id);
+              const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(g.empresa_id, g) : db.data.empresas.find(e => e.id === g.empresa_id);
               return `
                 <tr>
-                  <td class="py-2 px-2 font-bold">${emp ? emp.nome_fantasia : '—'}</td>
+                  <td class="py-2 px-2 font-bold">${V.escapeHtml(V.nomeEmp ? V.nomeEmp(emp, { comCodigo: true, fallbackObj: g }) : (emp ? emp.razao_social : '—'))}</td>
                   <td class="py-2 px-2 font-semibold">${g.tipo_guia}</td>
                   <td class="py-2 px-2">${V.formatDate(g.data_vencimento)}</td>
                   <td class="py-2 px-2 text-right font-bold">${V.formatCurrency(g.valor)}</td>
@@ -760,7 +760,7 @@ window.ZGestorReports = {
           <tbody class="divide-y divide-slate-200">
             ${emps.map(e => `
               <tr>
-                <td class="py-2 px-2 font-mono font-bold"></td>
+                <td class="py-2 px-2 font-mono font-bold">${V.escapeHtml(V.codLimpo ? V.codLimpo(e.codigo_interno) : (e.codigo_interno || ''))}</td>
                 <td class="py-2 px-2"><strong>${e.razao_social}</strong><br/><span class="text-slate-500">${e.nome_fantasia}</span></td>
                 <td class="py-2 px-2 font-mono">${e.cnpj}</td>
                 <td class="py-2 px-2 font-semibold">${e.regime_tributario}</td>
@@ -854,13 +854,13 @@ window.ZGestorReports = {
           </thead>
           <tbody class="divide-y divide-slate-200">
             ${lista.map(h => {
-              const emp = db.data.empresas.find(e => e.id === h.empresa_id);
+              const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(h.empresa_id, h) : db.data.empresas.find(e => e.id === h.empresa_id);
               const saldoAnt = Number(h.saldo_anterior || 0);
               const liq = Math.max(0, Number(h.valor_mensal) + saldoAnt + Number(h.servicos_extras) - Number(h.desconto));
               const extDesc = Number(h.servicos_extras) - Number(h.desconto);
               return `
                 <tr>
-                  <td class="py-2 px-2 font-bold">${emp ? emp.nome_fantasia : '—'}</td>
+                  <td class="py-2 px-2 font-bold">${V.escapeHtml(V.nomeEmp ? V.nomeEmp(emp, { comCodigo: true, fallbackObj: h }) : (emp ? emp.razao_social : '—'))}</td>
                   <td class="py-2 px-2">${V.formatDate(h.data_vencimento)}</td>
                   <td class="py-2 px-2 text-right">${V.formatCurrency(h.valor_mensal)}</td>
                   <td class="py-2 px-2 text-right ${saldoAnt > 0 ? 'font-bold text-amber-800' : 'text-slate-400'}">${saldoAnt > 0 ? `+ ${V.formatCurrency(saldoAnt)}` : '—'}</td>

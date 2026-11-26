@@ -22,6 +22,89 @@ window.ZGestorViews = {
       .replace(/'/g, '&#39;');
   },
 
+  codLimpo(cod) {
+    return String(cod === null || cod === undefined ? '' : cod).replace(/^#+/, '').trim();
+  },
+
+  obterEmp(db, empresaIdOuObj, fallbackObj = null) {
+    if (!db) return null;
+    if (typeof db.obterEmpresaSegura === 'function') {
+      return db.obterEmpresaSegura(empresaIdOuObj, fallbackObj);
+    }
+    if (typeof empresaIdOuObj === 'object' && empresaIdOuObj !== null) return empresaIdOuObj;
+    return (db.data?.empresas || []).find(e => e.id === empresaIdOuObj) || null;
+  },
+
+  nomeEmp(emp, opcoes = {}) {
+    if (emp) {
+      const cod = this.codLimpo(emp.codigo_interno);
+      const razao = String(emp.razao_social || emp.nome_fantasia || emp.cnpj || '').trim();
+      if (opcoes.comCodigo && cod) return `${cod} — ${razao}`;
+      return razao || 'Sem Razão Social';
+    }
+    const fb = opcoes.fallbackObj || {};
+    if (fb.cliente_avulso && fb.nome_cliente) return String(fb.nome_cliente).trim();
+    const cand = String(opcoes.fallbackNome || fb.razao_social || fb.empresa_razao_social || fb.empresa_nome || fb.nome_cliente || '').trim();
+    if (cand && cand.toLowerCase() !== 'empresa') return cand;
+    return opcoes.vazioLabel || 'Cadastro não localizado';
+  },
+
+  renderSeletorEmpresaBusca({
+    uid,
+    inputId,
+    selectedId = '',
+    placeholder = 'Digite código, razão social ou CNPJ...',
+    onChangeFn = '',
+    allowAllOption = false,
+    allOptionValue = 'TODOS',
+    allOptionLabel = 'Todas as Empresas'
+  }) {
+    const db = window.zgestorDB;
+    const empresas = db?.data?.empresas || [];
+    const empSel = (selectedId && selectedId !== allOptionValue)
+      ? empresas.find(e => e.id === selectedId)
+      : null;
+    const textoInicial = allowAllOption && selectedId === allOptionValue
+      ? ''
+      : (empSel ? `${this.codLimpo(empSel.codigo_interno) ? this.codLimpo(empSel.codigo_interno) + ' — ' : ''}${empSel.razao_social || empSel.nome_fantasia} (${empSel.cnpj})` : '');
+    const safeUid = String(uid || inputId || 'emp-cbx').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeChange = onChangeFn ? this.escapeHtml(onChangeFn) : '';
+
+    return `
+      <div class="relative zgestor-emp-combobox" id="emp-cbx-wrap-${safeUid}" data-cbx-uid="${safeUid}" data-input-id="${inputId}" data-onchange="${safeChange}" data-allow-all="${allowAllOption ? '1' : '0'}" data-all-val="${allOptionValue}" data-all-label="${this.escapeHtml(allOptionLabel)}">
+        <input type="hidden" id="${inputId}" value="${this.escapeHtml(selectedId || '')}" />
+        <div class="relative flex items-center">
+          <span class="absolute left-2.5 text-slate-400 pointer-events-none">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          </span>
+          <input
+            type="text"
+            id="emp-cbx-search-${safeUid}"
+            autocomplete="off"
+            value="${this.escapeHtml(textoInicial)}"
+            placeholder="${this.escapeHtml(placeholder)}"
+            onfocus="ZGestorApp.abrirComboboxEmpresa('${safeUid}')"
+            onclick="ZGestorApp.abrirComboboxEmpresa('${safeUid}')"
+            oninput="ZGestorApp.filtrarComboboxEmpresa('${safeUid}', this.value)"
+            onkeydown="ZGestorApp.aoTeclarComboboxEmpresa(event, '${safeUid}')"
+            class="w-full rounded-xl border border-slate-300 bg-white pl-8 pr-8 py-2 text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400"
+          />
+          <button
+            type="button"
+            onclick="event.stopPropagation(); ZGestorApp.toggleComboboxEmpresa('${safeUid}')"
+            class="absolute right-2 p-0.5 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+            title="Ver lista de empresas">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+          </button>
+        </div>
+        <div
+          id="emp-cbx-menu-${safeUid}"
+          class="hidden absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-xl bg-white border border-slate-200 shadow-2xl py-1 text-xs divide-y divide-slate-100">
+        </div>
+      </div>
+    `;
+  },
+
   formatCurrency(val) {
     const num = Number(val || 0);
     return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -438,11 +521,15 @@ window.ZGestorViews = {
         .sort((a, b) => a.prazo_entrega.localeCompare(b.prazo_entrega))
         .slice(0, 6)
         .map(t => {
-          const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+          const emp = this.obterEmp(db, t.empresa_id, t);
+          const codEmp = emp ? this.codLimpo(emp.codigo_interno) : '';
           const vencida = t.prazo_entrega < hoje;
           return `
                       <tr class="hover:bg-slate-50">
-                        <td class="py-2.5 pr-2 font-bold text-slate-900">${emp ? emp.nome_fantasia : '—'}</td>
+                        <td class="py-2.5 pr-2 font-bold text-slate-900">
+                          ${codEmp ? `<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[10px] font-extrabold mr-1">${this.escapeHtml(codEmp)}</span>` : ''}
+                          <span>${this.escapeHtml(this.nomeEmp(emp, { fallbackObj: t }))}</span>
+                        </td>
                         <td class="py-2.5 px-2">
                           ${this.deptBadge(t.departamento)}
                           <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded font-semibold ${t.tipo === 'AVULSA' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}">${t.tipo}</span>
@@ -559,8 +646,8 @@ window.ZGestorViews = {
     }
     if (fBusca) {
       lista = lista.filter(t => {
-        const emp = db.data.empresas.find(e => e.id === t.empresa_id);
-        const empNome = emp ? `${emp.razao_social} ${emp.nome_fantasia}`.toLowerCase() : '';
+        const emp = this.obterEmp(db, t.empresa_id, t);
+        const empNome = emp ? `${emp.codigo_interno || ''} ${emp.razao_social || ''} ${emp.nome_fantasia || ''} ${emp.cnpj || ''}`.toLowerCase() : '';
         return (
           (t.titulo || '').toLowerCase().includes(fBusca) ||
           (t.descricao || '').toLowerCase().includes(fBusca) ||
@@ -581,6 +668,7 @@ window.ZGestorViews = {
     const qtdEntreguesComp = todasComp.filter(t => db.obterStatusSimplesTarefa(t) === 'ENTREGUE').length;
 
     // 2. Filtra Guias de Impostos
+    const ehGuiaDigital = (g) => Boolean(g.arquivada_digital || ['WhatsApp', 'E-mail'].includes(g.canal_envio) || ['ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
     const todasGuiasComp = db.getGuiasParaEntregaNaCompetencia(comp) || [];
     let listaGuiasImpostos = [...todasGuiasComp];
     if (fCliente !== 'TODOS') listaGuiasImpostos = listaGuiasImpostos.filter(g => g.empresa_id === fCliente);
@@ -591,15 +679,15 @@ window.ZGestorViews = {
       if (fGuiaStatus === 'PENDENTES') {
         listaGuiasImpostos = listaGuiasImpostos.filter(g => !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
       } else if (fGuiaStatus === 'ENVIADAS_DIGITAIS') {
-        listaGuiasImpostos = listaGuiasImpostos.filter(g => ['ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio));
+        listaGuiasImpostos = listaGuiasImpostos.filter(ehGuiaDigital);
       } else {
         listaGuiasImpostos = listaGuiasImpostos.filter(g => g.status_envio === fGuiaStatus);
       }
     }
     if (fBusca) {
       listaGuiasImpostos = listaGuiasImpostos.filter(g => {
-        const emp = db.data.empresas.find(e => e.id === g.empresa_id);
-        const empNome = emp ? `${emp.razao_social} ${emp.nome_fantasia}`.toLowerCase() : '';
+        const emp = this.obterEmp(db, g.empresa_id, g);
+        const empNome = emp ? `${emp.codigo_interno || ''} ${emp.razao_social || ''} ${emp.nome_fantasia || ''} ${emp.cnpj || ''}`.toLowerCase() : '';
         return (
           (g.tipo_guia || '').toLowerCase().includes(fBusca) ||
           (g.observacoes || '').toLowerCase().includes(fBusca) ||
@@ -675,8 +763,11 @@ window.ZGestorViews = {
       { id: 'SOCIETARIO', label: 'Societário' }
     ];
 
-    const statusGuiaImpBadge = (st) => {
+    const statusGuiaImpBadge = (st, guiaObj = null) => {
       if (st === 'ARQUIVADA_ASSINADA') {
+        if (guiaObj && (guiaObj.arquivada_digital || ['WhatsApp', 'E-mail'].includes(guiaObj.canal_envio))) {
+          return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300"><i data-lucide="folder-check" class="w-3 h-3"></i> Arquivada (${this.escapeHtml(guiaObj.canal_envio || 'Digital')})</span>`;
+        }
         return `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300"><i data-lucide="folder-check" class="w-3 h-3"></i> Assinada e Arquivada</span>`;
       }
       if (st === 'IMPRESSA_OFFICE_BOY') {
@@ -1021,8 +1112,8 @@ window.ZGestorViews = {
                     type="text"
                     id="input-filtro-empresa"
                     autocomplete="off"
-                    placeholder="🏢 Digite nome ou código da empresa..."
-                    value="${fCliente !== 'TODOS' ? (db.data.empresas.find(e => e.id === fCliente) ? ` - ${db.data.empresas.find(e => e.id === fCliente).nome_fantasia}` : '') : ''}"
+                    placeholder="🏢 Digite razão social, código ou CNPJ..."
+                    value="${fCliente !== 'TODOS' ? (() => { const ef = this.obterEmp(db, fCliente); return ef ? `${this.codLimpo(ef.codigo_interno) ? this.codLimpo(ef.codigo_interno) + ' - ' : ''}${ef.razao_social || ef.nome_fantasia}` : ''; })() : ''}"
                     onfocus="ZGestorApp.abrirDropdownEmpresaFiltro()"
                     onclick="ZGestorApp.abrirDropdownEmpresaFiltro()"
                     oninput="ZGestorApp.aoDigitarFiltroEmpresaLista(this.value)"
@@ -1155,7 +1246,7 @@ window.ZGestorViews = {
                                   Arraste cards para cá ou use os botões rápidos
                                 </div>
                               ` : cards.map(t => {
-                                const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+                                const emp = this.obterEmp(db, t.empresa_id, t);
                                 const atrasada = !t.data_entrega && t.prazo_entrega && t.prazo_entrega < hoje;
                                 const isAtivo = sidePeekTarefa && sidePeekTarefa.id === t.id;
                                 return `
@@ -1176,8 +1267,8 @@ window.ZGestorViews = {
                                     </div>
 
                                     <div>
-                                      <div class="text-[11px] font-bold text-indigo-700 truncate" title="${emp ? emp.razao_social : ''}">
-                                         • ${emp ? emp.nome_fantasia : 'Empresa'}
+                                      <div class="text-[11px] font-bold text-indigo-700 truncate" title="${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: t }))}">
+                                        ${emp && this.codLimpo(emp.codigo_interno) ? `<span class="font-mono font-extrabold bg-indigo-50 px-1 py-0.2 rounded mr-1">${this.escapeHtml(this.codLimpo(emp.codigo_interno))}</span>` : ''}${this.escapeHtml(this.nomeEmp(emp, { fallbackObj: t }))}
                                       </div>
                                       <div class="text-xs font-extrabold text-slate-900 leading-snug mt-0.5">
                                         ${this.escapeHtml(t.titulo)}
@@ -1278,7 +1369,7 @@ window.ZGestorViews = {
                               </div>
                               <div class="space-y-1 max-h-[120px] overflow-y-auto">
                                 ${doDia.map(t => {
-                                  const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+                                  const emp = this.obterEmp(db, t.empresa_id, t);
                                   const st = db.obterStatusSimplesTarefa(t);
                                   const atrasada = !t.data_entrega && t.prazo_entrega < hoje;
                                   let chipCls = 'bg-slate-100 text-slate-700 border-slate-200';
@@ -1291,9 +1382,9 @@ window.ZGestorViews = {
                                     <button
                                       type="button"
                                       onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')"
-                                      title="${emp ? emp.nome_fantasia : ''} — ${this.escapeHtml(t.titulo)}"
+                                      title="${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: t }))} — ${this.escapeHtml(t.titulo)}"
                                       class="w-full text-left px-1.5 py-1 rounded-md border text-[10px] leading-tight truncate hover:ring-1 hover:ring-indigo-400 transition cursor-pointer ${chipCls}">
-                                      <strong class="font-bold">${emp ? emp.nome_fantasia : 'Emp'}</strong>: ${this.escapeHtml(t.titulo)}
+                                      <strong class="font-bold">${this.escapeHtml(this.nomeEmp(emp, { fallbackObj: t }))}</strong>: ${this.escapeHtml(t.titulo)}
                                     </button>
                                   `;
                                 }).join('')}
@@ -1308,8 +1399,8 @@ window.ZGestorViews = {
                           <strong>Outras datas (${tarefasForaMes.length}):</strong>
                           <div class="flex flex-wrap gap-1.5 mt-1.5">
                             ${tarefasForaMes.slice(0, 12).map(t => {
-                              const emp = db.data.empresas.find(e => e.id === t.empresa_id);
-                              return `<button type="button" onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')" class="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[11px] hover:border-indigo-400 cursor-pointer">${this.formatDate(t.prazo_entrega)} • ${emp ? emp.nome_fantasia : ''} — ${this.escapeHtml(t.titulo)}</button>`;
+                              const emp = this.obterEmp(db, t.empresa_id, t);
+                              return `<button type="button" onclick="ZGestorApp.abrirNotionSidePeek('${t.id}')" class="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[11px] hover:border-indigo-400 cursor-pointer">${this.formatDate(t.prazo_entrega)} • ${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: t }))} — ${this.escapeHtml(t.titulo)}</button>`;
                             }).join('')}
                           </div>
                         </div>
@@ -1348,7 +1439,7 @@ window.ZGestorViews = {
                                   Nenhuma tarefa em "${grupo.label}".
                                 </div>
                               ` : itensGrupo.map(t => {
-                                const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+                                const emp = this.obterEmp(db, t.empresa_id, t);
                                 const atrasada = !t.data_entrega && t.prazo_entrega && t.prazo_entrega < hoje;
                                 const isAtivo = sidePeekTarefa && sidePeekTarefa.id === t.id;
                                 return `
@@ -1357,7 +1448,7 @@ window.ZGestorViews = {
                                       <div class="pt-0.5 shrink-0">${renderNotionStatusPill(t)}</div>
                                       <div class="min-w-0 flex-1">
                                         <div class="flex items-center gap-2 flex-wrap">
-                                          <span class="text-xs font-extrabold text-slate-900">${emp ? ` — ${emp.nome_fantasia}` : 'Empresa'}</span>
+                                          <span class="text-xs font-extrabold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: t }))}</span>
                                           ${badgeSetor(t.departamento)}
                                           ${badgeRegime(emp)}
                                           <span class="text-[11px] font-bold ${atrasada ? 'text-rose-600' : 'text-slate-400'}">• Prazo: ${this.formatDate(t.prazo_entrega)}</span>
@@ -1414,11 +1505,13 @@ window.ZGestorViews = {
                 <!-- Título da Empresa em destaque -->
                 <div>
                   <h2 class="text-base font-extrabold text-slate-900 leading-tight">
-                    ${sidePeekEmpresa.nome_fantasia}
+                    ${this.escapeHtml(sidePeekEmpresa.razao_social || sidePeekEmpresa.nome_fantasia)}
                   </h2>
-                  <div class="text-xs text-slate-500 mt-0.5">
-                    ${sidePeekEmpresa.razao_social}
-                  </div>
+                  ${sidePeekEmpresa.nome_fantasia && sidePeekEmpresa.nome_fantasia !== sidePeekEmpresa.razao_social ? `
+                    <div class="text-xs text-slate-500 mt-0.5">
+                      Fantasia: ${this.escapeHtml(sidePeekEmpresa.nome_fantasia)}
+                    </div>
+                  ` : ''}
                 </div>
 
                 <!-- Lista de Propriedades no estilo Notion -->
@@ -1427,7 +1520,7 @@ window.ZGestorViews = {
                     <span class="text-slate-500 flex items-center gap-1.5 font-mono text-[11px]">
                       <span>=</span> COD
                     </span>
-                    <span class="font-mono font-bold text-slate-800"></span>
+                    <span class="font-mono font-bold text-slate-800">${this.escapeHtml(this.codLimpo(sidePeekEmpresa.codigo_interno) || '—')}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span class="text-slate-500 flex items-center gap-1.5 font-mono text-[11px]">
@@ -1756,7 +1849,7 @@ window.ZGestorViews = {
                   class="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-800">
                   <option value="TODOS" ${fCliente === 'TODOS' ? 'selected' : ''}>Todas as Empresas</option>
                   ${db.data.empresas.map(e => `
-                    <option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}> - ${e.nome_fantasia}</option>
+                    <option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}>${this.codLimpo(e.codigo_interno) ? this.codLimpo(e.codigo_interno) + ' — ' : ''}${this.escapeHtml(e.razao_social || e.nome_fantasia)}</option>
                   `).join('')}
                 </select>
               </div>
@@ -1866,8 +1959,8 @@ window.ZGestorViews = {
           return `
                       <tr class="hover:bg-slate-50">
                         <td class="py-2.5 px-2.5">
-                          <div class="font-bold text-slate-900">${emp.nome_fantasia}</div>
-                          <div class="text-[10px] text-slate-500"> • ${emp.regime_tributario}</div>
+                          <div class="font-bold text-slate-900">${this.escapeHtml(emp.razao_social || emp.nome_fantasia)}</div>
+                          <div class="text-[10px] text-slate-500">${this.codLimpo(emp.codigo_interno) ? `<span class="font-mono font-bold text-indigo-700">${this.escapeHtml(this.codLimpo(emp.codigo_interno))}</span> • ` : ''}${emp.regime_tributario}</div>
                         </td>
                         ${celulasHtml}
                         <td class="py-2.5 px-2 text-center">
@@ -1933,7 +2026,7 @@ window.ZGestorViews = {
               </thead>
               <tbody class="divide-y divide-slate-100 text-xs">
                 ${tarefasAnoGeral.slice(0, 45).map(t => {
-          const emp = db.data.empresas.find(e => e.id === t.empresa_id);
+          const emp = this.obterEmp(db, t.empresa_id, t);
           return `
                     <tr class="hover:bg-slate-50">
                       <td class="py-2.5 px-3">
@@ -1941,7 +2034,7 @@ window.ZGestorViews = {
                         <div class="text-[10px] text-slate-500 mt-0.5">${db.formatarNomeCompetencia(t.competencia)}</div>
                       </td>
                       <td class="py-2.5 px-2.5">
-                        <div class="font-bold text-slate-900">${emp ? emp.nome_fantasia : '—'}</div>
+                        <div class="font-bold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: t }))}</div>
                         <div class="text-[11px] text-slate-500">${emp ? emp.regime_tributario : ''}</div>
                       </td>
                       <td class="py-2.5 px-2.5">${this.deptBadge(t.departamento)}</td>
@@ -1972,17 +2065,19 @@ window.ZGestorViews = {
             const protocolosComp = db.getProtocolosGuias(comp);
             const selecionadas = appState.guiasSelecionadas || [];
             const ehPendente = (g) => !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio);
-            const listaGuiasAtivas = fGuiaStatus === 'ARQUIVADA_ASSINADA'
+            const mostrarArquivadasNaTabela = fGuiaStatus === 'ARQUIVADA_ASSINADA' || fGuiaStatus === 'ENVIADAS_DIGITAIS';
+            const listaGuiasAtivas = mostrarArquivadasNaTabela
               ? listaGuiasImpostos
               : listaGuiasImpostos.filter(g => g.status_envio !== 'ARQUIVADA_ASSINADA');
-            const listaGuiasArquivadas = todasGuiasComp.filter(g => g.status_envio === 'ARQUIVADA_ASSINADA');
+            const listaGuiasArquivadas = (fCliente !== 'TODOS' ? todasGuiasComp.filter(g => g.empresa_id === fCliente) : todasGuiasComp)
+              .filter(g => g.status_envio === 'ARQUIVADA_ASSINADA');
             const pendentesLista = listaGuiasAtivas.filter(ehPendente);
             const idsPendentes = pendentesLista.map(g => g.id);
             const todasPendMarcadas = idsPendentes.length > 0 && idsPendentes.every(id => selecionadas.includes(id));
 
             const qPendentes = todasGuiasComp.filter(ehPendente).length;
             const qEmRota = todasGuiasComp.filter(g => g.status_envio === 'IMPRESSA_OFFICE_BOY').length;
-            const qDigitais = todasGuiasComp.filter(g => ['ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio)).length;
+            const qDigitais = todasGuiasComp.filter(ehGuiaDigital).length;
             const qArquivadas = todasGuiasComp.filter(g => g.status_envio === 'ARQUIVADA_ASSINADA').length;
 
             return `
@@ -2002,12 +2097,12 @@ window.ZGestorViews = {
                   <div class="bg-white p-3.5 rounded-2xl border border-emerald-200 shadow-2xs">
                     <div class="text-[11px] font-bold text-emerald-700 uppercase">Enviadas (WhatsApp/E-mail)</div>
                     <div class="text-2xl font-black text-emerald-600 mt-1">${qDigitais}</div>
-                    <div class="text-[10px] text-slate-500">Envio digital registrado</div>
+                    <div class="text-[10px] text-slate-500">Enviadas e arquivadas automaticamente</div>
                   </div>
                   <div class="bg-white p-3.5 rounded-2xl border border-teal-200 shadow-2xs">
                     <div class="text-[11px] font-bold text-teal-800 uppercase">Assinadas e Arquivadas</div>
                     <div class="text-2xl font-black text-teal-700 mt-1">${qArquivadas}</div>
-                    <div class="text-[10px] text-slate-500">Protocolos arquivados no mês</div>
+                    <div class="text-[10px] text-slate-500">Total arquivado (Office Boy + Digital)</div>
                   </div>
                 </div>
 
@@ -2015,10 +2110,16 @@ window.ZGestorViews = {
                 <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
                     <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Empresa</label>
-                    <select onchange="ZGestorApp.setFiltro('filtroTarefaCliente', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
-                      <option value="TODOS" ${fCliente === 'TODOS' ? 'selected' : ''}>Todas as Empresas</option>
-                      ${db.data.empresas.map(e => `<option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}> - ${e.nome_fantasia}</option>`).join('')}
-                    </select>
+                    ${this.renderSeletorEmpresaBusca({
+                      uid: 'prot-filtro-emp',
+                      inputId: 'f-prot-filtro-emp',
+                      selectedId: fCliente,
+                      placeholder: 'Todas as Empresas (digite razão ou cód.)...',
+                      onChangeFn: "ZGestorApp.setFiltro('filtroTarefaCliente', val)",
+                      allowAllOption: true,
+                      allOptionValue: 'TODOS',
+                      allOptionLabel: 'Todas as Empresas'
+                    })}
                   </div>
                   <div>
                     <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Tipo de Guia</label>
@@ -2109,9 +2210,10 @@ window.ZGestorViews = {
                             </td>
                           </tr>
                         ` : listaGuiasAtivas.map(g => {
-                          const emp = db.data.empresas.find(e => e.id === g.empresa_id);
+                          const emp = this.obterEmp(db, g.empresa_id, g);
                           const marcado = selecionadas.includes(g.id);
                           const pend = ehPendente(g);
+                          const ehAvulsoReal = Boolean(!emp && g.cliente_avulso);
                           return `
                             <tr class="hover:bg-slate-50 ${marcado ? 'bg-indigo-50/50' : ''}">
                               <td class="py-3 px-3 text-center">
@@ -2124,10 +2226,10 @@ window.ZGestorViews = {
                               </td>
                               <td class="py-3 px-3">
                                 <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-                                  <span>${emp ? ` — ${emp.nome_fantasia}` : this.escapeHtml(g.nome_cliente || 'Cliente Avulso')}</span>
-                                  ${!emp && g.cliente_avulso ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Avulso</span>` : ''}
+                                  <span>${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: g }))}</span>
+                                  ${ehAvulsoReal ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Avulso</span>` : ''}
                                 </div>
-                                <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : this.escapeHtml(g.documento || 'Parcelamento Avulso')}</div>
+                                <div class="text-[11px] text-slate-500">${emp ? `${emp.cnpj} • ${emp.regime_tributario}` : this.escapeHtml(g.documento || (ehAvulsoReal ? 'Parcelamento Avulso' : ''))}</div>
                               </td>
                               <td class="py-3 px-3">
                                 <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
@@ -2140,7 +2242,7 @@ window.ZGestorViews = {
                                 <div class="font-bold text-slate-800">${this.formatDate(g.data_vencimento)}</div>
                               </td>
                               <td class="py-3 px-3">
-                                <div>${statusGuiaImpBadge(g.status_envio)}</div>
+                                <div>${statusGuiaImpBadge(g.status_envio, g)}</div>
                                 ${g.protocolo_codigo ? `
                                   <div class="text-[11px] font-mono font-bold text-blue-700 mt-1">${g.protocolo_codigo}</div>
                                 ` : g.data_envio ? `
@@ -2256,16 +2358,21 @@ window.ZGestorViews = {
                     </div>
                     <div class="divide-y divide-slate-100">
                       ${listaGuiasArquivadas.map(g => {
-                        const emp = db.data.empresas.find(e => e.id === g.empresa_id);
+                        const emp = this.obterEmp(db, g.empresa_id, g);
+                        const canalBadge = g.canal_envio && ['WhatsApp', 'E-mail'].includes(g.canal_envio)
+                          ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${g.canal_envio === 'WhatsApp' ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-indigo-100 text-indigo-900 border border-indigo-300'}">${g.canal_envio === 'WhatsApp' ? '💬 WhatsApp' : '✉️ E-mail'}</span>`
+                          : '';
                         return `
                           <div class="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-50">
                             <div class="flex items-center gap-2 flex-wrap">
                               <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-300">✓ Arquivada</span>
-                              <span class="font-bold text-slate-900">${emp ? ` — ${emp.nome_fantasia}` : '—'}</span>
+                              ${canalBadge}
+                              <span class="font-bold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: g }))}</span>
                               <span class="text-slate-600">• ${this.escapeHtml(g.tipo_guia || '')}</span>
                               <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-mono">Comp. ${g.competencia}</span>
                             </div>
-                            <div class="flex items-center gap-3 text-[11px] text-slate-500 shrink-0">
+                            <div class="flex items-center gap-3 text-[11px] text-slate-500 shrink-0 flex-wrap">
+                              ${g.data_envio ? `<span>Envio: <strong>${this.formatDate(g.data_envio)}</strong>${(g.enviado_por || g.responsavel_nome) ? ` (${this.escapeHtml(g.enviado_por || g.responsavel_nome)})` : ''}</span>` : ''}
                               <span>Venc: <strong>${this.formatDate(g.data_vencimento)}</strong></span>
                               ${g.protocolo_codigo ? `<span class="font-mono font-bold text-teal-700">${g.protocolo_codigo}</span>` : ''}
                               <button onclick="ZGestorApp.excluirGuiaImposto('${g.id}')" class="p-1 rounded text-slate-400 hover:text-rose-600 cursor-pointer" title="Excluir Guia"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
@@ -2510,10 +2617,10 @@ window.ZGestorViews = {
               </thead>
               <tbody class="divide-y divide-slate-100 text-xs">
                 ${guiasMesFiltradas.map(g => {
-      const emp = g.empresa_id ? db.data.empresas.find(e => e.id === g.empresa_id) : null;
+      const emp = g.empresa_id ? this.obterEmp(db, g.empresa_id, g) : null;
       const parc = db.data.parcelamentos.find(p => p.id === g.parcelamento_id);
-      const isAvulso = (parc && parc.cliente_avulso) || g.cliente_avulso || (!emp && (g.nome_cliente || (parc && parc.nome_cliente)));
-      const nomeCliente = isAvulso ? ((parc && parc.nome_cliente) || g.nome_cliente || 'Cliente Avulso') : (emp ? emp.nome_fantasia : '—');
+      const isAvulso = Boolean((parc && parc.cliente_avulso) || g.cliente_avulso);
+      const nomeCliente = isAvulso ? ((parc && parc.nome_cliente) || g.nome_cliente || 'Cliente Avulso') : this.nomeEmp(emp, { comCodigo: true, fallbackObj: parc || g });
       const docCliente = isAvulso ? ((parc && parc.documento) || g.documento || '') : (emp ? emp.cnpj : '');
       const temPendenciaAnt = Number(g.parcelas_anteriores_abertas || 0) > 0;
       const emAlerta = (parc && (parc.status === 'EM_ATRASO' || parc.status === 'ENCERRADO_FALTA_PAGAMENTO')) || temPendenciaAnt;
@@ -2613,8 +2720,8 @@ window.ZGestorViews = {
               <tbody class="divide-y divide-slate-100 text-xs">
                 ${parcelamentosFiltrados.map(p => {
       const isAvulso = Boolean(p.cliente_avulso || !p.empresa_id);
-      const emp = !isAvulso ? db.data.empresas.find(e => e.id === p.empresa_id) : null;
-      const nomeCliente = isAvulso ? (p.nome_cliente || 'Cliente Avulso') : (emp ? emp.nome_fantasia : '—');
+      const emp = !isAvulso ? this.obterEmp(db, p.empresa_id, p) : null;
+      const nomeCliente = isAvulso ? (p.nome_cliente || 'Cliente Avulso') : this.nomeEmp(emp, { comCodigo: true, fallbackObj: p });
       const docCliente = isAvulso ? (p.documento || '') : (emp ? emp.cnpj : '');
       return `
                     <tr class="hover:bg-slate-50">
@@ -2762,12 +2869,16 @@ window.ZGestorViews = {
         <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Filtrar por Empresa Cliente</label>
-            <select onchange="ZGestorApp.setFiltro('filtroCNDCliente', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-800">
-              <option value="TODOS" ${fCliente === 'TODOS' ? 'selected' : ''}>Todas as Empresas</option>
-              ${db.data.empresas.map(e => `
-                <option value="${e.id}" ${fCliente === e.id ? 'selected' : ''}>${e.codigo_interno} - ${e.nome_fantasia} (${e.cnpj})</option>
-              `).join('')}
-            </select>
+            ${this.renderSeletorEmpresaBusca({
+              uid: 'cnd-filtro-emp',
+              inputId: 'f-cnd-filtro-emp',
+              selectedId: fCliente,
+              placeholder: 'Todas as Empresas (digite cód., razão ou CNPJ)...',
+              onChangeFn: "ZGestorApp.setFiltro('filtroCNDCliente', val)",
+              allowAllOption: true,
+              allOptionValue: 'TODOS',
+              allOptionLabel: 'Todas as Empresas'
+            })}
           </div>
           <div>
             <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Órgão / Tipo de Certidão</label>
@@ -2826,7 +2937,7 @@ window.ZGestorViews = {
                     data-api-ready="true"
                     class="hover:bg-slate-50 ${isCritica ? 'bg-rose-50/30' : ''}">
                     <td class="py-3 px-3">
-                      <div class="font-bold text-slate-900">${emp ? emp.nome_fantasia : '—'}</div>
+                      <div class="font-bold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true, fallbackObj: c }))}</div>
                       <div class="text-[11px] text-slate-500 font-mono">${emp ? `${emp.cnpj}` : ''}</div>
                     </td>
                     <td class="py-3 px-2.5">
@@ -3018,20 +3129,18 @@ window.ZGestorViews = {
                 <div class="w-full rounded-xl border border-emerald-400 bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-950 flex items-center justify-between shadow-2xs">
                   <div class="flex items-center gap-1.5 truncate">
                     <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    <span class="truncate"> — ${emp.nome_fantasia} (${emp.cnpj})</span>
+                    <span class="truncate">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true }))} (${emp.cnpj})</span>
                   </div>
                   <span class="text-[10px] bg-emerald-200/80 text-emerald-900 px-1.5 py-0.5 rounded font-black shrink-0">RLS Isolado</span>
                 </div>
               ` : `
-              <select
-                onchange="ZGestorApp.selecionarEmpresaCentral(this.value)"
-                class="w-full rounded-xl border-2 border-indigo-500 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900 focus:outline-none">
-                ${empresas.map(e => `
-                  <option value="${e.id}" ${e.id === emp.id ? 'selected' : ''}>
-                     — ${e.nome_fantasia} (${e.razao_social} • ${e.cnpj})
-                  </option>
-                `).join('')}
-              </select>
+              ${this.renderSeletorEmpresaBusca({
+                uid: 'central-emp',
+                inputId: 'f-central-emp-sel',
+                selectedId: emp.id,
+                placeholder: 'Buscar empresa no Portal por código, razão ou CNPJ...',
+                onChangeFn: 'ZGestorApp.selecionarEmpresaCentral(val)'
+              })}
               `}
             </div>
           </div>
@@ -3716,20 +3825,24 @@ window.ZGestorViews = {
       const temProLabore = e.possui_pro_labore !== false;
       const temFunc = Boolean(e.possui_funcionarios);
       const statusCert = this.calcularStatusCertificado(e.validade_certificado);
+      const codChamada = this.codLimpo(e.codigo_interno);
+      const municipioExib = e.municipio_uf || (e.cidade ? `${e.cidade.toUpperCase()}/${(e.uf || '').toUpperCase()}` : '—');
       return `
                   <tr class="hover:bg-slate-50">
                     <td class="py-3 px-3">
-                      <div class="flex items-center gap-1.5">
-                        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-bold"></span>
-                        <span class="font-bold text-slate-900">${e.razao_social}</span>
+                      <div class="flex items-start gap-2">
+                        <span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[11px] font-extrabold shrink-0" title="Código de Chamada">${this.escapeHtml(codChamada || '—')}</span>
+                        <div class="min-w-0">
+                          <div class="font-bold text-slate-900 leading-snug">${this.escapeHtml(e.razao_social || e.nome_fantasia)}</div>
+                          <div class="text-[11px] text-slate-500 mt-0.5">Fantasia: ${this.escapeHtml(e.nome_fantasia || '—')}</div>
+                        </div>
                       </div>
-                      <div class="text-[11px] text-slate-500 mt-0.5">Fantasia: ${e.nome_fantasia || '—'}</div>
                     </td>
                     <td class="py-3 px-2.5">
                       <div class="font-mono font-semibold text-slate-800">${e.cnpj}</div>
                       <div class="text-[11px] font-medium text-slate-600 flex items-center gap-1 mt-0.5">
                         <i data-lucide="map-pin" class="w-3 h-3 text-slate-400"></i>
-                        <span>${e.municipio_uf || '—'}</span>
+                        <span>${this.escapeHtml(municipioExib)}</span>
                       </div>
                       <div class="text-[10px] text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
                         <button
@@ -4061,10 +4174,54 @@ window.ZGestorViews = {
 
     db.sincronizarSaldosAnterioresHonorarios(comp);
 
-    const listaHon = db.data.honorarios.filter(h => h.competencia === comp);
+    const listaHonBase = db.data.honorarios.filter(h => h.competencia === comp);
+    const fBuscaHon = String(appState.filtroHonorarioBusca || '').toLowerCase().trim();
+    const fBuscaHonNum = fBuscaHon.replace(/\D/g, '');
+    const fStatusHon = appState.filtroHonorarioStatus || 'TODOS';
+    const fVencHon = appState.filtroHonorarioVencimento || 'TODOS';
+    const fCanalHon = appState.filtroHonorarioCanal || 'TODOS';
+    const temFiltroHonAtivo = Boolean(fBuscaHon || fStatusHon !== 'TODOS' || fVencHon !== 'TODOS' || fCanalHon !== 'TODOS');
+
+    const qtdAtrasadosBase = listaHonBase.filter(h => h.status === 'ATRASADO').length;
+    const qtdAbertosBase = listaHonBase.filter(h => h.status === 'ABERTO' || h.status === 'PARCIAL').length;
+    const qtdPagosBase = listaHonBase.filter(h => h.status === 'PAGO').length;
+
+    const listaHon = listaHonBase.filter(h => {
+      const emp = this.obterEmp(db, h.empresa_id, h);
+      if (fBuscaHon) {
+        const cod = emp ? this.codLimpo(emp.codigo_interno).toLowerCase() : '';
+        const razao = emp ? String(emp.razao_social || '').toLowerCase() : '';
+        const fantasia = emp ? String(emp.nome_fantasia || '').toLowerCase() : '';
+        const cnpjFmt = emp ? String(emp.cnpj || '').toLowerCase() : '';
+        const cnpjNum = cnpjFmt.replace(/\D/g, '');
+        const matchTexto = cod.includes(fBuscaHon) || razao.includes(fBuscaHon) || fantasia.includes(fBuscaHon) || cnpjFmt.includes(fBuscaHon);
+        const matchNum = fBuscaHonNum.length >= 2 && (cnpjNum.includes(fBuscaHonNum) || cod === fBuscaHonNum);
+        if (!matchTexto && !matchNum) return false;
+      }
+      if (fStatusHon !== 'TODOS') {
+        if (fStatusHon === 'PENDENTES') {
+          if (!['ABERTO', 'ATRASADO', 'PARCIAL'].includes(h.status) || Number(h.saldo_aberto || 0) <= 0) return false;
+        } else if (fStatusHon === 'COM_SALDO_ANT') {
+          if (Number(h.saldo_anterior || 0) <= 0) return false;
+        } else if (h.status !== fStatusHon) {
+          return false;
+        }
+      }
+      if (fVencHon !== 'TODOS') {
+        const diaStr = String(h.data_vencimento || '').slice(-2);
+        if (fVencHon === 'DIA_10' && diaStr !== '10') return false;
+        if (fVencHon === 'DIA_20' && diaStr !== '20') return false;
+        if (fVencHon === 'OUTROS' && (diaStr === '10' || diaStr === '20')) return false;
+      }
+      if (fCanalHon !== 'TODOS') {
+        const canalEmp = (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
+        if (canalEmp !== fCanalHon) return false;
+      }
+      return true;
+    });
 
     const totalSaldoAnteriorTransportado = listaHon.reduce((acc, h) => acc + Number(h.saldo_anterior || 0), 0);
-    const totalContratado = listaHon.reduce((acc, h) => acc + (Number(h.valor_mensal) + Number(h.saldo_anterior || 0) + Number(h.servicos_extras) - Number(h.desconto)), 0);
+    const totalContratado = listaHon.reduce((acc, h) => acc + Math.max(0, Number(h.valor_mensal) + Number(h.saldo_anterior || 0) + Number(h.servicos_extras) - Number(h.desconto)), 0);
     const totalRecebidoMes = listaHon.reduce((acc, h) => acc + Number(h.valor_pago), 0);
     const totalSaldoAberto = listaHon.reduce((acc, h) => acc + Number(h.saldo_aberto), 0);
 
@@ -4136,7 +4293,85 @@ window.ZGestorViews = {
           <div class="bg-white p-4 rounded-2xl border border-rose-200 shadow-sm">
             <span class="text-[11px] font-bold uppercase text-rose-700">Restante em Aberto</span>
             <div class="text-xl font-extrabold text-rose-600 mt-1">${this.formatCurrency(totalSaldoAberto)}</div>
-            <p class="text-[11px] text-slate-500">Passa p/ próxima competência</p>
+            <p class="text-[11px] text-slate-500">${temFiltroHonAtivo ? `Soma dos ${listaHon.length} registros filtrados` : 'Passa p/ próxima competência'}</p>
+          </div>
+        </div>
+
+        <!-- Barra Prática de Filtros de Honorários & Cobrança -->
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <button type="button" onclick="ZGestorApp.setFiltro('filtroHonorarioStatus', 'TODOS')" class="px-3 py-1 rounded-full font-bold border transition cursor-pointer ${fStatusHon === 'TODOS' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}">
+                Todos (${listaHonBase.length})
+              </button>
+              <button type="button" onclick="ZGestorApp.setFiltro('filtroHonorarioStatus', 'PENDENTES')" class="px-3 py-1 rounded-full font-bold border transition cursor-pointer ${fStatusHon === 'PENDENTES' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}">
+                Pendentes de Recebimento (${qtdAtrasadosBase + qtdAbertosBase})
+              </button>
+              <button type="button" onclick="ZGestorApp.setFiltro('filtroHonorarioStatus', 'ATRASADO')" class="px-3 py-1 rounded-full font-bold border transition cursor-pointer ${fStatusHon === 'ATRASADO' ? 'bg-rose-600 text-white border-rose-600' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'}">
+                Em Atraso (${qtdAtrasadosBase})
+              </button>
+              <button type="button" onclick="ZGestorApp.setFiltro('filtroHonorarioStatus', 'ABERTO')" class="px-3 py-1 rounded-full font-bold border transition cursor-pointer ${fStatusHon === 'ABERTO' ? 'bg-sky-600 text-white border-sky-600' : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'}">
+                Em Aberto (${qtdAbertosBase})
+              </button>
+              <button type="button" onclick="ZGestorApp.setFiltro('filtroHonorarioStatus', 'PAGO')" class="px-3 py-1 rounded-full font-bold border transition cursor-pointer ${fStatusHon === 'PAGO' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'}">
+                Quitados (${qtdPagosBase})
+              </button>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="text-[11px] font-semibold text-slate-500">
+                Exibindo <strong>${listaHon.length}</strong> de <strong>${listaHonBase.length}</strong> lançamento(s)
+              </span>
+              ${temFiltroHonAtivo ? `
+                <button type="button" onclick="ZGestorApp.limparFiltrosHonorarios()" class="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] cursor-pointer">
+                  ✕ Limpar Filtros
+                </button>
+              ` : ''}
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Buscar Cliente, Código ou CNPJ</label>
+              <input
+                type="text"
+                id="input-filtro-honorario-busca"
+                value="${this.escapeHtml(appState.filtroHonorarioBusca || '')}"
+                oninput="ZGestorApp.setFiltro('filtroHonorarioBusca', this.value)"
+                placeholder="Ex: 625, Razão Social ou CNPJ..."
+                class="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Status de Cobrança</label>
+              <select onchange="ZGestorApp.setFiltro('filtroHonorarioStatus', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 bg-white">
+                <option value="TODOS" ${fStatusHon === 'TODOS' ? 'selected' : ''}>Todos os Status</option>
+                <option value="PENDENTES" ${fStatusHon === 'PENDENTES' ? 'selected' : ''}>⏳ Todos Pendentes (Aberto + Atraso)</option>
+                <option value="ATRASADO" ${fStatusHon === 'ATRASADO' ? 'selected' : ''}>🔴 Em Atraso</option>
+                <option value="ABERTO" ${fStatusHon === 'ABERTO' ? 'selected' : ''}>🔵 Em Aberto</option>
+                <option value="PARCIAL" ${fStatusHon === 'PARCIAL' ? 'selected' : ''}>🟡 Pago Parcial</option>
+                <option value="PAGO" ${fStatusHon === 'PAGO' ? 'selected' : ''}>🟢 Pago / Quitado</option>
+                <option value="COM_SALDO_ANT" ${fStatusHon === 'COM_SALDO_ANT' ? 'selected' : ''}>🟠 Com Saldo Mês Anterior</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Dia de Vencimento</label>
+              <select onchange="ZGestorApp.setFiltro('filtroHonorarioVencimento', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 bg-white">
+                <option value="TODOS" ${fVencHon === 'TODOS' ? 'selected' : ''}>Todos os Vencimentos</option>
+                <option value="DIA_10" ${fVencHon === 'DIA_10' ? 'selected' : ''}>Dia 10/${sub.label}</option>
+                <option value="DIA_20" ${fVencHon === 'DIA_20' ? 'selected' : ''}>Dia 20/${sub.label}</option>
+                <option value="OUTROS" ${fVencHon === 'OUTROS' ? 'selected' : ''}>Outros Dias</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold uppercase text-slate-500 mb-1">Canal de Recebimento (PIX)</label>
+              <select onchange="ZGestorApp.setFiltro('filtroHonorarioCanal', this.value)" class="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 bg-white">
+                <option value="TODOS" ${fCanalHon === 'TODOS' ? 'selected' : ''}>Todos os Canais</option>
+                <option value="PIX_PRINCIPAL" ${fCanalHon === 'PIX_PRINCIPAL' ? 'selected' : ''}>PIX Principal (Conta PJ)</option>
+                <option value="PIX_SECUNDARIO" ${fCanalHon === 'PIX_SECUNDARIO' ? 'selected' : ''}>PIX Secundário</option>
+                <option value="PIX_AUTONOMO" ${fCanalHon === 'PIX_AUTONOMO' ? 'selected' : ''}>PIX Autônomo</option>
+                <option value="DINHEIRO" ${fCanalHon === 'DINHEIRO' ? 'selected' : ''}>Dinheiro</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -4156,8 +4391,15 @@ window.ZGestorViews = {
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 text-xs">
-              ${listaHon.map(h => {
-      const emp = db.data.empresas.find(e => e.id === h.empresa_id);
+              ${listaHon.length === 0 ? `
+                <tr>
+                  <td colspan="7" class="py-8 text-center text-slate-400">
+                    Nenhum lançamento de honorário encontrado para os filtros aplicados.
+                  </td>
+                </tr>
+              ` : listaHon.map(h => {
+      const emp = this.obterEmp(db, h.empresa_id, h);
+      const codHon = emp ? this.codLimpo(emp.codigo_interno) : '';
       const pags = db.data.honorario_pagamentos.filter(p => p.honorario_id === h.id);
       const saldoAnt = Number(h.saldo_anterior || 0);
       const compRefAnt = h.competencia_saldo_anterior || compAnt;
@@ -4165,7 +4407,11 @@ window.ZGestorViews = {
       return `
                   <tr class="hover:bg-slate-50 ${saldoAnt > 0 ? 'bg-amber-50/20' : ''}">
                     <td class="py-3 px-3">
-                      <div class="font-bold text-slate-900">${emp ? emp.nome_fantasia : '—'}</div>
+                      <div class="font-bold text-slate-900">
+                        ${codHon ? `<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[10px] font-extrabold mr-1">${this.escapeHtml(codHon)}</span>` : ''}
+                        <span>${this.escapeHtml(this.nomeEmp(emp, { fallbackObj: h }))}</span>
+                      </div>
+                      ${emp ? `<div class="text-[10px] text-slate-500 font-mono mt-0.5">${this.escapeHtml(emp.cnpj)}</div>` : ''}
                       <div class="text-[11px] text-indigo-700 font-semibold">Venc: ${this.formatDate(h.data_vencimento)}</div>
                       <div class="mt-1 flex items-center gap-1">
                         ${(() => {
@@ -4496,7 +4742,7 @@ window.ZGestorViews = {
                         </td>
                         <td class="py-3 px-2.5">
                           ${emp ? `
-                            <div class="font-bold text-slate-900"> — ${emp.nome_fantasia}</div>
+                            <div class="font-bold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true }))}</div>
                             <div class="text-[10px] text-slate-500 font-mono">${emp.cnpj} • ${emp.regime_tributario}</div>
                           ` : '<span class="italic text-rose-500 font-semibold">Sem empresa vinculada</span>'}
                         </td>
@@ -5437,16 +5683,16 @@ window.ZGestorViews = {
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
             <div>
               <label class="block font-bold text-slate-700 mb-1">Filtrar por Empresa</label>
-              <select
-                onchange="ZGestorApp.setFiltroAlvaraEmpresa(this.value)"
-                class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-medium focus:outline-none focus:border-indigo-500">
-                <option value="TODAS" ${fEmpresa === 'TODAS' ? 'selected' : ''}>Todas as Empresas (${empresas.length})</option>
-                ${empresas.map(e => `
-                  <option value="${e.id}" ${fEmpresa === e.id ? 'selected' : ''}>
-                     — ${e.nome_fantasia}
-                  </option>
-                `).join('')}
-              </select>
+              ${this.renderSeletorEmpresaBusca({
+                uid: 'alvara-filtro-emp',
+                inputId: 'f-alvara-filtro-emp',
+                selectedId: fEmpresa,
+                placeholder: `Todas as Empresas (${empresas.length})...`,
+                onChangeFn: 'ZGestorApp.setFiltroAlvaraEmpresa(val)',
+                allowAllOption: true,
+                allOptionValue: 'TODAS',
+                allOptionLabel: `Todas as Empresas (${empresas.length})`
+              })}
             </div>
 
             <div>
@@ -5534,9 +5780,9 @@ window.ZGestorViews = {
                       <tr class="hover:bg-slate-50/80 transition">
                         <td class="py-3.5 px-4 font-semibold text-slate-900 whitespace-nowrap">
                           ${emp ? `
-                            <div class="font-bold text-slate-900">${this.escapeHtml(emp.nome_fantasia)}</div>
+                            <div class="font-bold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true }))}</div>
                             <div class="text-[11px] text-slate-400 font-normal">CNPJ: ${this.escapeHtml(emp.cnpj)}</div>
-                          ` : 'Empresa não encontrada'}
+                          ` : 'Cadastro não localizado'}
                         </td>
                         <td class="py-3.5 px-4 whitespace-nowrap">
                           <div class="font-bold text-slate-800">${this.escapeHtml(alv.nome)}</div>
@@ -6124,11 +6370,12 @@ window.ZGestorViews = {
 
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Empresa Destinatária *</label>
-                <select id="f-comunicado-empresa" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-semibold text-slate-800 bg-white">
-                  ${empresas.map(e => `
-                    <option value="${e.id}"> — ${e.nome_fantasia} (${e.regime_tributario})</option>
-                  `).join('')}
-                </select>
+                ${this.renderSeletorEmpresaBusca({
+                  uid: 'ia-comunicado-emp',
+                  inputId: 'f-comunicado-empresa',
+                  selectedId: empresas[0] ? empresas[0].id : '',
+                  placeholder: 'Digite código, razão social ou CNPJ...'
+                })}
               </div>
 
               <div>

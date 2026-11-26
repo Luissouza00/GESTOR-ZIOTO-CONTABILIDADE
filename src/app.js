@@ -58,6 +58,10 @@ window.ZGestorApp = {
     filtroCentralCategoria: 'TODOS',
     filtroEmpresaBusca: '',
     filtroEmpresaRegime: 'TODOS',
+    filtroHonorarioBusca: '',
+    filtroHonorarioStatus: 'TODOS',
+    filtroHonorarioVencimento: 'TODOS',
+    filtroHonorarioCanal: 'TODOS',
     empresaOnboardingId: null,
     filtroOnboardingSomentePendentes: true,
     filtroOnboardingItensPendentes: false,
@@ -80,15 +84,16 @@ window.ZGestorApp = {
   },
 
   init() {
-    window.zgestorDB.sincronizarSaldosAnterioresHonorarios(this.state.competencia);
-    window.zgestorDB.sincronizarPendenciasParcelamento(this.state.competencia);
-
     // Remove qualquer resquício de sessão antiga em localStorage para garantir tela de login na abertura
     try {
       localStorage.removeItem('zgestor_current_user_id_v1');
     } catch (_) {}
 
     const db = window.zgestorDB;
+    if (db.data.empresas && db.data.empresas.length > 0) {
+      db.sincronizarSaldosAnterioresHonorarios(this.state.competencia);
+      db.sincronizarPendenciasParcelamento(this.state.competencia);
+    }
     const user = db.getCurrentUser();
 
     // Se o usuário logado for CLIENTE, trava estritamente em central_cliente
@@ -121,6 +126,9 @@ window.ZGestorApp = {
       if (!ev.target.closest('#wrapper-filtro-empresa')) {
         this.fecharDropdownEmpresaFiltro();
       }
+      if (!ev.target.closest('.zgestor-emp-combobox')) {
+        this.fecharTodosComboboxEmpresa();
+      }
     });
     this.renderAll();
     const executarAutoSyncNuvem = () => {
@@ -133,14 +141,18 @@ window.ZGestorApp = {
       if (modalAberto || digitando) return;
       db.syncFromSupabase().then(res => {
         if (res && res.ok && res.atualizado) {
+          db.sincronizarSaldosAnterioresHonorarios(this.state.competencia);
+          db.sincronizarPendenciasParcelamento(this.state.competencia);
           this.renderAll();
         }
       }).catch(() => {});
     };
     if (db.supabaseConnected && db.supabaseConfig?.autoSync !== false) {
       db.syncFromSupabase().then(res => {
-        if (res && res.ok && res.atualizado) {
-          this.renderAll();
+        if (res && res.ok) {
+          db.sincronizarSaldosAnterioresHonorarios(this.state.competencia);
+          db.sincronizarPendenciasParcelamento(this.state.competencia);
+          if (res.atualizado) this.renderAll();
         }
       }).catch(() => {});
     }
@@ -360,7 +372,8 @@ window.ZGestorApp = {
     try {
       const email = document.getElementById('login-email').value.trim();
       const senha = document.getElementById('login-senha').value.trim();
-      const user = window.zgestorDB.login(email, senha);
+      const db = window.zgestorDB;
+      const user = db.login(email, senha);
       this.showToast(`Bem-vindo(a), ${user.nome}!`, 'success');
 
       // Roteamento pós-login:
@@ -373,8 +386,245 @@ window.ZGestorApp = {
       }
 
       this.renderAll();
+
+      // Garante hidratação imediata dos dados da nuvem ao logar em qualquer navegador/dispositivo
+      if (db.supabaseConnected && db.supabaseConfig?.autoSync !== false) {
+        db.syncFromSupabase().then(res => {
+          if (res && res.ok) {
+            db.sincronizarSaldosAnterioresHonorarios(this.state.competencia);
+            db.sincronizarPendenciasParcelamento(this.state.competencia);
+            this.renderAll();
+          }
+        }).catch(() => {});
+      }
     } catch (err) {
       this.showToast(err.message, 'error');
+    }
+  },
+
+  limparFiltrosHonorarios() {
+    this.state.filtroHonorarioBusca = '';
+    this.state.filtroHonorarioStatus = 'TODOS';
+    this.state.filtroHonorarioVencimento = 'TODOS';
+    this.state.filtroHonorarioCanal = 'TODOS';
+    this.renderContentOnly();
+  },
+
+  // ===========================================================================
+  // COMBOBOX REUTILIZÁVEL DE BUSCA DE EMPRESA (POR RAZÃO SOCIAL, CÓDIGO OU CNPJ)
+  // ===========================================================================
+  _formatarLabelComboboxEmpresa(emp) {
+    if (!emp) return '';
+    const cod = String(emp.codigo_interno || '').replace(/^#+/, '').trim();
+    const razao = emp.razao_social || emp.nome_fantasia || '';
+    return `${cod ? cod + ' — ' : ''}${razao} (${emp.cnpj || ''})`;
+  },
+
+  abrirComboboxEmpresa(uid) {
+    document.querySelectorAll('.zgestor-emp-combobox').forEach(wrap => {
+      if (wrap.getAttribute('data-cbx-uid') !== uid) {
+        const m = document.getElementById('emp-cbx-menu-' + wrap.getAttribute('data-cbx-uid'));
+        if (m) m.classList.add('hidden');
+      }
+    });
+    const wrap = document.getElementById('emp-cbx-wrap-' + uid);
+    const menu = document.getElementById('emp-cbx-menu-' + uid);
+    const searchInput = document.getElementById('emp-cbx-search-' + uid);
+    const hiddenInput = wrap ? document.getElementById(wrap.getAttribute('data-input-id')) : null;
+    if (!wrap || !menu) return;
+    menu.classList.remove('hidden');
+
+    const db = window.zgestorDB;
+    const empAtual = hiddenInput ? (db.data.empresas || []).find(e => e.id === hiddenInput.value) : null;
+    const labelAtual = this._formatarLabelComboboxEmpresa(empAtual);
+    const termo = (searchInput && searchInput.value !== labelAtual) ? searchInput.value : '';
+    this.renderOpcoesComboboxEmpresa(uid, termo);
+  },
+
+  toggleComboboxEmpresa(uid) {
+    const menu = document.getElementById('emp-cbx-menu-' + uid);
+    const searchInput = document.getElementById('emp-cbx-search-' + uid);
+    if (!menu) return;
+    if (menu.classList.contains('hidden')) {
+      this.abrirComboboxEmpresa(uid);
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+    } else {
+      this.fecharComboboxEmpresa(uid);
+    }
+  },
+
+  fecharComboboxEmpresa(uid) {
+    const wrap = document.getElementById('emp-cbx-wrap-' + uid);
+    const menu = document.getElementById('emp-cbx-menu-' + uid);
+    const searchInput = document.getElementById('emp-cbx-search-' + uid);
+    if (menu) menu.classList.add('hidden');
+    if (!wrap || !searchInput) return;
+    const hiddenInput = document.getElementById(wrap.getAttribute('data-input-id'));
+    const allowAll = wrap.getAttribute('data-allow-all') === '1';
+    const allVal = wrap.getAttribute('data-all-val') || 'TODOS';
+    if (hiddenInput) {
+      if (allowAll && hiddenInput.value === allVal) {
+        searchInput.value = '';
+      } else {
+        const emp = (window.zgestorDB.data.empresas || []).find(e => e.id === hiddenInput.value);
+        if (emp) searchInput.value = this._formatarLabelComboboxEmpresa(emp);
+      }
+    }
+  },
+
+  fecharTodosComboboxEmpresa() {
+    document.querySelectorAll('.zgestor-emp-combobox').forEach(wrap => {
+      const uid = wrap.getAttribute('data-cbx-uid');
+      const menu = document.getElementById('emp-cbx-menu-' + uid);
+      if (menu && !menu.classList.contains('hidden')) {
+        this.fecharComboboxEmpresa(uid);
+      }
+    });
+  },
+
+  filtrarComboboxEmpresa(uid, termo) {
+    const menu = document.getElementById('emp-cbx-menu-' + uid);
+    if (menu && menu.classList.contains('hidden')) menu.classList.remove('hidden');
+    this.renderOpcoesComboboxEmpresa(uid, termo);
+  },
+
+  renderOpcoesComboboxEmpresa(uid, termo = '') {
+    const wrap = document.getElementById('emp-cbx-wrap-' + uid);
+    const menu = document.getElementById('emp-cbx-menu-' + uid);
+    if (!wrap || !menu) return;
+    const hiddenInput = document.getElementById(wrap.getAttribute('data-input-id'));
+    const selectedId = hiddenInput ? hiddenInput.value : '';
+    const allowAll = wrap.getAttribute('data-allow-all') === '1';
+    const allVal = wrap.getAttribute('data-all-val') || 'TODOS';
+    const allLabel = wrap.getAttribute('data-all-label') || 'Todas as Empresas';
+
+    const db = window.zgestorDB;
+    const q = String(termo || '').toLowerCase().trim();
+    const qNum = q.replace(/\D/g, '');
+
+    let lista = db.data.empresas || [];
+    if (q) {
+      lista = lista.filter(e => {
+        const cod = String(e.codigo_interno || '').replace(/^#+/, '').toLowerCase();
+        const razao = String(e.razao_social || '').toLowerCase();
+        const fantasia = String(e.nome_fantasia || '').toLowerCase();
+        const cnpjFmt = String(e.cnpj || '').toLowerCase();
+        const cnpjNum = cnpjFmt.replace(/\D/g, '');
+        if (cod.includes(q) || razao.includes(q) || fantasia.includes(q) || cnpjFmt.includes(q)) return true;
+        if (qNum.length >= 2 && (cnpjNum.includes(qNum) || cod === qNum)) return true;
+        return false;
+      });
+    }
+
+    let html = '';
+    if (allowAll) {
+      const selAll = selectedId === allVal;
+      html += `
+        <div
+          onclick="ZGestorApp.selecionarComboboxEmpresa('${uid}', '${escapeHtml(allVal)}')"
+          class="px-3 py-2 cursor-pointer flex items-center justify-between transition ${selAll ? 'bg-indigo-50 font-bold text-indigo-900' : 'hover:bg-slate-50 text-slate-700'}">
+          <span>🌐 <strong>${escapeHtml(allLabel)}</strong></span>
+          ${selAll ? '<span class="text-[10px] font-bold text-indigo-600">✓</span>' : ''}
+        </div>
+      `;
+    }
+
+    if (lista.length === 0) {
+      html += `<div class="p-3 text-center text-slate-400">Nenhuma empresa encontrada para "${escapeHtml(termo)}"</div>`;
+    } else {
+      html += lista.map(e => {
+        const cod = String(e.codigo_interno || '').replace(/^#+/, '').trim();
+        const razao = e.razao_social || e.nome_fantasia || '—';
+        const sel = e.id === selectedId;
+        return `
+          <div
+            onclick="ZGestorApp.selecionarComboboxEmpresa('${uid}', '${escapeHtml(e.id)}')"
+            class="px-3 py-2 cursor-pointer transition ${sel ? 'bg-indigo-50 border-l-4 border-indigo-600 text-indigo-950 font-bold' : 'hover:bg-slate-50 text-slate-800'}">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5 min-w-0">
+                ${cod ? `<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-mono text-[10px] font-extrabold shrink-0">${escapeHtml(cod)}</span>` : ''}
+                <span class="font-bold truncate">${escapeHtml(razao)}</span>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold shrink-0">${escapeHtml(e.regime_tributario || '')}</span>
+            </div>
+            <div class="text-[10px] text-slate-500 font-mono mt-0.5 truncate">
+              CNPJ: ${escapeHtml(e.cnpj || '—')}${e.nome_fantasia && e.nome_fantasia !== razao ? ` • Fantasia: ${escapeHtml(e.nome_fantasia)}` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    menu.innerHTML = html;
+  },
+
+  selecionarComboboxEmpresa(uid, valor) {
+    const wrap = document.getElementById('emp-cbx-wrap-' + uid);
+    const menu = document.getElementById('emp-cbx-menu-' + uid);
+    const searchInput = document.getElementById('emp-cbx-search-' + uid);
+    if (!wrap) return;
+    const hiddenInput = document.getElementById(wrap.getAttribute('data-input-id'));
+    const allowAll = wrap.getAttribute('data-allow-all') === '1';
+    const allVal = wrap.getAttribute('data-all-val') || 'TODOS';
+    if (hiddenInput) hiddenInput.value = valor;
+
+    if (searchInput) {
+      if (allowAll && valor === allVal) {
+        searchInput.value = '';
+      } else {
+        const emp = (window.zgestorDB.data.empresas || []).find(e => e.id === valor);
+        searchInput.value = this._formatarLabelComboboxEmpresa(emp);
+      }
+    }
+    if (menu) menu.classList.add('hidden');
+
+    const onChangeCode = wrap.getAttribute('data-onchange') || '';
+    if (onChangeCode) {
+      if (onChangeCode.includes('aoMudarEmpresaModalGuia')) {
+        this.aoMudarEmpresaModalGuia(valor);
+      } else if (onChangeCode.includes('selecionarEmpresaCentral')) {
+        this.selecionarEmpresaCentral(valor);
+      } else if (onChangeCode.includes('setFiltroAlvaraEmpresa')) {
+        this.setFiltroAlvaraEmpresa(valor);
+      } else if (onChangeCode.includes('filtroTarefaCliente')) {
+        this.setFiltro('filtroTarefaCliente', valor);
+      } else if (onChangeCode.includes('filtroCNDCliente')) {
+        this.setFiltro('filtroCNDCliente', valor);
+      }
+    }
+  },
+
+  aoTeclarComboboxEmpresa(ev, uid) {
+    if (ev.key === 'Escape') {
+      this.fecharComboboxEmpresa(uid);
+      return;
+    }
+    if (ev.key === 'Enter') {
+      const wrap = document.getElementById('emp-cbx-wrap-' + uid);
+      const menu = document.getElementById('emp-cbx-menu-' + uid);
+      if (!wrap || !menu || menu.classList.contains('hidden')) return;
+      ev.preventDefault();
+      const searchInput = document.getElementById('emp-cbx-search-' + uid);
+      const q = String(searchInput ? searchInput.value : '').toLowerCase().trim();
+      const qNum = q.replace(/\D/g, '');
+      const allowAll = wrap.getAttribute('data-allow-all') === '1';
+      const allVal = wrap.getAttribute('data-all-val') || 'TODOS';
+      if (!q && allowAll) {
+        this.selecionarComboboxEmpresa(uid, allVal);
+        return;
+      }
+      const encontrada = (window.zgestorDB.data.empresas || []).find(e => {
+        const cod = String(e.codigo_interno || '').replace(/^#+/, '').toLowerCase();
+        const razao = String(e.razao_social || '').toLowerCase();
+        const fantasia = String(e.nome_fantasia || '').toLowerCase();
+        const cnpjNum = String(e.cnpj || '').replace(/\D/g, '');
+        return cod === q || razao.includes(q) || fantasia.includes(q) || (qNum.length >= 2 && cnpjNum.includes(qNum));
+      });
+      if (encontrada) {
+        this.selecionarComboboxEmpresa(uid, encontrada.id);
+      }
     }
   },
 
@@ -1314,9 +1564,12 @@ window.ZGestorApp = {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Empresa / Cliente *</label>
-                <select id="f-tar-empresa" required class="w-full rounded-xl border border-slate-300 px-3 py-2">
-                  ${empList.map(e => `<option value="${e.id}" ${e.id === t.empresa_id ? 'selected' : ''}>${e.nome_fantasia} (${e.regime_tributario})</option>`).join('')}
-                </select>
+                ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                  uid: 'modal-tar-emp',
+                  inputId: 'f-tar-empresa',
+                  selectedId: t.empresa_id,
+                  placeholder: 'Digite código, razão social ou CNPJ...'
+                })}
               </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Competência (Mês/Ano) *</label>
@@ -1871,7 +2124,8 @@ window.ZGestorApp = {
     const termo = input ? input.value : '';
     const db = window.zgestorDB;
     const empAtual = db.data.empresas.find(e => e.id === this.state.filtroTarefaCliente);
-    const textoEmpAtual = empAtual ? ` - ${empAtual.nome_fantasia}` : '';
+    const codAt = empAtual ? String(empAtual.codigo_interno || '').replace(/^#+/, '').trim() : '';
+    const textoEmpAtual = empAtual ? `${codAt ? codAt + ' - ' : ''}${empAtual.razao_social || empAtual.nome_fantasia}` : '';
     // Se o texto no input for o nome da empresa já selecionada, lista todas as opções para fácil seleção de outra
     const termoBusca = (termo === textoEmpAtual) ? '' : termo;
     this.renderizarListaOpcoesEmpresas(termoBusca);
@@ -1888,7 +2142,8 @@ window.ZGestorApp = {
       const db = window.zgestorDB;
       const fCliente = this.state.filtroTarefaCliente || 'TODOS';
       const emp = db.data.empresas.find(e => e.id === fCliente);
-      input.value = emp ? ` - ${emp.nome_fantasia}` : '';
+      const cod = emp ? String(emp.codigo_interno || '').replace(/^#+/, '').trim() : '';
+      input.value = emp ? `${cod ? cod + ' - ' : ''}${emp.razao_social || emp.nome_fantasia}` : '';
     }
   },
 
@@ -1975,15 +2230,15 @@ window.ZGestorApp = {
             class="px-3 py-2 cursor-pointer transition ${selecionada ? 'bg-indigo-50 font-bold text-indigo-950 border-l-4 border-indigo-600' : 'hover:bg-slate-50 text-slate-800'}">
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5 truncate">
-                <span class="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-700"></span>
-                <span class="font-bold truncate">${e.nome_fantasia}</span>
+                ${e.codigo_interno ? `<span class="font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200">${escapeHtml(String(e.codigo_interno).replace(/^#+/, ''))}</span>` : ''}
+                <span class="font-bold truncate">${escapeHtml(e.razao_social || e.nome_fantasia)}</span>
               </div>
               <span class="text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${e.regime_tributario === 'Simples Nacional' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}">
                 ${e.regime_tributario}
               </span>
             </div>
             <div class="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 font-normal truncate">
-              <span class="truncate">${e.razao_social}</span>
+              <span class="truncate">Fantasia: ${escapeHtml(e.nome_fantasia || '—')}</span>
               <span class="shrink-0">• CNPJ: ${e.cnpj}</span>
             </div>
           </div>
@@ -2230,9 +2485,13 @@ window.ZGestorApp = {
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div class="sm:col-span-2">
                 <label class="block font-bold text-slate-700 mb-1">Empresa Cliente *</label>
-                <select id="f-gi-emp" onchange="ZGestorApp.aoMudarEmpresaModalGuia(this.value)" required class="w-full rounded-xl border border-slate-300 px-3 py-2">
-                  ${db.data.empresas.map(e => `<option value="${e.id}" ${e.id === g.empresa_id ? 'selected' : ''}>${e.nome_fantasia} (${e.regime_tributario})</option>`).join('')}
-                </select>
+                ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                  uid: 'modal-gi-emp',
+                  inputId: 'f-gi-emp',
+                  selectedId: g.empresa_id,
+                  placeholder: 'Digite código, razão social ou CNPJ...',
+                  onChangeFn: 'ZGestorApp.aoMudarEmpresaModalGuia(val)'
+                })}
               </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Competência *</label>
@@ -3037,9 +3296,12 @@ window.ZGestorApp = {
               <!-- Empresa Cadastrada -->
               <div id="wrapper-parc-carteira" class="${isAvulso ? 'hidden' : 'block'} mt-2.5">
                 <label class="block font-bold text-slate-700 mb-1">Empresa Cliente *</label>
-                <select id="f-parc-emp" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white">
-                  ${db.data.empresas.map(e => `<option value="${e.id}" ${e.id === p.empresa_id ? 'selected' : ''}>${e.nome_fantasia} (${e.cnpj})</option>`).join('')}
-                </select>
+                ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                  uid: 'modal-parc-emp',
+                  inputId: 'f-parc-emp',
+                  selectedId: p.empresa_id,
+                  placeholder: 'Digite parte da razão social, código de chamada ou CNPJ...'
+                })}
               </div>
 
               <!-- Cliente Avulso -->
@@ -3201,7 +3463,7 @@ window.ZGestorApp = {
     const V = window.ZGestorViews;
     const emp = dados.cliente_avulso ? null : db.data.empresas.find(e => e.id === dados.empresa_id);
     const original = db.data.parcelamentos.find(p => p.id === dados.id);
-    const nomeEmpresa = dados.cliente_avulso ? `${dados.nome_cliente} (Cliente Avulso)` : (emp ? emp.nome_fantasia : '—');
+    const nomeEmpresa = dados.cliente_avulso ? `${dados.nome_cliente} (Cliente Avulso)` : (emp ? (emp.razao_social || emp.nome_fantasia) : '—');
 
     const modal = document.getElementById('modal-root');
     if (!modal) return;
@@ -3332,10 +3594,10 @@ window.ZGestorApp = {
 
             <div id="lista-empresas-grade-cnd" class="flex-1 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-[45vh]">
               ${empresas.map(e => `
-                <label class="item-emp-grade-cnd flex items-center gap-3 p-2.5 hover:bg-slate-50 cursor-pointer" data-search="${(e.codigo_interno + ' ' + e.nome_fantasia + ' ' + e.cnpj).toLowerCase()}">
+                <label class="item-emp-grade-cnd flex items-center gap-3 p-2.5 hover:bg-slate-50 cursor-pointer" data-search="${escapeHtml(((e.codigo_interno || '') + ' ' + (e.razao_social || '') + ' ' + (e.nome_fantasia || '') + ' ' + (e.cnpj || '')).toLowerCase())}">
                   <input type="checkbox" name="grade-cnd-emp" value="${e.id}" class="w-4 h-4 rounded text-teal-600 cursor-pointer shrink-0" />
                   <div class="min-w-0 flex-1">
-                    <div class="font-bold text-slate-900 truncate"> — ${e.nome_fantasia}</div>
+                    <div class="font-bold text-slate-900 truncate">${e.codigo_interno ? escapeHtml(String(e.codigo_interno).replace(/^#+/, '')) + ' — ' : ''}${escapeHtml(e.razao_social || e.nome_fantasia)}</div>
                     <div class="text-[11px] text-slate-500 font-mono">${e.cnpj} • ${e.regime_tributario}</div>
                   </div>
                 </label>
@@ -3431,9 +3693,12 @@ window.ZGestorApp = {
 
             <div>
               <label class="block font-bold text-slate-700 mb-1">Empresa Cliente *</label>
-              <select id="f-cnd-emp" required class="w-full rounded-xl border border-slate-300 px-3 py-2">
-                ${db.data.empresas.map(e => `<option value="${e.id}" ${e.id === c.empresa_id ? 'selected' : ''}>${e.nome_fantasia} (${e.cnpj})</option>`).join('')}
-              </select>
+              ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                uid: 'modal-cnd-emp',
+                inputId: 'f-cnd-emp',
+                selectedId: c.empresa_id,
+                placeholder: 'Digite código, razão social ou CNPJ...'
+              })}
             </div>
 
             <div>
@@ -3983,9 +4248,12 @@ window.ZGestorApp = {
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div class="sm:col-span-2">
                 <label class="block font-bold text-slate-700 mb-1">Empresa Cliente *</label>
-                <select id="f-ap-emp" required class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold">
-                  ${db.data.empresas.map(e => `<option value="${e.id}" ${emp && e.id === emp.id ? 'selected' : ''}>${e.nome_fantasia} (${e.cnpj})</option>`).join('')}
-                </select>
+                ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                  uid: 'modal-ap-emp',
+                  inputId: 'f-ap-emp',
+                  selectedId: emp ? emp.id : '',
+                  placeholder: 'Digite código, razão social ou CNPJ...'
+                })}
               </div>
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Competência</label>
@@ -4731,9 +4999,12 @@ window.ZGestorApp = {
                   </div>
                   <input type="hidden" id="f-cc-emp" value="${emp ? emp.id : ''}" />
                 ` : `
-                  <select id="f-cc-emp" required class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold">
-                    ${db.data.empresas.map(e => `<option value="${e.id}" ${e.id === r.empresa_id ? 'selected' : ''}>${e.nome_fantasia} (${e.cnpj})</option>`).join('')}
-                  </select>
+                  ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                    uid: 'modal-cc-emp',
+                    inputId: 'f-cc-emp',
+                    selectedId: r.empresa_id,
+                    placeholder: 'Digite código, razão social ou CNPJ...'
+                  })}
                 `}
               </div>
               <div>
@@ -5670,12 +5941,12 @@ window.ZGestorApp = {
 
             <div>
               <label class="block font-bold text-slate-700 mb-1">Empresa Cliente Vinculada *</label>
-              <select id="f-cli-empresa" required class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
-                <option value="">Selecione a empresa...</option>
-                ${empresas.map(e => `
-                  <option value="${e.id}"> — ${e.nome_fantasia} (CNPJ: ${e.cnpj})</option>
-                `).join('')}
-              </select>
+              ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                uid: 'modal-conv-cli-emp',
+                inputId: 'f-cli-empresa',
+                selectedId: empresas[0] ? empresas[0].id : '',
+                placeholder: 'Digite código, razão social ou CNPJ...'
+              })}
             </div>
 
             <div>
@@ -6040,11 +6311,12 @@ window.ZGestorApp = {
             ${isCliente ? `
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Empresa Vinculada (Isolamento RLS) *</label>
-                <select id="f-edit-empresa" class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
-                  ${empresas.map(e => `
-                    <option value="${e.id}" ${e.id === prof.empresa_id ? 'selected' : ''}> — ${e.nome_fantasia} (${e.cnpj})</option>
-                  `).join('')}
-                </select>
+                ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                  uid: 'modal-edit-usr-emp',
+                  inputId: 'f-edit-empresa',
+                  selectedId: prof.empresa_id || '',
+                  placeholder: 'Digite código, razão social ou CNPJ...'
+                })}
               </div>
             ` : `
               <div>
@@ -6319,7 +6591,10 @@ window.ZGestorApp = {
       return;
     }
     const atualizar = this.state.importacaoEmpresasAtualizar !== false;
-    const res = window.zgestorDB.importarEmpresasEmLote(prev.linhas, atualizar);
+    const ehArquivoMei = /mei/i.test(String(prev.nomeArquivo || ''));
+    const res = window.zgestorDB.importarEmpresasEmLote(prev.linhas, atualizar, {
+      regimePadrao: ehArquivoMei ? 'MEI' : 'Simples Nacional'
+    });
     this.state.importacaoEmpresasPreview = null;
     this.state.subTabEmpresas = 'lista';
     this.showToast(`Importação concluída: ${res.inseridas} nova(s), ${res.atualizadas} atualizada(s), ${res.ignoradas} ignorada(s).`, 'success');
@@ -6605,7 +6880,7 @@ window.ZGestorApp = {
               <h3 class="text-base font-bold text-slate-900">
                 ${ehModoAndamento ? 'Apuração DeSTDA / ICMS (Em Andamento)' : 'Transmitir DeSTDA / ICMS'}
               </h3>
-              <p class="text-xs text-slate-500">${emp ? emp.nome_fantasia : 'Empresa'} • Comp. ${t.competencia}</p>
+              <p class="text-xs text-slate-500">${escapeHtml(emp ? (emp.razao_social || emp.nome_fantasia) : 'Cadastro não localizado')} • Comp. ${t.competencia}</p>
             </div>
             <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
           </div>
@@ -7409,14 +7684,12 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
 
             <div>
               <label class="block font-bold text-slate-700 mb-1">Empresa Vinculada *</label>
-              <select id="f-alv-empresa" required class="w-full rounded-xl border border-slate-300 px-3 py-2 bg-white font-semibold">
-                <option value="">Selecione a empresa...</option>
-                ${empresas.map(e => `
-                  <option value="${e.id}" ${e.id === empPadrao ? 'selected' : ''}>
-                     — ${e.nome_fantasia} (CNPJ: ${e.cnpj})
-                  </option>
-                `).join('')}
-              </select>
+              ${window.ZGestorViews.renderSeletorEmpresaBusca({
+                uid: 'modal-alv-emp',
+                inputId: 'f-alv-empresa',
+                selectedId: empPadrao,
+                placeholder: 'Digite código, razão social ou CNPJ...'
+              })}
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">

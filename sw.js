@@ -1,5 +1,5 @@
 // ZGESTOR - Service Worker PWA (Instalação e Suporte Mobile Offline)
-const CACHE_NAME = 'zgestor-pwa-v1.4.0';
+const CACHE_NAME = 'zgestor-pwa-v1.4.1';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -10,7 +10,8 @@ const STATIC_ASSETS = [
   './src/lib/dbEngine.js',
   './src/ui/views.js',
   './src/ui/reports.js',
-  './src/data/seedData.js'
+  './src/data/seedData.js',
+  './src/data/carteiraOficial.js'
 ];
 
 self.addEventListener('install', (event) => {
