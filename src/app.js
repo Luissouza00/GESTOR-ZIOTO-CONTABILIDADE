@@ -1479,6 +1479,36 @@ window.ZGestorApp = {
             return;
           }
         }
+
+        // 4. Apuração Mensal de ISS Municipal (Próprio e/ou Retido — Dia 10 ou Dia 20 por município)
+        if (tipoFiscal === 'ISS_MUNICIPAL') {
+          if (acao === 'EM_ANDAMENTO') {
+            this.openModalApuracaoIss(tarefaId, 'EM_ANDAMENTO');
+            return;
+          }
+          if (acao === 'ENTREGUE_NORMAL') {
+            if (tarefaAlvo.iss_apuracao_definida) {
+              const res = db.salvarApuracaoIssMunicipal(tarefaId, {
+                modo: 'TRANSMITIR',
+                semMovimento: Boolean(tarefaAlvo.iss_sem_movimento),
+                diaMunicipio: tarefaAlvo.iss_dia_municipio || 10,
+                tributos: tarefaAlvo.iss_tributos || ['DAM / Guia ISS Próprio (Serviços Prestados)'],
+                valores: tarefaAlvo.iss_valores || {},
+                dataVencimento: tarefaAlvo.iss_vencimento_previsto || null
+              });
+              this.showToast(
+                res.guiasCriadas > 0
+                  ? `ISS concluído! ${res.guiasCriadas} guia(s) enviada(s) para o Protocolo.`
+                  : 'ISS concluído Sem Movimento!',
+                res.guiasCriadas > 0 ? 'success' : 'info'
+              );
+              this.renderAll();
+              return res.tarefa;
+            }
+            this.openModalApuracaoIss(tarefaId, 'TRANSMITIR');
+            return;
+          }
+        }
       }
       const t = window.zgestorDB.marcarEtapaTarefa(tarefaId, acao);
       const msgs = {
@@ -7202,6 +7232,185 @@ window.ZGestorApp = {
         modo === 'EM_ANDAMENTO'
           ? `PIS/COFINS salvo em andamento (${selecionados.join(' + ')}).`
           : `PIS/COFINS concluído! ${res.guiasCriadas} guia(s) enviada(s) para o Protocolo.`,
+        'success'
+      );
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  // ===========================================================================
+  // MODAL DE APURAÇÃO MENSAL DE ISS MUNICIPAL (DIA 10 OU DIA 20 POR MUNICÍPIO)
+  // ===========================================================================
+  openModalApuracaoIss(tarefaId, modo = 'TRANSMITIR') {
+    const db = window.zgestorDB;
+    const t = (db.data.tarefas || []).find(item => item.id === tarefaId);
+    if (!t) return;
+    const emp = db.obterEmpresaSegura ? db.obterEmpresaSegura(t.empresa_id, t) : null;
+    const municipioNome = (emp && emp.municipio_uf) ? emp.municipio_uf : 'Município da empresa';
+    const diaSalvo = t.iss_dia_municipio || (db.obterDiaVencimentoIssEmpresa ? db.obterDiaVencimentoIssEmpresa(emp) : 10);
+    const dataDia10 = db.calcularDataMesSubsequenteUtil(t.competencia, 10, true);
+    const dataDia20 = db.calcularDataMesSubsequenteUtil(t.competencia, 20, true);
+    const vencPadrao = t.iss_vencimento_previsto || (diaSalvo === 20 ? dataDia20 : dataDia10);
+
+    const tribSalvos = Array.isArray(t.iss_tributos) && t.iss_tributos.length > 0
+      ? t.iss_tributos
+      : (t.iss_sem_movimento ? [] : ['DAM / Guia ISS Próprio (Serviços Prestados)']);
+    const valoresSalvos = t.iss_valores || {};
+    const ehModoAndamento = modo === 'EM_ANDAMENTO';
+    const V = window.ZGestorViews;
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Prefeitura • ${escapeHtml(municipioNome)}</span>
+              <h3 class="text-base font-bold text-slate-900">
+                ${ehModoAndamento ? 'Apuração Mensal de ISS (Em Andamento)' : 'Concluir Apuração de ISS e Gerar no Protocolo'}
+              </h3>
+              <p class="text-xs text-slate-500">${escapeHtml(emp ? (emp.razao_social || emp.nome_fantasia) : 'Empresa')} • Comp. ${t.competencia}</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitApuracaoIss(event, '${t.id}', '${modo}')" class="space-y-4 mt-4 text-xs">
+            <div class="p-3 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2">
+              <label class="block font-bold text-amber-950">Regra de Vencimento do Município (${escapeHtml(municipioNome)}) *</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="cursor-pointer">
+                  <input type="radio" name="f-iss-dia-mun" value="10" ${diaSalvo !== 20 ? 'checked' : ''} onchange="ZGestorApp.selecionarDiaPresetIss(10, '${t.competencia}')" class="sr-only peer" />
+                  <div class="p-2.5 rounded-xl border-2 text-center transition peer-checked:border-amber-600 peer-checked:bg-white peer-checked:text-amber-950 border-amber-200/70 bg-amber-50/40 text-slate-600 font-bold">
+                    <div>Dia 10</div>
+                    <div class="text-[10px] font-normal text-slate-500">${V.formatDate(dataDia10)}</div>
+                  </div>
+                </label>
+                <label class="cursor-pointer">
+                  <input type="radio" name="f-iss-dia-mun" value="20" ${diaSalvo === 20 ? 'checked' : ''} onchange="ZGestorApp.selecionarDiaPresetIss(20, '${t.competencia}')" class="sr-only peer" />
+                  <div class="p-2.5 rounded-xl border-2 text-center transition peer-checked:border-amber-600 peer-checked:bg-white peer-checked:text-amber-950 border-amber-200/70 bg-amber-50/40 text-slate-600 font-bold">
+                    <div>Dia 20</div>
+                    <div class="text-[10px] font-normal text-slate-500">${V.formatDate(dataDia20)}</div>
+                  </div>
+                </label>
+              </div>
+              ${emp && emp.municipio_uf ? `
+                <label class="inline-flex items-center gap-2 pt-1 text-[11px] text-amber-900 font-semibold cursor-pointer">
+                  <input id="f-iss-lembrar-mun" type="checkbox" checked class="rounded text-amber-600" />
+                  <span>Memorizar este dia (10 ou 20) para empresas de <strong>${escapeHtml(emp.municipio_uf)}</strong></span>
+                </label>
+              ` : ''}
+            </div>
+
+            <div class="space-y-2.5">
+              <div class="p-3 rounded-xl border border-slate-200 bg-slate-50/70 flex items-center justify-between gap-3">
+                <label class="flex items-center gap-2.5 cursor-pointer flex-1">
+                  <input type="checkbox" name="f-iss-trib" value="DAM / Guia ISS Próprio (Serviços Prestados)" ${tribSalvos.includes('DAM / Guia ISS Próprio (Serviços Prestados)') ? 'checked' : ''} class="w-4 h-4 rounded text-amber-600" />
+                  <div>
+                    <div class="font-bold text-slate-900">ISS Próprio (Serviços Prestados)</div>
+                    <div class="text-[10px] text-slate-500">Guia DAM de faturamento de serviços</div>
+                  </div>
+                </label>
+                <input id="f-val-iss-proprio" type="number" step="0.01" min="0" value="${valoresSalvos['DAM / Guia ISS Próprio (Serviços Prestados)'] || ''}" placeholder="R$ (opcional)" class="w-28 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-bold text-right" />
+              </div>
+
+              <div class="p-3 rounded-xl border border-slate-200 bg-slate-50/70 flex items-center justify-between gap-3">
+                <label class="flex items-center gap-2.5 cursor-pointer flex-1">
+                  <input type="checkbox" name="f-iss-trib" value="DAM / Guia ISS Retido (Serviços Tomados)" ${tribSalvos.includes('DAM / Guia ISS Retido (Serviços Tomados)') ? 'checked' : ''} class="w-4 h-4 rounded text-amber-600" />
+                  <div>
+                    <div class="font-bold text-slate-900">ISS Retido (Serviços Tomados)</div>
+                    <div class="text-[10px] text-slate-500">Retenção de notas de serviços tomados</div>
+                  </div>
+                </label>
+                <input id="f-val-iss-retido" type="number" step="0.01" min="0" value="${valoresSalvos['DAM / Guia ISS Retido (Serviços Tomados)'] || ''}" placeholder="R$ (opcional)" class="w-28 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-bold text-right" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Data de Vencimento da Guia ISS *</label>
+              <input id="f-iss-venc" type="date" required value="${vencPadrao}" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-bold" />
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onclick="ZGestorApp.concluirIssSemMovimento('${t.id}', '${modo}')"
+                class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition cursor-pointer">
+                Sem Movimento
+              </button>
+              <button
+                type="submit"
+                class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-sm transition cursor-pointer">
+                ${ehModoAndamento ? 'Salvar em Andamento' : 'Concluir e Gerar no Protocolo'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  },
+
+  selecionarDiaPresetIss(dia, competencia) {
+    const inputVenc = document.getElementById('f-iss-venc');
+    if (!inputVenc) return;
+    inputVenc.value = window.zgestorDB.calcularDataMesSubsequenteUtil(competencia, Number(dia) === 20 ? 20 : 10, true);
+  },
+
+  concluirIssSemMovimento(tarefaId, modo = 'TRANSMITIR') {
+    try {
+      const diaMun = parseInt(document.querySelector('input[name="f-iss-dia-mun"]:checked')?.value, 10) || 10;
+      const lembrar = Boolean(document.getElementById('f-iss-lembrar-mun')?.checked);
+      const venc = document.getElementById('f-iss-venc')?.value || null;
+      window.zgestorDB.salvarApuracaoIssMunicipal(tarefaId, {
+        modo,
+        semMovimento: true,
+        diaMunicipio: diaMun,
+        lembrarMunicipio: lembrar,
+        dataVencimento: venc
+      });
+      this.closeModal();
+      this.showToast(
+        modo === 'EM_ANDAMENTO' ? 'ISS salvo como Sem Movimento (em andamento).' : 'ISS Municipal concluído Sem Movimento.',
+        'info'
+      );
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  submitApuracaoIss(e, tarefaId, modo = 'TRANSMITIR') {
+    e.preventDefault();
+    try {
+      const selecionados = Array.from(document.querySelectorAll('input[name="f-iss-trib"]:checked')).map(cb => cb.value);
+      if (selecionados.length === 0) {
+        this.showToast('Marque ISS Próprio e/ou ISS Retido, ou clique em "Sem Movimento".', 'error');
+        return;
+      }
+      const diaMun = parseInt(document.querySelector('input[name="f-iss-dia-mun"]:checked')?.value, 10) || 10;
+      const lembrar = Boolean(document.getElementById('f-iss-lembrar-mun')?.checked);
+      const venc = document.getElementById('f-iss-venc')?.value || null;
+      const valores = {
+        'DAM / Guia ISS Próprio (Serviços Prestados)': Number(document.getElementById('f-val-iss-proprio')?.value || 0),
+        'DAM / Guia ISS Retido (Serviços Tomados)': Number(document.getElementById('f-val-iss-retido')?.value || 0)
+      };
+
+      const res = window.zgestorDB.salvarApuracaoIssMunicipal(tarefaId, {
+        modo,
+        semMovimento: false,
+        diaMunicipio: diaMun,
+        lembrarMunicipio: lembrar,
+        tributos: selecionados,
+        valores,
+        dataVencimento: venc
+      });
+      this.closeModal();
+      this.showToast(
+        modo === 'EM_ANDAMENTO'
+          ? `ISS salvo em andamento (Dia ${diaMun}).`
+          : `ISS concluído! ${res.guiasCriadas} guia(s) enviada(s) para o Protocolo.`,
         'success'
       );
       this.renderAll();

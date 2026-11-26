@@ -679,6 +679,7 @@ window.ZGestorViews = {
         if (fGuiaTipo.includes('IRPJ')) return tg.includes('IRPJ') || tg.includes('CSLL');
         if (fGuiaTipo.includes('PIS')) return tg.includes('PIS') || tg.includes('COFINS');
         if (fGuiaTipo.includes('ICMS')) return tg.includes('ICMS');
+        if (/\bISS\b/i.test(fGuiaTipo)) return /\bISS\b/i.test(tg);
         return tg === fGuiaTipo;
       });
     }

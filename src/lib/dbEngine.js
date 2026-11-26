@@ -321,6 +321,72 @@
           target.escritorio._regras_presumido_v1 = true;
           mudou = true;
         }
+
+        // Inclusão automática da rotina mensal de ISS Municipal para todas as empresas Lucro Presumido e Lucro Real
+        const jaMigrouIss = Boolean(target.escritorio && target.escritorio._migracao_iss_presumido_v1);
+        if (!jaMigrouIss) {
+          const temModeloIss = target.modelos_tarefas.some(m => m && /\biss\b|\bissqn\b/i.test(String(m.titulo || '')));
+          const modeloIssPadrao = {
+            id: 'mod-fis-pr-iss',
+            titulo: 'Apuração ISS Municipal (Próprio / Retido)',
+            descricao: 'Apurar ISS Próprio (serviços prestados) e/ou ISS Retido (serviços tomados) conforme vencimento do município (Dia 10 ou Dia 20, antecipando se não útil) e gerar no Protocolo.',
+            departamento: 'FISCAL',
+            periodicidade: 'MENSAL',
+            mes_entrega: null,
+            regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real'],
+            dia_prazo_padrao: 10,
+            antecipar_dia_util: true,
+            requer_pro_labore: false,
+            requer_funcionarios: false,
+            requer_ie: false,
+            ativo: true
+          };
+          if (!temModeloIss) {
+            target.modelos_tarefas.push(modeloIssPadrao);
+            mudou = true;
+          }
+
+          // Se já existem competências geradas em tarefas (ex.: 10/2026), cria já a tarefa de ISS para as empresas Presumido/Real ativas
+          if (Array.isArray(target.tarefas) && target.tarefas.length > 0 && Array.isArray(target.empresas)) {
+            const compsExistentes = Array.from(new Set(target.tarefas.map(t => t && t.competencia).filter(Boolean)));
+            const empsPR = target.empresas.filter(e => e && (e.status === 'ATIVA' || e.status === 'EM_ONBOARDING') && ['Lucro Presumido', 'Lucro Real'].includes(e.regime_tributario));
+            const mapaMunIss = (target.escritorio && target.escritorio.vencimento_iss_por_municipio) || {};
+            let seqIss = 0;
+
+            compsExistentes.forEach(comp => {
+              empsPR.forEach(emp => {
+                const jaTemIss = target.tarefas.some(
+                  t => t && t.empresa_id === emp.id && t.competencia === comp && /\biss\b|\bissqn\b/i.test(String(t.titulo || ''))
+                );
+                if (!jaTemIss) {
+                  const diaBase = Number(emp.dia_vencimento_iss || (emp.municipio_uf && mapaMunIss[emp.municipio_uf]) || 10);
+                  const prazoIss = this.calcularDataMesSubsequenteUtil(comp, diaBase, true);
+                  target.tarefas.push({
+                    id: `tar-iss-${Date.now()}-${seqIss++}-${Math.random().toString(36).slice(2, 5)}`,
+                    empresa_id: emp.id,
+                    competencia: comp,
+                    departamento: 'FISCAL',
+                    tipo: 'MENSAL',
+                    titulo: modeloIssPadrao.titulo,
+                    descricao: modeloIssPadrao.descricao,
+                    solicitante: 'Rotina Mensal Automática',
+                    prazo_entrega: prazoIss,
+                    data_entrega: null,
+                    modalidade_entrega: null,
+                    status: 'NAO_INICIADA',
+                    responsavel_nome: 'Luis Filipe (Zioto Contabilidade)',
+                    protocolo_observacao: ''
+                  });
+                  mudou = true;
+                }
+              });
+            });
+          }
+
+          if (!target.escritorio) target.escritorio = {};
+          target.escritorio._migracao_iss_presumido_v1 = true;
+          mudou = true;
+        }
       }
 
       return mudou;
@@ -1044,6 +1110,19 @@
       return quotas;
     }
 
+    obterDiaVencimentoIssEmpresa(emp) {
+      if (!emp) return 10;
+      if (emp.dia_vencimento_iss && [10, 20].includes(Number(emp.dia_vencimento_iss))) {
+        return Number(emp.dia_vencimento_iss);
+      }
+      const mun = String(emp.municipio_uf || '').trim().toUpperCase();
+      const mapa = (this.data?.escritorio && this.data.escritorio.vencimento_iss_por_municipio) || {};
+      if (mun && mapa[mun] && [10, 20].includes(Number(mapa[mun]))) {
+        return Number(mapa[mun]);
+      }
+      return 10;
+    }
+
     identificarTipoApuracaoFiscal(tarefa, emp = null) {
       if (!tarefa) return null;
       const empresa = emp || this.obterEmpresaSegura(tarefa.empresa_id, tarefa);
@@ -1056,6 +1135,9 @@
       }
       if (tit.includes('pis') || tit.includes('cofins')) {
         return 'PIS_COFINS';
+      }
+      if (/\biss\b|\bissqn\b/i.test(tit)) {
+        return 'ISS_MUNICIPAL';
       }
       if (tit.includes('destda')) {
         return 'ICMS_SIMPLES';
@@ -1955,6 +2037,14 @@
         } else if (acao === 'SEM_MOVIMENTO') {
           this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && (g.competencia === t.competencia || g.trimestre_ref === infoTrim.sigla) && (String(g.tipo_guia || '').includes('IRPJ') || String(g.tipo_guia || '').includes('CSLL')));
         }
+      } else if (tipoApur === 'ISS_MUNICIPAL') {
+        const diaIss = this.obterDiaVencimentoIssEmpresa(empTarefa);
+        const vencIss = this.calcularDataMesSubsequenteUtil(t.competencia, diaIss, true);
+        if (acao === 'ENTREGUE_NORMAL') {
+          this._garantirGuiaPorConclusaoTarefa(t, 'DAM / Guia ISS Próprio (Serviços Prestados)', diaIss, false, vencIss);
+        } else if (acao === 'SEM_MOVIMENTO') {
+          this._removerGuiasPendentesPorFiltro(g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && /\bISS\b/i.test(String(g.tipo_guia || '')));
+        }
       }
 
       this.sincronizarSolicitacaoPortalComTarefa(t);
@@ -2322,11 +2412,13 @@
             const titModLower = String(mod.titulo || '').toLowerCase();
             const ehPresumidoOuReal = ['Lucro Presumido', 'Lucro Real'].includes(emp.regime_tributario);
             const ehIrpjMod = titModLower.includes('irpj') || titModLower.includes('csll');
+            const ehIssMod = /\biss\b|\bissqn\b/i.test(titModLower);
             const deveAntecipar = Boolean(
-              mod.antecipar_dia_util ||
+              mod.antecipar_dia_util || ehIssMod ||
               (ehPresumidoOuReal && (ehIrpjMod || ((titModLower.includes('icms') || titModLower.includes('pis') || titModLower.includes('cofins')) && !titModLower.startsWith('transmissão efd') && !titModLower.startsWith('transmissao efd'))))
             );
-            const prazoBruto = this.calcularDataMesSubsequente(competencia, mod.dia_prazo_padrao);
+            const diaPrazoEfetivo = ehIssMod ? this.obterDiaVencimentoIssEmpresa(emp) : mod.dia_prazo_padrao;
+            const prazoBruto = this.calcularDataMesSubsequente(competencia, diaPrazoEfetivo);
             const prazoData = deveAntecipar ? this.anteciparParaDiaUtil(prazoBruto, ehIrpjMod) : prazoBruto;
             const colabSetor = this.data.profiles.find(p => p.departamento === mod.departamento && p.ativo);
 
@@ -2605,6 +2697,132 @@
 
       this.saveLocalData();
       this.registrarLog('APURACAO_PISCOFINS_CONCLUIDA', 'Tarefas/Guias', `PIS/COFINS (${t.competencia}) concluído com ${criadas} guia(s) gerada(s) no Protocolo.`);
+      return { tarefa: t, guiasCriadas: criadas };
+    }
+
+    // =========================================================================
+    // APURAÇÃO MENSAL DE ISS MUNICIPAL (PRÓPRIO E/OU RETIDO — DIA 10 OU 20)
+    // =========================================================================
+    salvarApuracaoIssMunicipal(tarefaId, opcoes = {}) {
+      const idx = (this.data.tarefas || []).findIndex(t => t.id === tarefaId);
+      if (idx === -1) throw new Error('Tarefa não encontrada.');
+      const t = this.data.tarefas[idx];
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment(t.departamento, user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
+      }
+
+      const emp = this.obterEmpresaSegura(t.empresa_id, t);
+      const diaEscolhido = [10, 20].includes(Number(opcoes.diaMunicipio))
+        ? Number(opcoes.diaMunicipio)
+        : this.obterDiaVencimentoIssEmpresa(emp);
+
+      // Memoriza o dia de vencimento do ISS (10 ou 20) para a empresa e opcionalmente para o município
+      if (emp) {
+        emp.dia_vencimento_iss = diaEscolhido;
+        if (opcoes.lembrarMunicipio && emp.municipio_uf) {
+          if (!this.data.escritorio) this.data.escritorio = {};
+          if (!this.data.escritorio.vencimento_iss_por_municipio) {
+            this.data.escritorio.vencimento_iss_por_municipio = {};
+          }
+          const chaveMun = String(emp.municipio_uf).trim().toUpperCase();
+          this.data.escritorio.vencimento_iss_por_municipio[chaveMun] = diaEscolhido;
+
+          // Atualiza o prazo das tarefas de ISS ainda abertas do mesmo município
+          (this.data.tarefas || []).forEach(outra => {
+            if (!outra || outra.data_entrega || !/\biss\b|\bissqn\b/i.test(String(outra.titulo || ''))) return;
+            const empOutra = this.obterEmpresaSegura(outra.empresa_id, outra);
+            if (empOutra && String(empOutra.municipio_uf || '').trim().toUpperCase() === chaveMun) {
+              outra.prazo_entrega = this.calcularDataMesSubsequenteUtil(outra.competencia, diaEscolhido, true);
+            }
+          });
+        } else {
+          t.prazo_entrega = this.calcularDataMesSubsequenteUtil(t.competencia, diaEscolhido, true);
+        }
+      }
+
+      const modo = opcoes.modo === 'EM_ANDAMENTO' ? 'EM_ANDAMENTO' : 'TRANSMITIR';
+      const tributos = opcoes.semMovimento
+        ? []
+        : (Array.isArray(opcoes.tributos) ? opcoes.tributos.filter(Boolean) : ['DAM / Guia ISS Próprio (Serviços Prestados)']);
+      const ehSemMov = Boolean(opcoes.semMovimento || tributos.length === 0);
+      const vencimentoFinal = opcoes.dataVencimento || this.calcularDataMesSubsequenteUtil(t.competencia, diaEscolhido, true);
+      const valores = opcoes.valores || {};
+      const hoje = new Date().toISOString().slice(0, 10);
+
+      t.iss_apuracao_definida = true;
+      t.iss_sem_movimento = ehSemMov;
+      t.iss_dia_municipio = diaEscolhido;
+      t.iss_tributos = [...tributos];
+      t.iss_valores = { ...valores };
+      t.iss_vencimento_previsto = vencimentoFinal;
+      if (user) t.responsavel_nome = user.nome;
+
+      if (modo === 'EM_ANDAMENTO') {
+        t.status = 'EM_ANDAMENTO';
+        t.data_entrega = null;
+        t.modalidade_entrega = null;
+        t.protocolo_observacao = ehSemMov
+          ? 'ISS apurado Sem Movimento (pronto p/ concluir)'
+          : `ISS apurado (Dia ${diaEscolhido}): ${tributos.map(x => x.includes('Retido') ? 'ISS Retido' : 'ISS Próprio').join(' + ')} (Venc. ${vencimentoFinal.split('-').reverse().join('/')})`;
+        this.saveLocalData();
+        this.registrarLog('APURACAO_ISS_ANDAMENTO', 'Tarefas', `ISS em andamento (${t.competencia}): ${t.protocolo_observacao}`);
+        return { tarefa: t, guiasCriadas: 0 };
+      }
+
+      // Remove guias ISS pendentes desta competência antes de recriar
+      this._removerGuiasPendentesPorFiltro(
+        g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && /\bISS\b/i.test(String(g.tipo_guia || ''))
+      );
+
+      if (ehSemMov) {
+        t.data_entrega = hoje;
+        t.modalidade_entrega = 'SEM_MOVIMENTO';
+        t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+        t.protocolo_observacao = 'ISS Municipal encerrado Sem Movimento.';
+        this.saveLocalData();
+        this.registrarLog('APURACAO_ISS_SEM_MOV', 'Tarefas/Guias', `ISS Municipal concluído Sem Movimento (${t.competencia}).`);
+        return { tarefa: t, guiasCriadas: 0 };
+      }
+
+      t.data_entrega = hoje;
+      t.modalidade_entrega = 'NORMAL';
+      t.status = this.calcularStatusTarefa(t.prazo_entrega, hoje, 'ENTREGUE');
+      t.protocolo_observacao = `Apurado: ${tributos.map(x => x.includes('Retido') ? 'ISS Retido' : 'ISS Próprio').join(' + ')} (Venc. ${vencimentoFinal.split('-').reverse().join('/')})`;
+
+      const sub1 = this.obterMesSubsequente(t.competencia);
+      if (!Array.isArray(this.data.guias_impostos)) this.data.guias_impostos = [];
+      let criadas = 0;
+
+      tributos.forEach(tipoNome => {
+        const jaEnviada = this.data.guias_impostos.some(
+          g => g.empresa_id === t.empresa_id && g.competencia === t.competencia && g.tipo_guia === tipoNome
+        );
+        if (!jaEnviada) {
+          this.data.guias_impostos.unshift({
+            id: `gimp-iss-${Date.now()}-${criadas}-${Math.random().toString(36).slice(2, 5)}`,
+            empresa_id: t.empresa_id,
+            competencia: t.competencia,
+            competencia_entrega: sub1.label,
+            tipo_guia: tipoNome,
+            departamento: 'FISCAL',
+            valor: Number(valores[tipoNome] || 0),
+            data_vencimento: vencimentoFinal,
+            segundo_mes_subsequente: false,
+            status_envio: 'GERADA_AGUARDANDO_ENVIO',
+            data_envio: null,
+            canal_envio: '',
+            protocolo_id: null,
+            protocolo_codigo: null,
+            responsavel_nome: t.responsavel_nome || (user ? user.nome : 'Equipe Fiscal'),
+            observacoes: `ISS Municipal (${emp?.municipio_uf || 'Prefeitura'}) ref. ${t.competencia} — Venc. padrão dia ${diaEscolhido}.`
+          });
+          criadas++;
+        }
+      });
+
+      this.saveLocalData();
+      this.registrarLog('APURACAO_ISS_CONCLUIDA', 'Tarefas/Guias', `ISS Municipal (${t.competencia}) concluído com ${criadas} guia(s) gerada(s) no Protocolo.`);
       return { tarefa: t, guiasCriadas: criadas };
     }
 

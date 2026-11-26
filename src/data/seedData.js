@@ -110,7 +110,9 @@ window.ZGESTOR_MODELS = {
     { sigla: 'DARF - PIS', departamento: 'FISCAL', dia_vencimento_padrao: 25 },
     { sigla: 'DARF - COFINS', departamento: 'FISCAL', dia_vencimento_padrao: 25 },
     { sigla: 'DARF - IRPJ / CSLL', departamento: 'FISCAL', dia_vencimento_padrao: 30 },
-    { sigla: 'DAM / Guia ISS Municipal', departamento: 'FISCAL', dia_vencimento_padrao: 15 },
+    { sigla: 'DAM / Guia ISS Municipal', departamento: 'FISCAL', dia_vencimento_padrao: 10 },
+    { sigla: 'DAM / Guia ISS Próprio (Serviços Prestados)', departamento: 'FISCAL', dia_vencimento_padrao: 10 },
+    { sigla: 'DAM / Guia ISS Retido (Serviços Tomados)', departamento: 'FISCAL', dia_vencimento_padrao: 10 },
     { sigla: 'DAS - SIMEI (MEI)', departamento: 'FISCAL', dia_vencimento_padrao: 20 },
     { sigla: 'DAS-MEI', departamento: 'FISCAL', dia_vencimento_padrao: 20 }
   ],
@@ -294,6 +296,20 @@ window.ZGESTOR_MODELS = {
       requer_pro_labore: false,
       requer_funcionarios: false,
       requer_ie: true,
+      ativo: true
+    },
+    {
+      id: 'mod-fis-pr-iss',
+      titulo: 'Apuração ISS Municipal (Próprio / Retido)',
+      descricao: 'Apurar ISS Próprio (serviços prestados) e/ou ISS Retido (serviços tomados) conforme vencimento do município (Dia 10 ou Dia 20, antecipando se não útil) e gerar no Protocolo.',
+      departamento: 'FISCAL',
+      periodicidade: 'MENSAL',
+      regimes_aplicaveis: ['Lucro Presumido', 'Lucro Real'],
+      dia_prazo_padrao: 10,
+      antecipar_dia_util: true,
+      requer_pro_labore: false,
+      requer_funcionarios: false,
+      requer_ie: false,
       ativo: true
     },
     {
