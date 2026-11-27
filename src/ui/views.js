@@ -5345,7 +5345,7 @@ window.ZGestorViews = {
                   <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                     <th class="py-2.5 px-3">Destinatário</th>
                     <th class="py-2.5 px-2.5">Tipo & Vínculo</th>
-                    <th class="py-2.5 px-2.5">Data & Expiração</th>
+                    <th class="py-2.5 px-2.5">Criação & Vigência</th>
                     <th class="py-2.5 px-2.5 text-center">Status</th>
                     <th class="py-2.5 px-3 text-right">Ações</th>
                   </tr>
@@ -5375,7 +5375,13 @@ window.ZGestorViews = {
                         </td>
                         <td class="py-3 px-2.5">
                           <div class="text-[11px] text-slate-700">Criado: ${new Date(c.criado_em).toLocaleDateString('pt-BR')}</div>
-                          <div class="text-[10px] text-slate-400">Expira: ${new Date(c.expira_em).toLocaleDateString('pt-BR')}</div>
+                          ${c.status === 'ACEITO' ? `
+                            <div class="text-[10px] font-bold text-emerald-700">✓ Ativado • Acesso Permanente</div>
+                          ` : c.status === 'REVOGADO' ? `
+                            <div class="text-[10px] text-slate-400">Link cancelado</div>
+                          ` : `
+                            <div class="text-[10px] text-amber-700 font-medium">Link válido até: ${new Date(c.expira_em).toLocaleDateString('pt-BR')}</div>
+                          `}
                         </td>
                         <td class="py-3 px-2.5 text-center">
                           <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${c.status === 'PENDENTE' ? 'bg-amber-100 text-amber-800 border border-amber-200' : (c.status === 'ACEITO' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-500')}">
@@ -5386,26 +5392,36 @@ window.ZGestorViews = {
                           <div class="inline-flex items-center gap-1.5 justify-end">
                             ${isPendente ? `
                               <button
-                                onclick="ZGestorApp.copiarLinkConvite('${c.token}')"
-                                class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold transition flex items-center gap-1"
-                                title="Copiar link de convite com token">
+                                type="button"
+                                onclick="ZGestorApp.copiarLinkConvitePorId('${c.id}')"
+                                class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                                title="Copiar ou reenviar link de convite válido">
                                 <i data-lucide="copy" class="w-3 h-3"></i> Copiar Link
                               </button>
                               <button
-                                onclick="ZGestorApp.abrirTelaAtivacaoConta('${c.token}')"
-                                class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold transition flex items-center gap-1"
-                                title="Cadastrar nova senha e ativar esta conta">
+                                type="button"
+                                onclick="ZGestorApp.abrirAtivacaoConvitePorId('${c.id}')"
+                                class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                                title="Cadastrar senha e ativar esta conta diretamente">
                                 <i data-lucide="key" class="w-3 h-3"></i> Ativar Conta
                               </button>
                               <button
+                                type="button"
                                 onclick="ZGestorApp.revogarConvite('${c.id}')"
-                                class="px-2 py-1 rounded-lg text-rose-600 hover:bg-rose-50 text-[11px] font-bold transition"
+                                class="px-2 py-1 rounded-lg text-amber-700 hover:bg-amber-50 text-[11px] font-bold transition cursor-pointer"
                                 title="Revogar este convite">
                                 Revogar
                               </button>
                             ` : `
-                              <span class="text-[11px] text-slate-400 italic">Concluído</span>
+                              <span class="text-[11px] text-slate-400 italic mr-1">Concluído</span>
                             `}
+                            <button
+                              type="button"
+                              onclick="ZGestorApp.excluirConviteHistorico('${c.id}')"
+                              class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              title="Remover este registro do histórico de convites">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -5577,7 +5593,7 @@ window.ZGestorViews = {
           <div class="zg-auth-footer mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="zg-auth-version inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.1'}
+              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.2'}
             </span>
           </div>
         </div>

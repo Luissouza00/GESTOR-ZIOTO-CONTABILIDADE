@@ -411,10 +411,10 @@
           class="flex items-center justify-between sidebar-footer-text text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
           <span>Versão do Sistema:</span>
           <span id="sidebar-system-version"
-            class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/80">v1.5.1</span>
+            class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/80">v1.5.2</span>
         </div>
         <div id="sidebar-collapsed-version" class="hidden text-center font-mono font-bold text-[10px] text-indigo-400">
-          v1.5.1</div>
+          v1.5.2</div>
         <button
           onclick="window.zgestorDB.resetToSeedData(); window.ZGestorApp.renderAll(); window.ZGestorApp.showToast('Base de demonstração restaurada!', 'info');"
           class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer">
@@ -445,19 +445,19 @@
   <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
   <!-- Versão Oficial Unificada e Scripts da Aplicação (Cache-Busting Automático) -->
-  <script>window.ZGESTOR_VERSION = 'v1.5.1';</script>
-  <script src="./src/data/seedData.js?v=1.5.1"></script>
-  <script src="./src/data/carteiraOficial.js?v=1.5.1"></script>
-  <script src="./src/lib/dbEngine.js?v=1.5.1"></script>
-  <script src="./src/ui/views.js?v=1.5.1"></script>
-  <script src="./src/ui/reports.js?v=1.5.1"></script>
-  <script src="./src/app.js?v=1.5.1"></script>
+  <script>window.ZGESTOR_VERSION = 'v1.5.2';</script>
+  <script src="./src/data/seedData.js?v=1.5.2"></script>
+  <script src="./src/data/carteiraOficial.js?v=1.5.2"></script>
+  <script src="./src/lib/dbEngine.js?v=1.5.2"></script>
+  <script src="./src/ui/views.js?v=1.5.2"></script>
+  <script src="./src/ui/reports.js?v=1.5.2"></script>
+  <script src="./src/app.js?v=1.5.2"></script>
 
   <!-- Registro do Service Worker PWA para Suporte Mobile & Instalação -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('./sw.js?v=1.5.1').then(function (reg) {
+        navigator.serviceWorker.register('./sw.js?v=1.5.2').then(function (reg) {
           if (reg && typeof reg.update === 'function') reg.update();
         }).catch(function () { });
       });

@@ -410,6 +410,21 @@
         }
       }
 
+      // Saneamento único dos 4 convites antigos inconsistentes (preserva integralmente Sebastião Moreira Zioto e quaisquer novos convites)
+      if (Array.isArray(target.convites)) {
+        const idsConvitesInconsistentes = new Set([
+          'conv-1795781733127',
+          'conv-1795781875384',
+          'conv-1795611424780',
+          'conv-1795611330996'
+        ]);
+        const antesConv = target.convites.length;
+        target.convites = target.convites.filter(c => c && !idsConvitesInconsistentes.has(c.id));
+        if (target.convites.length !== antesConv) {
+          mudou = true;
+        }
+      }
+
       return mudou;
     }
 
@@ -6027,6 +6042,13 @@
       }
 
       this.data.convites = Array.isArray(this.data.convites) ? this.data.convites : [];
+      const emailLimpo = dados.email.trim().toLowerCase();
+
+      // Remove/substitui automaticamente convites anteriores ainda pendentes ou revogados do mesmo e-mail para evitar duplicidade
+      this.data.convites = this.data.convites.filter(
+        c => !(c && c.email && c.email.toLowerCase() === emailLimpo && (c.status === 'PENDENTE' || c.status === 'REVOGADO'))
+      );
+
       const user = this.getCurrentUser();
       const rawToken = gerarTokenCriptografico(dados.tipo === 'CLIENTE' ? 'tk_cli_' : 'tk_colab_');
       const tokenHash = sha256(rawToken);
@@ -6036,7 +6058,7 @@
         token_hash: tokenHash,
         tipo: dados.tipo || 'COLABORADOR', // 'COLABORADOR' | 'CLIENTE'
         nome: dados.nome.trim(),
-        email: dados.email.trim().toLowerCase(),
+        email: emailLimpo,
         cargo: dados.tipo === 'CLIENTE' ? 'CLIENTE' : (dados.cargo || 'COLABORADOR'),
         departamento: dados.tipo === 'CLIENTE' ? 'CLIENTE' : (dados.departamento || 'FISCAL'),
         empresa_id: dados.tipo === 'CLIENTE' ? dados.empresa_id : null,
@@ -6052,6 +6074,7 @@
           guias: true,
           parcelamentos: true,
           cnds: true,
+          alvaras: true,
           central_cliente: true,
           empresas: false,
           onboarding: false,
@@ -6064,11 +6087,90 @@
         expira_em: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
       };
 
+      if (!this._tokensSessaoConvites) this._tokensSessaoConvites = new Map();
+      this._tokensSessaoConvites.set(convite.id, rawToken);
+
       this.data.convites.unshift(convite);
       this.saveLocalData();
+      this._salvarConviteNuvemImediato(convite).catch(() => {});
       this.registrarLog('CRIACAO_CONVITE', 'Segurança', `Convite gerado para ${convite.nome} (${convite.tipo} - ${convite.email}).`);
-      convite.token = rawToken;
-      return convite;
+      return { ...convite, token: rawToken };
+    }
+
+    async _salvarConviteNuvemImediato(convite) {
+      if (!convite || !this.supabaseConnected || !this.supabase) return false;
+      try {
+        const agora = new Date().toISOString();
+        const copiaLimpa = { ...convite };
+        delete copiaLimpa.token;
+        const { error } = await this.supabase
+          .from('zgestor_registros')
+          .upsert([{ colecao: 'convites', id: String(convite.id), dados: copiaLimpa, updated_at: agora }], { onConflict: 'colecao,id' });
+        if (!error && this._cloudRowHashes) {
+          this._cloudRowHashes.set(`convites:${convite.id}`, JSON.stringify(copiaLimpa));
+          if (this._cloudColIds) {
+            const setIds = this._cloudColIds.get('convites') || new Set();
+            setIds.add(String(convite.id));
+            this._cloudColIds.set('convites', setIds);
+          }
+        }
+        return !error;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async obterOuRegerarTokenConvite(conviteId) {
+      if (!this.isAdmin()) {
+        throw new Error('Apenas o Administrador pode copiar ou renovar links de convite.');
+      }
+      this.data.convites = Array.isArray(this.data.convites) ? this.data.convites : [];
+      const conv = this.data.convites.find(c => c.id === conviteId);
+      if (!conv) throw new Error('Convite não encontrado.');
+      if (conv.status !== 'PENDENTE') {
+        throw new Error('Apenas convites com status Pendente possuem link de ativação ativo.');
+      }
+      if (!this._tokensSessaoConvites) this._tokensSessaoConvites = new Map();
+      let rawToken = this._tokensSessaoConvites.get(conv.id) || conv.token || '';
+      let regerado = false;
+
+      if (!rawToken) {
+        rawToken = gerarTokenCriptografico(conv.tipo === 'CLIENTE' ? 'tk_cli_' : 'tk_colab_');
+        conv.token_hash = sha256(rawToken);
+        conv.expira_em = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        this._tokensSessaoConvites.set(conv.id, rawToken);
+        regerado = true;
+        this.saveLocalData();
+      }
+      await this._salvarConviteNuvemImediato(conv);
+      return { convite: conv, token: rawToken, regerado };
+    }
+
+    async excluirConvite(conviteId) {
+      if (!this.isAdmin()) {
+        throw new Error('Apenas o Administrador pode excluir registros de convite.');
+      }
+      this.data.convites = Array.isArray(this.data.convites) ? this.data.convites : [];
+      const alvo = this.data.convites.find(c => c.id === conviteId);
+      if (!alvo) return false;
+      this.data.convites = this.data.convites.filter(c => c.id !== conviteId);
+      if (this._tokensSessaoConvites) this._tokensSessaoConvites.delete(conviteId);
+      this.saveLocalData();
+      if (this.supabaseConnected && this.supabase) {
+        try {
+          await this.supabase
+            .from('zgestor_registros')
+            .delete()
+            .eq('colecao', 'convites')
+            .eq('id', String(conviteId));
+          if (this._cloudRowHashes) this._cloudRowHashes.delete(`convites:${conviteId}`);
+          if (this._cloudColIds && this._cloudColIds.has('convites')) {
+            this._cloudColIds.get('convites').delete(String(conviteId));
+          }
+        } catch (_) {}
+      }
+      this.registrarLog('EXCLUSAO_CONVITE', 'Segurança', `Convite removido do histórico: ${alvo.nome} (${alvo.email}).`);
+      return true;
     }
 
     revogarConvite(conviteId) {
@@ -6080,27 +6182,96 @@
       if (conv) {
         conv.status = 'REVOGADO';
         this.saveLocalData();
+        this._salvarConviteNuvemImediato(conv).catch(() => {});
         this.registrarLog('REVOGACAO_CONVITE', 'Segurança', `Convite revogado: ${conv.nome} (${conv.email}).`);
       }
       return conv;
     }
 
-    buscarConvitePorToken(token) {
-      if (!token || typeof token !== 'string' || !token.trim()) return null;
+    async sincronizarConvitesDaNuvem() {
+      if (!this.supabaseConnected || !this.supabase) return false;
+      try {
+        const { data, error } = await this.supabase
+          .from('zgestor_registros')
+          .select('colecao, id, dados')
+          .in('colecao', ['convites', 'profiles', 'empresas']);
+        if (error || !Array.isArray(data)) return false;
+
+        const convNuvem = [];
+        const profNuvem = [];
+        const empNuvem = [];
+        data.forEach(r => {
+          if (!r || !r.dados) return;
+          if (r.colecao === 'convites') convNuvem.push(r.dados);
+          else if (r.colecao === 'profiles') profNuvem.push(r.dados);
+          else if (r.colecao === 'empresas') empNuvem.push(r.dados);
+        });
+
+        if (convNuvem.length > 0) this.data.convites = convNuvem;
+        if (profNuvem.length > 0) this.data.profiles = profNuvem;
+        if (empNuvem.length > 0 && (!this.data.empresas || this.data.empresas.length === 0)) {
+          this.data.empresas = empNuvem;
+        }
+        this._normalizarDadosCarregados(this.data);
+        this._suppressCloudSync = true;
+        try { this.saveLocalData(); } finally { this._suppressCloudSync = false; }
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async persistirAtivacaoConviteNaNuvem(usuario, convite) {
+      if (!this.supabaseConnected || !this.supabase) return false;
+      try {
+        const agora = new Date().toISOString();
+        const usrLimpo = { ...usuario };
+        delete usrLimpo.senha;
+        const convLimpo = { ...convite };
+        delete convLimpo.token;
+        const rows = [
+          { colecao: 'profiles', id: String(usrLimpo.id), dados: usrLimpo, updated_at: agora },
+          { colecao: 'convites', id: String(convLimpo.id), dados: convLimpo, updated_at: agora }
+        ];
+        const { error } = await this.supabase
+          .from('zgestor_registros')
+          .upsert(rows, { onConflict: 'colecao,id' });
+        if (!error) {
+          this._initialCloudSyncDone = true;
+          this._registrarSnapshotNuvem();
+        }
+        return !error;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    buscarConvitePorToken(tokenOuId) {
+      if (!tokenOuId || typeof tokenOuId !== 'string' || !tokenOuId.trim()) return null;
       this.data.convites = Array.isArray(this.data.convites) ? this.data.convites : [];
-      const clean = token.trim();
+      const clean = tokenOuId.trim();
+      if (clean === 'undefined' || clean === 'null') return null;
+      // Permite localizar por ID apenas quando um Administrador autenticado aciona na própria tela de Equipe & Acessos
+      if (clean.startsWith('conv-') && this.isAdmin()) {
+        return this.data.convites.find(c => c.id === clean) || null;
+      }
       const tokenHash = sha256(clean);
       return this.data.convites.find(c => (c.token && c.token === clean) || (c.token_hash && c.token_hash === tokenHash)) || null;
     }
 
-    aceitarConvite(token, dadosAtivacao = {}) {
-      if (!token || typeof token !== 'string' || !token.trim()) {
+    aceitarConvite(tokenOuId, dadosAtivacao = {}) {
+      if (!tokenOuId || typeof tokenOuId !== 'string' || !tokenOuId.trim()) {
         throw new Error('Token de convite obrigatório.');
       }
       this.data.convites = Array.isArray(this.data.convites) ? this.data.convites : [];
-      const cleanToken = token.trim();
-      const tokenHash = sha256(cleanToken);
-      const conv = this.data.convites.find(c => (c.token && c.token === cleanToken) || (c.token_hash && c.token_hash === tokenHash));
+      const cleanToken = tokenOuId.trim();
+      let conv = null;
+      if (cleanToken.startsWith('conv-') && this.isAdmin()) {
+        conv = this.data.convites.find(c => c.id === cleanToken) || null;
+      } else {
+        const tokenHash = sha256(cleanToken);
+        conv = this.data.convites.find(c => (c.token && c.token === cleanToken) || (c.token_hash && c.token_hash === tokenHash)) || null;
+      }
       if (!conv) {
         throw new Error('Convite não encontrado ou token inválido.');
       }
@@ -6164,9 +6335,11 @@
 
       conv.status = 'ACEITO';
       conv.aceito_em = new Date().toISOString();
+      const perfilSalvo = idxExistente !== -1 ? this.data.profiles[idxExistente] : novoUsuario;
       this.saveLocalData();
-      this.registrarLog('ATIVACAO_CONVITE', 'Segurança', `Conta ativada via convite: ${novoUsuario.nome} (${novoUsuario.cargo}). Senha cadastrada com sucesso.`);
-      return novoUsuario;
+      this.persistirAtivacaoConviteNaNuvem(perfilSalvo, conv).catch(() => {});
+      this.registrarLog('ATIVACAO_CONVITE', 'Segurança', `Conta ativada via convite: ${perfilSalvo.nome} (${perfilSalvo.cargo}). Senha cadastrada com sucesso.`);
+      return perfilSalvo;
     }
 
     atualizarPermissoesUsuario(userId, novasPermissoes, novoCargo, novoDept, empresaId) {

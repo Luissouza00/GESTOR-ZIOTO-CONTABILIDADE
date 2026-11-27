@@ -118,8 +118,8 @@ window.ZGestorApp = {
       }
       if (tokenConvite) {
         setTimeout(() => {
-          this.abrirTelaAtivacaoConta(tokenConvite);
-        }, 150);
+          this.processarLinkConviteURL(tokenConvite);
+        }, 80);
       }
     } catch (_) {}
 
@@ -1049,7 +1049,7 @@ window.ZGestorApp = {
     const toggleBtnEl = document.getElementById('sidebar-toggle-btn');
     const versionEl = document.getElementById('sidebar-system-version');
     const versionCollapsedEl = document.getElementById('sidebar-collapsed-version');
-    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.1';
+    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.2';
 
     if (versionEl) versionEl.textContent = versaoAtual;
     if (versionCollapsedEl) {
@@ -1487,7 +1487,7 @@ window.ZGestorApp = {
             <span class="sm:hidden">Relatório</span>
           </button>
           <span class="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold text-[10.5px]" title="Versão ativa do ZGestor">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.1'}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.2'}
           </span>
         </div>
 
@@ -7561,7 +7561,7 @@ window.ZGestorApp = {
     if (window.lucide) window.lucide.createIcons();
   },
 
-  submitNovoConvite(e, tipo) {
+  async submitNovoConvite(e, tipo) {
     e.preventDefault();
     try {
       const db = window.zgestorDB;
@@ -7597,27 +7597,149 @@ window.ZGestorApp = {
       }
 
       const convite = db.gerarConvite(dados);
-      this.closeModal();
-      this.copiarLinkConvite(convite.token);
-      this.showToast(`Convite gerado com sucesso para ${convite.nome}! Link copiado.`, 'success');
+      if (db._salvarConviteNuvemImediato) {
+        await db._salvarConviteNuvemImediato(convite);
+      }
       this.state.subTabSeguranca = 'convites';
       this.renderAll();
+      this.copiarLinkConvite(convite.token);
+      this.abrirModalCompartilharConvite(convite, convite.token);
     } catch (err) {
       this.showToast(err.message, 'error');
     }
   },
 
   copiarLinkConvite(token) {
+    if (!token || token === 'undefined') {
+      this.showToast('Use o botão Copiar Link da linha do convite para gerar um link válido.', 'warning');
+      return;
+    }
     const link = window.location.origin + window.location.pathname + '?convite=' + encodeURIComponent(token);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(link).catch(() => {});
     }
-    this.showToast('Link de ativação copiado! Envie ao usuário para cadastrar a nova senha.', 'success');
+    this.showToast('Link de ativação copiado para a área de transferência!', 'success');
   },
 
-  abrirTelaAtivacaoConta(token) {
+  async copiarLinkConvitePorId(conviteId) {
+    try {
+      const db = window.zgestorDB;
+      const res = await db.obterOuRegerarTokenConvite(conviteId);
+      this.copiarLinkConvite(res.token);
+      this.abrirModalCompartilharConvite(res.convite, res.token);
+      this.renderContentOnly();
+    } catch (err) {
+      this.showToast(err.message || 'Erro ao copiar link do convite.', 'error');
+    }
+  },
+
+  abrirModalCompartilharConvite(convite, rawToken) {
+    const modal = document.getElementById('modal-root');
+    if (!modal || !convite || !rawToken) return;
+    const link = window.location.origin + window.location.pathname + '?convite=' + encodeURIComponent(rawToken);
+    const msgWhats = `Olá, ${convite.nome}! Seu convite de acesso ao sistema ZGestor da Zioto Contabilidade está pronto.\n\nAcesse o link abaixo para cadastrar sua senha:\n${link}`;
+    const urlWhats = `https://wa.me/?text=${encodeURIComponent(msgWhats)}`;
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-xs">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold uppercase">✓ Sincronizado na Nuvem</span>
+              <h3 class="text-base font-bold text-slate-900 mt-1">Link de Ativação Pronto para Envio</h3>
+            </div>
+            <button type="button" onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer">✕</button>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+            <div><span class="text-slate-500">Colaborador / Destinatário:</span> <strong class="text-slate-900">${escapeHtml(convite.nome)}</strong></div>
+            <div><span class="text-slate-500">E-mail de Login:</span> <strong class="font-mono text-indigo-800">${escapeHtml(convite.email)}</strong></div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Link Exclusivo de Cadastro de Senha:</label>
+            <div class="flex gap-2">
+              <input
+                id="f-link-convite-gerado"
+                type="text"
+                readonly
+                onclick="this.select()"
+                value="${escapeHtml(link)}"
+                class="flex-1 rounded-xl border border-indigo-300 bg-indigo-50/40 px-3 py-2 font-mono text-[11px] font-semibold text-slate-800"
+              />
+              <button
+                type="button"
+                onclick="const el = document.getElementById('f-link-convite-gerado'); if(el){ el.select(); } ZGestorApp.copiarLinkConvite('${escapeHtml(rawToken)}');"
+                class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold whitespace-nowrap cursor-pointer">
+                📋 Copiar Link
+              </button>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
+            <a
+              href="${escapeHtml(urlWhats)}"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold inline-flex items-center gap-1.5 shadow-sm">
+              💬 Enviar Link no WhatsApp
+            </a>
+            <button
+              type="button"
+              onclick="ZGestorApp.closeModal()"
+              class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer">
+              Concluir
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  abrirAtivacaoConvitePorId(conviteId) {
+    this.abrirTelaAtivacaoConta(conviteId);
+  },
+
+  async excluirConviteHistorico(conviteId) {
+    try {
+      await window.zgestorDB.excluirConvite(conviteId);
+      this.showToast('Convite removido do histórico!', 'info');
+      this.renderContentOnly();
+    } catch (err) {
+      this.showToast(err.message || 'Erro ao remover convite.', 'error');
+    }
+  },
+
+  async processarLinkConviteURL(token) {
+    if (!token) return;
     const db = window.zgestorDB;
-    const conv = db.buscarConvitePorToken ? db.buscarConvitePorToken(token) : (db.data.convites || []).find(c => c.token === token);
+    const modal = document.getElementById('modal-root');
+
+    // Se ainda não consta na memória local (ex: colaborador abrindo em outro computador/celular), busca na nuvem primeiro!
+    let conv = db.buscarConvitePorToken ? db.buscarConvitePorToken(token) : null;
+    if (!conv && db.supabaseConnected && db.sincronizarConvitesDaNuvem) {
+      if (modal) {
+        modal.innerHTML = `
+          <div class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 text-center space-y-2">
+              <div class="text-sm font-bold text-slate-900">Validando convite de acesso...</div>
+              <p class="text-xs text-slate-500">Sincronizando dados seguros com a nuvem Zioto Contabilidade.</p>
+            </div>
+          </div>
+        `;
+      }
+      await db.sincronizarConvitesDaNuvem();
+    }
+    await this.abrirTelaAtivacaoConta(token);
+  },
+
+  async abrirTelaAtivacaoConta(token) {
+    const db = window.zgestorDB;
+    let conv = db.buscarConvitePorToken ? db.buscarConvitePorToken(token) : (db.data.convites || []).find(c => c.token === token);
+    if (!conv && token && token !== 'undefined' && db.supabaseConnected && db.sincronizarConvitesDaNuvem) {
+      await db.sincronizarConvitesDaNuvem();
+      conv = db.buscarConvitePorToken ? db.buscarConvitePorToken(token) : null;
+    }
     const modal = document.getElementById('modal-root');
     if (!modal) return;
 
@@ -7809,7 +7931,7 @@ window.ZGestorApp = {
     if (window.lucide) window.lucide.createIcons();
   },
 
-  submitAtivarConvite(e, token) {
+  async submitAtivarConvite(e, token) {
     e.preventDefault();
     try {
       const db = window.zgestorDB;
@@ -7827,8 +7949,15 @@ window.ZGestorApp = {
         throw new Error('As senhas digitadas não coincidem. Digite novamente.');
       }
 
+      const adminEstavaLogado = Boolean(db.isAdmin && db.isAdmin());
       const cleanToken = decodeURIComponent(token);
       const novoUsr = db.aceitarConvite(cleanToken, { nome, senha });
+      const convObj = (db.data.convites || []).find(
+        c => c.id === novoUsr.convite_id || (c.email && c.email.toLowerCase() === novoUsr.email.toLowerCase())
+      );
+      if (db.persistirAtivacaoConviteNaNuvem && convObj) {
+        await db.persistirAtivacaoConviteNaNuvem(novoUsr, convObj);
+      }
       this.closeModal();
 
       // Limpa os parâmetros de convite da URL mantendo o histórico limpo
@@ -7837,10 +7966,14 @@ window.ZGestorApp = {
         window.history.replaceState({}, document.title, cleanUrl);
       }
 
-      // Efetua login automático com as credenciais recém criadas
-      db.login(novoUsr.email, senha);
-
-      this.showToast(`Conta ativada com sucesso! Bem-vindo(a) ao ZGestor, ${novoUsr.nome}!`, 'success');
+      // Se foi o próprio Admin cadastrando a senha na tela de Equipe & Acessos, mantém o Admin logado!
+      // Se foi o Colaborador/Cliente abrindo o link em seu navegador, faz login automático na nova conta!
+      if (adminEstavaLogado) {
+        this.showToast(`Conta de "${novoUsr.nome}" ativada e sincronizada com sucesso!`, 'success');
+      } else {
+        db.login(novoUsr.email, senha);
+        this.showToast(`Conta ativada com sucesso! Bem-vindo(a) ao ZGestor, ${novoUsr.nome}!`, 'success');
+      }
       this.renderAll();
     } catch (err) {
       this.showToast(err.message, 'error');
@@ -9594,13 +9727,11 @@ window.ZGestorApp = {
     if (provedor === 'openai') {
       const resOpenAI = await this.chamarOpenAIAPI(prompt, systemInstruction);
       if (resOpenAI) return resOpenAI;
-      // Fallback para Gemini se disponível
       const resGemini = await this.chamarGeminiAPI(prompt, systemInstruction);
       if (resGemini) return resGemini;
     } else {
       const resGemini = await this.chamarGeminiAPI(prompt, systemInstruction);
       if (resGemini) return resGemini;
-      // Fallback para OpenAI se disponível
       const resOpenAI = await this.chamarOpenAIAPI(prompt, systemInstruction);
       if (resOpenAI) return resOpenAI;
     }
