@@ -703,6 +703,8 @@ window.ZGestorViews = {
         lista = lista.filter(t => t.data_entrega && t.data_entrega <= t.prazo_entrega);
       } else if (fStatus === 'ENTREGUE_COM_ATRASO') {
         lista = lista.filter(t => t.data_entrega && t.data_entrega > t.prazo_entrega);
+      } else if (fStatus === 'RETIFICAR') {
+        lista = lista.filter(t => Boolean(t.precisa_retificar));
       }
     }
     if (fBusca) {
@@ -713,6 +715,8 @@ window.ZGestorViews = {
           (t.titulo || '').toLowerCase().includes(fBusca) ||
           (t.descricao || '').toLowerCase().includes(fBusca) ||
           (t.motivo_pendencia || '').toLowerCase().includes(fBusca) ||
+          (t.motivo_retificacao || '').toLowerCase().includes(fBusca) ||
+          (t.precisa_retificar && 'retificar'.includes(fBusca)) ||
           (t.protocolo_observacao || '').toLowerCase().includes(fBusca) ||
           (t.solicitante || '').toLowerCase().includes(fBusca) ||
           (t.responsavel_nome || '').toLowerCase().includes(fBusca) ||
@@ -729,6 +733,7 @@ window.ZGestorViews = {
     let qtdAguardandoDocsComp = 0;
     let qtdAndamentoComp = 0;
     let qtdEntreguesComp = 0;
+    let qtdRetificarComp = 0;
     for (let i = 0; i < todasComp.length; i++) {
       const stS = db.obterStatusSimplesTarefa(todasComp[i]);
       if (stS === 'NAO_INICIADA') qtdNaoIniciadasComp++;
@@ -736,6 +741,7 @@ window.ZGestorViews = {
       else if (stS === 'AGUARDANDO_DOCS') qtdAguardandoDocsComp++;
       else if (stS === 'EM_ANDAMENTO') qtdAndamentoComp++;
       else if (stS === 'ENTREGUE' || stS === 'CONFERIDO') qtdEntreguesComp++;
+      if (todasComp[i].precisa_retificar) qtdRetificarComp++;
     }
 
     // 2. Filtra Guias de Impostos (somente executa filtros pesados quando na sub-aba guias_impostos)
@@ -1108,16 +1114,25 @@ window.ZGestorViews = {
             const totalC = todasComp.length;
             const pctC = totalC > 0 ? Math.round((qtdEntreguesComp / totalC) * 100) : 0;
             const qtdSemMovC = todasComp.filter(t => t.modalidade_entrega === 'SEM_MOVIMENTO').length;
+            const filtroRetificarAtivo = fStatus === 'RETIFICAR';
             return `
               <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <div class="text-xs font-bold text-slate-800 flex items-center gap-2">
+                    <div class="text-xs font-bold text-slate-800 flex items-center gap-2 flex-wrap">
                       <span>Andamento Geral da Competência ${comp}</span>
                       <span class="px-2 py-0.5 rounded-full text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">${pctC}% Concluído</span>
+                      <button
+                        type="button"
+                        onclick="ZGestorApp.setFiltro('filtroTarefaStatus', '${filtroRetificarAtivo ? 'TODOS' : 'RETIFICAR'}')"
+                        class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border transition cursor-pointer inline-flex items-center gap-1 ${filtroRetificarAtivo ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-300' : qtdRetificarComp > 0 ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-400' : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'}"
+                        title="Filtrar declarações marcadas com o card Retificar">
+                        <span>🔄 Para Retificar (${qtdRetificarComp})</span>
+                        ${filtroRetificarAtivo ? '<span>✕</span>' : ''}
+                      </button>
                     </div>
                     <p class="text-[11px] text-slate-500 mt-0.5">
-                      ${totalC === 0 ? 'Nenhuma rotina gerada ainda para este mês. Clique em "Gerar Rotinas" para criar automaticamente conforme regime e Inscrição Estadual.' : `${qtdEntreguesComp} de ${totalC} obrigações concluídas (${qtdEntreguesComp - qtdSemMovC} normais • ${qtdSemMovC} sem movimento) • ${qtdPendentesComp} pendente(s) • ${qtdAguardandoDocsComp} aguardando docs • ${qtdAndamentoComp} em andamento`}
+                      ${totalC === 0 ? 'Nenhuma rotina gerada ainda para este mês. Clique em "Gerar Rotinas" para criar automaticamente conforme regime e Inscrição Estadual.' : `${qtdEntreguesComp} de ${totalC} obrigações concluídas (${qtdEntreguesComp - qtdSemMovC} normais • ${qtdSemMovC} sem movimento) • ${qtdPendentesComp} pendente(s) • ${qtdAguardandoDocsComp} aguardando docs • ${qtdAndamentoComp} em andamento${qtdRetificarComp > 0 ? ` • ${qtdRetificarComp} aguardando retificação` : ''}`}
                     </p>
                   </div>
                   ${totalC === 0 ? `
@@ -1133,6 +1148,25 @@ window.ZGestorViews = {
                 <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                   <div class="bg-emerald-500 h-full transition-all" style="width: ${pctC}%"></div>
                 </div>
+                ${qtdRetificarComp > 0 || filtroRetificarAtivo ? `
+                  <div class="pt-1">
+                    <div class="p-3 rounded-xl bg-amber-50 border-2 border-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <div class="flex items-start sm:items-center gap-2.5">
+                        <span class="px-2 py-1 rounded-lg bg-amber-500 text-white font-black text-[11px] uppercase tracking-wide shrink-0">🔄 Retificar (${qtdRetificarComp})</span>
+                        <div class="text-amber-950">
+                          <strong class="font-extrabold">Lembrete de Declarações Transmitidas p/ Retificar:</strong>
+                          <span class="text-amber-900 ml-1">Você possui <strong>${qtdRetificarComp}</strong> obrigação(ões) na competência ${comp} marcada(s) para retificação posterior (ex: DeSTDA / PGDAS / EFD).</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onclick="ZGestorApp.setFiltro('filtroTarefaStatus', '${filtroRetificarAtivo ? 'TODOS' : 'RETIFICAR'}')"
+                        class="px-3 py-1.5 rounded-xl font-extrabold text-xs shrink-0 transition cursor-pointer ${filtroRetificarAtivo ? 'bg-slate-800 hover:bg-slate-900 text-white' : 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'}">
+                        ${filtroRetificarAtivo ? 'Mostrar Todas as Tarefas' : 'Ver Somente Cards p/ Retificar'}
+                      </button>
+                    </div>
+                  </div>
+                ` : ''}
               </div>
             `;
           })()}
@@ -1362,6 +1396,36 @@ window.ZGestorViews = {
                   `;
                 };
 
+                const renderCardRetificarTarefa = (t) => {
+                  if (t.precisa_retificar) {
+                    const obsRet = String(t.motivo_retificacao || 'Lembrar de retificar declaração após apuração.').trim();
+                    return `
+                      <div onclick="event.stopPropagation()" class="mt-1.5 p-2 rounded-lg bg-amber-50 border-2 border-amber-400 text-amber-950 shadow-2xs space-y-1">
+                        <div class="flex items-center justify-between gap-1.5 flex-wrap">
+                          <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-black uppercase tracking-wide">
+                            🔄 Retificar
+                          </span>
+                          <div class="flex items-center gap-1">
+                            <button type="button" onclick="ZGestorApp.openModalRetificarTarefa('${t.id}')" class="px-1.5 py-0.5 rounded bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold cursor-pointer" title="Editar observação da retificação">Editar</button>
+                            <button type="button" onclick="ZGestorApp.confirmarRetificacaoConcluida('${t.id}')" class="px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold cursor-pointer" title="Confirmar que a declaração já foi retificada">✓ Retificada</button>
+                          </div>
+                        </div>
+                        <div class="text-[11px] font-bold text-amber-950 leading-snug break-words">
+                          ${this.escapeHtml(obsRet)}
+                        </div>
+                      </div>
+                    `;
+                  }
+                  if (t.retificada) {
+                    return `
+                      <div class="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold" title="${this.escapeHtml(t.historico_motivo_retificacao || '')}">
+                        <span>✓ Retificada${t.data_retificacao ? ' em ' + this.formatDate(t.data_retificacao) : ''}</span>
+                      </div>
+                    `;
+                  }
+                  return '';
+                };
+
                 const barraLoteHtml = `
                   <div class="mb-3 rounded-2xl border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 transition ${totalSelecionadas > 0 ? 'bg-slate-900 text-white border-slate-800 shadow-lg sticky top-14 z-20' : 'bg-white text-slate-700 border-slate-200 shadow-2xs'}">
                     <div class="flex flex-wrap items-center gap-2.5 text-xs">
@@ -1389,7 +1453,10 @@ window.ZGestorViews = {
                         <button type="button" onclick="ZGestorApp.abrirModalLoteSelecionadas('PENDENTE')" class="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold shadow-xs cursor-pointer">
                           ⚠ Pendente (+ Motivo)
                         </button>
-                        <button type="button" onclick="ZGestorApp.abrirModalLoteSelecionadas('AGUARDANDO_DOCS')" class="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold cursor-pointer">
+                        <button type="button" onclick="ZGestorApp.abrirModalRetificarLoteSelecionadas()" class="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold shadow-xs cursor-pointer">
+                          🔄 Retificar (+ Obs)
+                        </button>
+                        <button type="button" onclick="ZGestorApp.abrirModalLoteSelecionadas('AGUARDANDO_DOCS')" class="px-2.5 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-extrabold cursor-pointer">
                           📄 Aguardando Docs
                         </button>
                         <button type="button" onclick="ZGestorApp.aplicarAcaoRapidaLoteTarefas('EM_ANDAMENTO')" class="px-2.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold cursor-pointer">
@@ -1527,6 +1594,7 @@ window.ZGestorViews = {
                                         ${renderBadgeIcmsAoLadoDestda(t)}
                                       </div>
                                       ${renderBlocoMotivoPendente(t)}
+                                      ${renderCardRetificarTarefa(t)}
                                       ${t.icms_apuracao_definida ? `
                                         <div class="flex flex-wrap gap-1 mt-1.5">
                                           ${t.icms_sem_movimento
@@ -1558,6 +1626,7 @@ window.ZGestorViews = {
                                         ` : `
                                           <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'REABRIR')" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-semibold cursor-pointer">Reabrir</button>
                                         `}
+                                        <button type="button" onclick="ZGestorApp.openModalRetificarTarefa('${t.id}')" class="px-1.5 py-0.5 rounded text-[10px] font-extrabold border cursor-pointer ${t.precisa_retificar ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'}" title="Transmitir agora ou anexar card Retificar com observação">🔄 Retificar</button>
                                       </div>
                                       <button type="button" onclick="ZGestorApp.openModalEditarTarefa('${t.id}')" class="p-1 rounded text-slate-400 hover:text-indigo-600 cursor-pointer" title="Editar">
                                         ${svgEdit}
@@ -1739,6 +1808,7 @@ window.ZGestorViews = {
                                             ${renderBadgeIcmsAoLadoDestda(t)}
                                           </div>
                                           ${renderBlocoMotivoPendente(t)}
+                                          ${renderCardRetificarTarefa(t)}
                                           ${t.icms_apuracao_definida ? `
                                             <div class="flex flex-wrap gap-1 mt-1">
                                               ${t.icms_sem_movimento
@@ -1756,6 +1826,7 @@ window.ZGestorViews = {
                                       <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'EM_ANDAMENTO')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${stLinha === 'EM_ANDAMENTO' ? 'bg-sky-600 text-white border-sky-700' : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'}">Fazendo</button>
                                       <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'ENTREGUE_NORMAL')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${stLinha === 'ENTREGUE' && t.modalidade_entrega !== 'SEM_MOVIMENTO' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'}">✓ Normal</button>
                                       <button type="button" onclick="ZGestorApp.marcarEtapaRapida('${t.id}', 'SEM_MOVIMENTO')" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${t.modalidade_entrega === 'SEM_MOVIMENTO' ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'}">S/ Mov.</button>
+                                      <button type="button" onclick="ZGestorApp.openModalRetificarTarefa('${t.id}')" class="px-2 py-1 rounded-lg text-[10px] font-extrabold border transition cursor-pointer ${t.precisa_retificar ? 'bg-amber-500 text-white border-amber-600 shadow-2xs' : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'}" title="Transmitir ou marcar card Retificar com observação">🔄 Retificar</button>
                                       <button type="button" onclick="ZGestorApp.openModalEditarTarefa('${t.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition cursor-pointer" title="Editar">${svgEdit}</button>
                                       <button type="button" onclick="ZGestorApp.excluirTarefa('${t.id}')" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer" title="Excluir">${svgTrash}</button>
                                     </div>
@@ -1973,18 +2044,26 @@ window.ZGestorViews = {
                       class="w-full rounded-xl bg-white border border-slate-300 p-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500">${this.escapeHtml(sidePeekTarefa.motivo_pendencia || sidePeekTarefa.protocolo_observacao || '')}</textarea>
                   </div>
 
-                  <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                  <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-200 flex-wrap">
                     <button
                       type="button"
-                      onclick="ZGestorApp.openModalEditarTarefa('${sidePeekTarefa.id}')"
-                      class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition">
-                      Edição Avançada
+                      onclick="ZGestorApp.openModalRetificarTarefa('${sidePeekTarefa.id}')"
+                      class="px-3 py-1.5 rounded-xl font-extrabold text-xs border transition cursor-pointer ${sidePeekTarefa.precisa_retificar ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'}">
+                      🔄 ${sidePeekTarefa.precisa_retificar ? 'Editar Card Retificar' : 'Marcar p/ Retificar'}
                     </button>
-                    <button
-                      type="submit"
-                      class="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition">
-                      Salvar Alterações
-                    </button>
+                    <div class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onclick="ZGestorApp.openModalEditarTarefa('${sidePeekTarefa.id}')"
+                        class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition">
+                        Edição Avançada
+                      </button>
+                      <button
+                        type="submit"
+                        class="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition">
+                        Salvar Alterações
+                      </button>
+                    </div>
                   </div>
                 </form>
 
@@ -4653,7 +4732,7 @@ window.ZGestorViews = {
             <button onclick="ZGestorApp.openModalConfigPix()" class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs">
               <i data-lucide="qr-code" class="w-3.5 h-3.5 text-emerald-600"></i> Configurar PIX & Anexar QR Code
             </button>
-            <button onclick="ZGestorReports.emitirRelatorioNFSe('${comp}')" class="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm">
+            <button onclick="ZGestorApp.openModalRelatorioNFSe('${comp}')" class="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer">
               <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i> Relatório para Emissão de NFS-e
             </button>
             ${idsSelecionadosValidos.length > 0 ? `
@@ -5593,7 +5672,7 @@ window.ZGestorViews = {
           <div class="zg-auth-footer mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="zg-auth-version inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.2'}
+              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.3'}
             </span>
           </div>
         </div>

@@ -1049,7 +1049,7 @@ window.ZGestorApp = {
     const toggleBtnEl = document.getElementById('sidebar-toggle-btn');
     const versionEl = document.getElementById('sidebar-system-version');
     const versionCollapsedEl = document.getElementById('sidebar-collapsed-version');
-    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.2';
+    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.3';
 
     if (versionEl) versionEl.textContent = versaoAtual;
     if (versionCollapsedEl) {
@@ -1487,7 +1487,7 @@ window.ZGestorApp = {
             <span class="sm:hidden">Relatório</span>
           </button>
           <span class="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold text-[10.5px]" title="Versão ativa do ZGestor">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.2'}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.3'}
           </span>
         </div>
 
@@ -1734,6 +1734,7 @@ window.ZGestorApp = {
       else if (fStatus === 'ATRASADAS') lista = lista.filter(t => !t.data_entrega && t.prazo_entrega < hoje);
       else if (fStatus === 'ENTREGUE_NO_PRAZO') lista = lista.filter(t => t.data_entrega && t.data_entrega <= t.prazo_entrega);
       else if (fStatus === 'ENTREGUE_COM_ATRASO') lista = lista.filter(t => t.data_entrega && t.data_entrega > t.prazo_entrega);
+      else if (fStatus === 'RETIFICAR') lista = lista.filter(t => Boolean(t.precisa_retificar));
       else lista = lista.filter(t => db.obterStatusSimplesTarefa(t) === fStatus);
     }
     if (fBusca) {
@@ -1744,6 +1745,8 @@ window.ZGestorApp = {
           (t.titulo || '').toLowerCase().includes(fBusca) ||
           (t.descricao || '').toLowerCase().includes(fBusca) ||
           (t.motivo_pendencia || '').toLowerCase().includes(fBusca) ||
+          (t.motivo_retificacao || '').toLowerCase().includes(fBusca) ||
+          (t.precisa_retificar && 'retificar'.includes(fBusca)) ||
           (t.protocolo_observacao || '').toLowerCase().includes(fBusca) ||
           (t.solicitante || '').toLowerCase().includes(fBusca) ||
           (t.responsavel_nome || '').toLowerCase().includes(fBusca) ||
@@ -6775,10 +6778,15 @@ window.ZGestorApp = {
     const saldoAnt = Number(hon.saldo_anterior || 0);
     const totalMes = Math.max(0, Number(hon.valor_mensal) + saldoAnt + Number(hon.servicos_extras) - Number(hon.desconto));
 
+    const canalBase = hon.canal_pagamento || (emp && emp.canal_pagamento_padrao) || 'PIX_PRINCIPAL';
     let contaSugerida = 'Conta PJ Principal (Itaú)';
-    if (emp && emp.canal_pagamento_padrao === 'PIX_SECUNDARIO') contaSugerida = 'Conta PJ Secundária (Inter / Nubank PJ)';
-    else if (emp && emp.canal_pagamento_padrao === 'PIX_AUTONOMO') contaSugerida = 'Conta Autônomo / Sócio (Pessoa Física)';
-    else if (emp && emp.canal_pagamento_padrao === 'DINHEIRO') contaSugerida = 'Dinheiro / Espécie (Caixa Físico)';
+    let formaSugerida = 'PIX';
+    if (canalBase === 'PIX_SECUNDARIO') contaSugerida = 'Conta PJ Secundária (Inter / Nubank PJ)';
+    else if (canalBase === 'PIX_AUTONOMO') contaSugerida = 'Conta Autônomo / Sócio (Pessoa Física)';
+    else if (canalBase === 'DINHEIRO') {
+      contaSugerida = 'Dinheiro / Espécie (Caixa Físico)';
+      formaSugerida = 'Dinheiro';
+    }
 
     const modal = document.getElementById('modal-root');
     if (!modal) return;
@@ -6791,7 +6799,7 @@ window.ZGestorApp = {
           </div>
           <form onsubmit="ZGestorApp.submitPagamentoHonorario(event, '${hon.id}')" class="space-y-4 mt-4 text-xs">
             <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-              <div class="font-bold text-slate-900 text-sm">${emp ? emp.nome_fantasia : 'Cliente'}</div>
+              <div class="font-bold text-slate-900 text-sm">${emp ? emp.nome_fantasia : escapeHtml(hon.nome_cliente || 'Cliente')}</div>
               <div class="flex justify-between text-slate-600">
                 <span>Valor Mensal (${hon.competencia}):</span>
                 <strong>${V.formatCurrency(hon.valor_mensal)}</strong>
@@ -6835,11 +6843,11 @@ window.ZGestorApp = {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Forma de Pagamento *</label>
-                <select id="f-pag-forma" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-medium">
-                  <option value="PIX">PIX (Chave do Escritório)</option>
-                  <option value="Transferência">TED / Transferência</option>
-                  <option value="Dinheiro">Espécie / Dinheiro</option>
-                  <option value="Boleto">Boleto Bancário</option>
+                <select id="f-pag-forma" onchange="ZGestorApp.aoMudarFormaPagamentoHonorario(this.value)" class="w-full rounded-xl border border-slate-300 px-3 py-2 font-medium">
+                  <option value="PIX" ${formaSugerida === 'PIX' ? 'selected' : ''}>PIX (Chave do Escritório)</option>
+                  <option value="Transferência" ${formaSugerida === 'Transferência' ? 'selected' : ''}>TED / Transferência</option>
+                  <option value="Dinheiro" ${formaSugerida === 'Dinheiro' ? 'selected' : ''}>Espécie / Dinheiro</option>
+                  <option value="Boleto" ${formaSugerida === 'Boleto' ? 'selected' : ''}>Boleto Bancário</option>
                 </select>
               </div>
               <div>
@@ -10501,6 +10509,549 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
       return;
     }
     window.ZGestorReports.imprimirLoteRecibosPixMes(comp, ids);
+  },
+
+  aoMudarFormaPagamentoHonorario(forma) {
+    const selConta = document.getElementById('f-pag-conta');
+    if (!selConta) return;
+    if (forma === 'Dinheiro') {
+      selConta.value = 'Dinheiro / Espécie (Caixa Físico)';
+    } else if (selConta.value === 'Dinheiro / Espécie (Caixa Físico)') {
+      selConta.value = 'Conta PJ Principal (Itaú)';
+    }
+  },
+
+  // ===========================================================================
+  // MODAL DE RELATÓRIO NFS-e SEPARADO POR CONTA + PLANILHA MODELO AUTOMÁTICA
+  // Colunas exatas da Planilha Principal: CNPJ / CPF | Nome | Valor
+  // ===========================================================================
+  openModalRelatorioNFSe(competencia) {
+    const comp = competencia || this.state.competencia;
+    this._nfseModalState = {
+      competencia: comp,
+      abaAtiva: 'CONTA_PRINCIPAL',
+      agruparPorCliente: true,
+      somenteDigitosDoc: false
+    };
+    this._renderModalRelatorioNFSe();
+  },
+
+  setOpcaoModalNFSe(chave, valor) {
+    if (!this._nfseModalState) return;
+    this._nfseModalState[chave] = valor;
+    this._renderModalRelatorioNFSe();
+  },
+
+  _renderModalRelatorioNFSe() {
+    const st = this._nfseModalState || { competencia: this.state.competencia, abaAtiva: 'CONTA_PRINCIPAL', agruparPorCliente: true, somenteDigitosDoc: false };
+    const db = window.zgestorDB;
+    const V = window.ZGestorViews;
+    const dados = db.obterDadosRelatorioNFSe(st.competencia, {
+      agruparPorCliente: st.agruparPorCliente,
+      somenteDigitosDoc: st.somenteDigitosDoc
+    });
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+
+    const renderTabelaAba = () => {
+      if (st.abaAtiva === 'CONTA_PRINCIPAL') {
+        if (dados.linhasPlanilhaPrincipal.length === 0) {
+          return `
+            <div class="py-8 px-4 text-center text-slate-500 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              Nenhum pagamento recebido na <strong>Conta Principal</strong> na competência ${escapeHtml(st.competencia)}.
+            </div>
+          `;
+        }
+        return `
+          <div class="rounded-xl border border-emerald-300 overflow-hidden shadow-2xs">
+            <div class="bg-emerald-800 text-white px-3.5 py-2 flex items-center justify-between text-[11px] font-bold">
+              <span>Prévia Exata da Planilha Modelo p/ Emissão Automática de NFS-e (Somente Conta Principal)</span>
+              <span>${dados.linhasPlanilhaPrincipal.length} linha(s) • Total: ${V.formatCurrency(dados.totais.contaPrincipal)}</span>
+            </div>
+            <div class="max-h-72 overflow-y-auto">
+              <table class="w-full text-xs border-collapse">
+                <thead class="sticky top-0 bg-emerald-700 text-white text-left font-bold">
+                  <tr>
+                    <th class="py-2 px-3 border-r border-emerald-600 w-44">CNPJ / CPF</th>
+                    <th class="py-2 px-3 border-r border-emerald-600">Nome</th>
+                    <th class="py-2 px-3 text-right w-36">Valor</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200 bg-white">
+                  ${dados.linhasPlanilhaPrincipal.map(l => `
+                    <tr class="hover:bg-emerald-50/40">
+                      <td class="py-2 px-3 font-mono font-semibold text-slate-800 border-r border-slate-100">${escapeHtml(l['CNPJ / CPF'] || '—')}</td>
+                      <td class="py-2 px-3 font-bold text-slate-900 border-r border-slate-100">${escapeHtml(l['Nome'])}</td>
+                      <td class="py-2 px-3 text-right font-extrabold text-emerald-900">${V.formatCurrency(l['Valor'])}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
+
+      const itens = st.abaAtiva === 'DINHEIRO' ? dados.dinheiro : dados.outrasContas;
+      const tituloAba = st.abaAtiva === 'DINHEIRO'
+        ? 'Recebimentos em Dinheiro / Espécie (Não entram na planilha de emissão da Conta Principal)'
+        : 'Recebimentos em Outras Contas — Secundária / PF / Autônomo (Não entram na planilha da Conta Principal)';
+
+      if (itens.length === 0) {
+        return `
+          <div class="py-8 px-4 text-center text-slate-500 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
+            Nenhum recebimento registrado nesta categoria na competência ${escapeHtml(st.competencia)}.
+          </div>
+        `;
+      }
+
+      return `
+        <div class="rounded-xl border border-slate-200 overflow-hidden">
+          <div class="bg-slate-100 text-slate-800 px-3.5 py-2 text-[11px] font-bold border-b border-slate-200">
+            ${tituloAba}
+          </div>
+          <div class="max-h-72 overflow-y-auto">
+            <table class="w-full text-xs border-collapse bg-white">
+              <thead class="sticky top-0 bg-slate-50 text-slate-600 text-left text-[11px] font-bold border-b border-slate-200">
+                <tr>
+                  <th class="py-2 px-3">CNPJ / CPF</th>
+                  <th class="py-2 px-3">Nome</th>
+                  <th class="py-2 px-3 text-center">Data Pagto</th>
+                  <th class="py-2 px-3">Conta / Forma</th>
+                  <th class="py-2 px-3 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${itens.map(it => `
+                  <tr class="hover:bg-slate-50">
+                    <td class="py-2 px-3 font-mono text-[11px] text-slate-700">${escapeHtml(it.cnpj_cpf_exibicao)}</td>
+                    <td class="py-2 px-3 font-bold text-slate-900">${escapeHtml(it.nome_tomador)}</td>
+                    <td class="py-2 px-3 text-center text-slate-600">${V.formatDate(it.data_pagamento)}</td>
+                    <td class="py-2 px-3 text-[11px] text-slate-700">${escapeHtml(it.conta_exibicao)} (${escapeHtml(it.forma_exibicao)})</td>
+                    <td class="py-2 px-3 text-right font-extrabold text-slate-900">${V.formatCurrency(it.valor)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    };
+
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto space-y-4">
+          <div class="flex items-start justify-between gap-3 pb-3 border-b border-slate-200">
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-purple-700">Faturamento & Emissão Automática de Notas</span>
+              <h3 class="text-lg font-extrabold text-slate-900">Relatório para Emissão de NFS-e — Competência ${escapeHtml(st.competencia)}</h3>
+              <p class="text-xs text-slate-500 mt-0.5">Recebimentos separados entre <strong>Conta Principal (Emitir NFS-e)</strong>, <strong>Dinheiro</strong> e <strong>Outras Contas</strong>.</p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-700 text-2xl font-bold leading-none cursor-pointer">×</button>
+          </div>
+
+          <!-- 3 Cards Separados + Total Geral -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <button
+              type="button"
+              onclick="ZGestorApp.setOpcaoModalNFSe('abaAtiva', 'CONTA_PRINCIPAL')"
+              class="text-left p-3.5 rounded-2xl border-2 transition cursor-pointer ${st.abaAtiva === 'CONTA_PRINCIPAL' ? 'bg-purple-50 border-purple-600 ring-2 ring-purple-200' : 'bg-white border-purple-200 hover:border-purple-400'}">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-extrabold uppercase text-purple-800">1. Conta Principal</span>
+                <span class="px-1.5 py-0.5 rounded bg-purple-700 text-white text-[9px] font-black uppercase">Emitir NFS-e</span>
+              </div>
+              <div class="text-xl font-black text-purple-950 mt-1">${V.formatCurrency(dados.totais.contaPrincipal)}</div>
+              <div class="text-[11px] text-purple-700 font-semibold mt-0.5">${dados.totais.qtdContaPrincipal} pagto(s) • ${dados.totais.clientesContaPrincipal} cliente(s)</div>
+            </button>
+
+            <button
+              type="button"
+              onclick="ZGestorApp.setOpcaoModalNFSe('abaAtiva', 'DINHEIRO')"
+              class="text-left p-3.5 rounded-2xl border-2 transition cursor-pointer ${st.abaAtiva === 'DINHEIRO' ? 'bg-amber-50 border-amber-500 ring-2 ring-amber-200' : 'bg-white border-amber-200 hover:border-amber-400'}">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-extrabold uppercase text-amber-900">2. Em Dinheiro</span>
+                <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-bold">Separado</span>
+              </div>
+              <div class="text-xl font-black text-amber-950 mt-1">${V.formatCurrency(dados.totais.dinheiro)}</div>
+              <div class="text-[11px] text-amber-800 mt-0.5">${dados.totais.qtdDinheiro} recebimento(s) em espécie</div>
+            </button>
+
+            <button
+              type="button"
+              onclick="ZGestorApp.setOpcaoModalNFSe('abaAtiva', 'OUTRAS_CONTAS')"
+              class="text-left p-3.5 rounded-2xl border-2 transition cursor-pointer ${st.abaAtiva === 'OUTRAS_CONTAS' ? 'bg-sky-50 border-sky-500 ring-2 ring-sky-200' : 'bg-white border-sky-200 hover:border-sky-400'}">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-extrabold uppercase text-sky-900">3. Outras Contas</span>
+                <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-900 text-[9px] font-bold">Separado</span>
+              </div>
+              <div class="text-xl font-black text-sky-950 mt-1">${V.formatCurrency(dados.totais.outrasContas)}</div>
+              <div class="text-[11px] text-sky-800 mt-0.5">${dados.totais.qtdOutrasContas} recebimento(s) (Secund./PF)</div>
+            </button>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <span class="text-[10px] font-bold uppercase text-slate-600">Total Recebido no Mês</span>
+              <div class="text-xl font-black text-slate-900 mt-1">${V.formatCurrency(dados.totais.geral)}</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">${dados.totais.qtdGeral} baixa(s) na competência</div>
+            </div>
+          </div>
+
+          <!-- Opções da Planilha Modelo -->
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="flex flex-wrap items-center gap-4">
+              <label class="inline-flex items-center gap-2 font-semibold text-slate-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  ${st.agruparPorCliente ? 'checked' : ''}
+                  onchange="ZGestorApp.setOpcaoModalNFSe('agruparPorCliente', this.checked)"
+                  class="w-4 h-4 rounded text-purple-700 cursor-pointer"
+                />
+                <span>Somar pagamentos parciais do mesmo cliente em uma única nota</span>
+              </label>
+              <label class="inline-flex items-center gap-2 font-semibold text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  ${st.somenteDigitosDoc ? 'checked' : ''}
+                  onchange="ZGestorApp.setOpcaoModalNFSe('somenteDigitosDoc', this.checked)"
+                  class="w-4 h-4 rounded text-purple-700 cursor-pointer"
+                />
+                <span>CNPJ / CPF apenas números</span>
+              </label>
+            </div>
+            <span class="text-[11px] font-bold text-emerald-800">Colunas da Planilha: CNPJ / CPF • Nome • Valor</span>
+          </div>
+
+          <!-- Tabela da Aba Selecionada -->
+          ${renderTabelaAba()}
+
+          <!-- Rodapé de Exportação -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200">
+            <button
+              type="button"
+              onclick="ZGestorApp.closeModal()"
+              class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer">
+              Fechar
+            </button>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onclick="ZGestorReports.emitirRelatorioNFSe('${escapeHtml(st.competencia)}')"
+                class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer">
+                <span>🖨️ Imprimir Relatório Separado (PDF)</span>
+              </button>
+              <button
+                type="button"
+                onclick="ZGestorApp.baixarPlanilhaModeloNFSe('${escapeHtml(st.competencia)}', 'csv')"
+                class="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs cursor-pointer">
+                📄 Baixar .CSV
+              </button>
+              <button
+                type="button"
+                onclick="ZGestorApp.baixarPlanilhaModeloNFSe('${escapeHtml(st.competencia)}', 'xlsx')"
+                class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md cursor-pointer">
+                <span>📊 Baixar Planilha Modelo NFS-e (.xlsx)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  baixarPlanilhaModeloNFSe(competencia, formato = 'xlsx') {
+    const st = this._nfseModalState || {
+      competencia: competencia || this.state.competencia,
+      agruparPorCliente: true,
+      somenteDigitosDoc: false
+    };
+    const comp = competencia || st.competencia || this.state.competencia;
+    const dados = window.zgestorDB.obterDadosRelatorioNFSe(comp, {
+      agruparPorCliente: st.agruparPorCliente,
+      somenteDigitosDoc: st.somenteDigitosDoc
+    });
+
+    if (dados.linhasPlanilhaPrincipal.length === 0) {
+      this.showToast(`Nenhum pagamento recebido na Conta Principal em ${comp} para gerar a planilha de NFS-e.`, 'info');
+      return;
+    }
+
+    const compSafe = String(comp).replace('/', '-');
+
+    if (formato === 'xlsx' && window.XLSX && window.XLSX.utils) {
+      const wb = window.XLSX.utils.book_new();
+
+      // Aba 1 (Principal): Exatamente as 3 colunas solicitadas pelo usuário (CNPJ / CPF | Nome | Valor)
+      const wsPrincipal = window.XLSX.utils.json_to_sheet(dados.linhasPlanilhaPrincipal, {
+        header: ['CNPJ / CPF', 'Nome', 'Valor']
+      });
+      wsPrincipal['!cols'] = [{ wch: 22 }, { wch: 48 }, { wch: 16 }];
+      for (let r = 1; r <= dados.linhasPlanilhaPrincipal.length; r++) {
+        const cellValor = wsPrincipal[window.XLSX.utils.encode_cell({ r, c: 2 })];
+        if (cellValor && typeof cellValor.v === 'number') {
+          cellValor.z = '#,##0.00';
+        }
+      }
+      window.XLSX.utils.book_append_sheet(wb, wsPrincipal, 'Emissao_NFSe');
+
+      // Aba 2 (Auxiliar): Conferência separada Conta Principal x Dinheiro x Outras Contas
+      if (dados.linhasConferenciaCompleta.length > 0) {
+        const wsConf = window.XLSX.utils.json_to_sheet(dados.linhasConferenciaCompleta);
+        wsConf['!cols'] = [
+          { wch: 22 },
+          { wch: 24 },
+          { wch: 22 },
+          { wch: 44 },
+          { wch: 15 },
+          { wch: 16 },
+          { wch: 14 },
+          { wch: 34 }
+        ];
+        window.XLSX.utils.book_append_sheet(wb, wsConf, 'Conferencia_Contas');
+      }
+
+      window.XLSX.writeFile(wb, `Planilha_Modelo_NFSe_Conta_Principal_${compSafe}.xlsx`);
+      this.showToast(`Planilha modelo (.xlsx) gerada com ${dados.linhasPlanilhaPrincipal.length} nota(s) da Conta Principal!`, 'success');
+      return;
+    }
+
+    // Fallback CSV compatível com Excel PT-BR (separador ponto-e-vírgula + BOM UTF-8)
+    const escaparCsv = (val) => {
+      const str = String(val ?? '');
+      if (str.includes(';') || str.includes('"') || str.includes('\n')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    };
+    const linhasCsv = ['CNPJ / CPF;Nome;Valor'];
+    dados.linhasPlanilhaPrincipal.forEach(l => {
+      const valorPtBr = Number(l['Valor'] || 0).toFixed(2).replace('.', ',');
+      linhasCsv.push([escaparCsv(l['CNPJ / CPF']), escaparCsv(l['Nome']), valorPtBr].join(';'));
+    });
+
+    const blob = new Blob(['\uFEFF' + linhasCsv.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Planilha_Modelo_NFSe_Conta_Principal_${compSafe}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    this.showToast(`Planilha modelo (.csv) gerada com ${dados.linhasPlanilhaPrincipal.length} nota(s) da Conta Principal!`, 'success');
+  },
+
+  // ===========================================================================
+  // MODAL DO CARD "🔄 RETIFICAR" EM TAREFAS / OBRIGAÇÕES DE TRANSMISSÃO
+  // ===========================================================================
+  abrirModalRetificarLoteSelecionadas() {
+    const ids = Array.isArray(this.state.tarefasSelecionadas) ? this.state.tarefasSelecionadas.filter(Boolean) : [];
+    if (ids.length === 0) {
+      this.showToast('Selecione ao menos uma obrigação para adicionar o card Retificar.', 'info');
+      return;
+    }
+    this.openModalRetificarTarefa(ids);
+  },
+
+  openModalRetificarTarefa(tarefaIdOuLista) {
+    const db = window.zgestorDB;
+    const ids = Array.isArray(tarefaIdOuLista) ? tarefaIdOuLista : [tarefaIdOuLista];
+    const tarefasAlvo = (db.data.tarefas || []).filter(t => t && ids.includes(t.id));
+    if (tarefasAlvo.length === 0) return;
+
+    this._retificarModalIds = tarefasAlvo.map(t => t.id);
+    const primeira = tarefasAlvo[0];
+    const emp = tarefasAlvo.length === 1 ? db.obterEmpresaSegura(primeira.empresa_id, primeira) : null;
+    const jaEntregue = tarefasAlvo.every(t => db.obterStatusSimplesTarefa(t) === 'ENTREGUE');
+    const ehDestda = tarefasAlvo.some(t => db.ehTarefaDestda && db.ehTarefaDestda(t));
+
+    let acaoSugerida = 'MANTER';
+    if (!jaEntregue) {
+      acaoSugerida = ehDestda ? 'SEM_MOVIMENTO' : 'SEM_MOVIMENTO';
+    }
+
+    const motivoInicial = tarefasAlvo.length === 1 && primeira.motivo_retificacao
+      ? primeira.motivo_retificacao
+      : (ehDestda
+        ? 'Transmitida sem movimento para não perder o prazo — retificar assim que apurar o ICMS.'
+        : '');
+
+    const sugestoes = [
+      'Transmitida sem movimento para não perder o prazo — retificar assim que apurar o ICMS.',
+      'Transmitida provisoriamente p/ cumprir prazo — retificar após envio das notas pelo cliente.',
+      'Retificar declaração após conferência fiscal / fechamento definitivo.',
+      'Aguardando diferença de alíquota / ST / movimentação complementar p/ retificar.'
+    ];
+
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+    modal.innerHTML = `
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border-2 border-amber-300 max-h-[92vh] overflow-y-auto">
+          <div class="flex items-start justify-between gap-2 pb-3 border-b border-slate-200">
+            <div>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider">🔄 Card de Lembrete</span>
+              <h3 class="text-base font-extrabold text-slate-900 mt-1">
+                ${tarefasAlvo.length > 1 ? `Marcar ${tarefasAlvo.length} Obrigações p/ Retificar` : `Colocar Card "Retificar" na Obrigação`}
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                ${tarefasAlvo.length === 1
+                  ? `${escapeHtml(emp ? (emp.razao_social || emp.nome_fantasia) : 'Empresa')} — <strong>${escapeHtml(primeira.titulo)}</strong> (${escapeHtml(primeira.competencia)})`
+                  : `Competência ${escapeHtml(this.state.competencia)} — O card laranja "🔄 Retificar" ficará visível nas empresas selecionadas.`}
+              </p>
+            </div>
+            <button onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold cursor-pointer">×</button>
+          </div>
+
+          <form onsubmit="ZGestorApp.submitRetificarTarefa(event)" class="space-y-4 mt-4 text-xs">
+            <div>
+              <label class="block font-bold text-slate-800 mb-1.5">O que deseja fazer com a transmissão agora? *</label>
+              <div class="space-y-2">
+                <label class="flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition hover:bg-amber-50/50 border-slate-200">
+                  <input type="radio" name="f-retificar-acao" value="SEM_MOVIMENTO" ${acaoSugerida === 'SEM_MOVIMENTO' ? 'checked' : ''} class="mt-0.5 text-amber-600" />
+                  <div>
+                    <div class="font-extrabold text-slate-900">Transmitir SEM MOVIMENTO agora + colocar card "🔄 Retificar"</div>
+                    <div class="text-[11px] text-slate-500">Ideal p/ não perder o prazo (ex: DeSTDA) e lembrar de retificar assim que apurar o imposto.</div>
+                  </div>
+                </label>
+
+                <label class="flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition hover:bg-emerald-50/50 border-slate-200">
+                  <input type="radio" name="f-retificar-acao" value="ENTREGUE_NORMAL" ${acaoSugerida === 'ENTREGUE_NORMAL' ? 'checked' : ''} class="mt-0.5 text-emerald-600" />
+                  <div>
+                    <div class="font-extrabold text-slate-900">Transmitir NORMAL agora + colocar card "🔄 Retificar"</div>
+                    <div class="text-[11px] text-slate-500">Conclui como entregue com movimento e mantém o card laranja de retificação pendente.</div>
+                  </div>
+                </label>
+
+                <label class="flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition hover:bg-slate-50 border-slate-200">
+                  <input type="radio" name="f-retificar-acao" value="MANTER" ${acaoSugerida === 'MANTER' ? 'checked' : ''} class="mt-0.5 text-slate-700" />
+                  <div>
+                    <div class="font-extrabold text-slate-900">Manter status atual + apenas anexar/atualizar card "🔄 Retificar"</div>
+                    <div class="text-[11px] text-slate-500">Adiciona ou edita a observação de retificação sem mudar a situação atual da tarefa.</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-800 mb-1">Observação do Card "Retificar" *</label>
+              <textarea
+                id="f-retificar-motivo"
+                rows="3"
+                required
+                placeholder="Ex: Transmitida sem movimento para não perder o prazo, retificar assim que apurar o ICMS..."
+                class="w-full rounded-xl border border-amber-400 bg-amber-50/30 p-3 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400">${escapeHtml(motivoInicial)}</textarea>
+
+              <div class="mt-2 space-y-1">
+                <span class="text-[10.5px] font-bold text-slate-500 block">Sugestões rápidas (clique para preencher):</span>
+                <div class="flex flex-wrap gap-1.5">
+                  ${sugestoes.map((sug, idx) => `
+                    <button
+                      type="button"
+                      onclick="ZGestorApp.preencherSugestaoRetificar(${idx})"
+                      class="text-left px-2 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-950 border border-slate-200 text-[10.5px] font-medium transition cursor-pointer">
+                      + ${escapeHtml(sug)}
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              <div>
+                ${tarefasAlvo.length === 1 && primeira.precisa_retificar ? `
+                  <button
+                    type="button"
+                    onclick="ZGestorApp.removerCardRetificarTarefa('${primeira.id}')"
+                    class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs cursor-pointer">
+                    Remover Card
+                  </button>
+                ` : ''}
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">Cancelar</button>
+                <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold shadow-md cursor-pointer">
+                  🔄 Salvar Card "Retificar"
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    this._sugestoesRetificar = sugestoes;
+  },
+
+  preencherSugestaoRetificar(idx) {
+    const lista = this._sugestoesRetificar || [];
+    const txt = lista[idx];
+    const el = document.getElementById('f-retificar-motivo');
+    if (el && txt) {
+      el.value = txt;
+      el.focus();
+    }
+  },
+
+  submitRetificarTarefa(e) {
+    e.preventDefault();
+    try {
+      const ids = Array.isArray(this._retificarModalIds) ? this._retificarModalIds : [];
+      if (ids.length === 0) {
+        this.closeModal();
+        return;
+      }
+      const acaoTransmissao = document.querySelector('input[name="f-retificar-acao"]:checked')?.value || 'MANTER';
+      const motivo = document.getElementById('f-retificar-motivo')?.value.trim() || '';
+      if (!motivo) {
+        this.showToast('Informe a observação para lembrar o motivo da retificação.', 'error');
+        return;
+      }
+
+      if (ids.length === 1) {
+        window.zgestorDB.marcarTarefaParaRetificar(ids[0], { motivo, acaoTransmissao });
+      } else {
+        window.zgestorDB.marcarTarefasEmLoteParaRetificar(ids, { motivo, acaoTransmissao });
+        this.state.tarefasSelecionadas = (this.state.tarefasSelecionadas || []).filter(id => !ids.includes(id));
+      }
+
+      this._retificarModalIds = [];
+      this.closeModal();
+      this.showToast(
+        ids.length > 1
+          ? `Card "🔄 Retificar" adicionado em ${ids.length} obrigações!`
+          : 'Card "🔄 Retificar" salvo com sucesso na obrigação!',
+        'success'
+      );
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  confirmarRetificacaoConcluida(tarefaId) {
+    try {
+      window.zgestorDB.concluirRetificacaoTarefa(tarefaId);
+      if (this.state.filtroTarefaStatus === 'RETIFICAR') {
+        const restantes = (window.zgestorDB.data.tarefas || []).filter(t => t && t.competencia === this.state.competencia && t.precisa_retificar);
+        if (restantes.length === 0) {
+          this.state.filtroTarefaStatus = 'TODOS';
+        }
+      }
+      this.showToast('Retificação marcada como concluída!', 'success');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  removerCardRetificarTarefa(tarefaId) {
+    try {
+      window.zgestorDB.removerSinalizadorRetificarTarefa(tarefaId);
+      this.closeModal();
+      this.showToast('Card "Retificar" removido da obrigação.', 'info');
+      this.renderAll();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
   }
 };
 

@@ -982,117 +982,146 @@ window.ZGestorReports = {
 
   // ===========================================================================
   // RELATÓRIO PARA EMISSÃO DE NOTA FISCAL DE SERVIÇOS (NFS-e)
-  // Filtra apenas os pagamentos baixados na competência nas contas bancárias PJ/exigíveis
+  // Separa claramente: 1) Conta Principal (Base NFS-e) | 2) Dinheiro | 3) Outras Contas
   // ===========================================================================
   emitirRelatorioNFSe(competencia) {
     const db = window.zgestorDB;
     const V = window.ZGestorViews;
     const esc = db.getEscritorioConfig();
 
-    // Obtém todos os honorários da competência
-    const honorariosMes = db.data.honorarios.filter(h => h.competencia === competencia);
-    const honIds = new Set(honorariosMes.map(h => h.id));
+    const dados = db.obterDadosRelatorioNFSe(competencia, { agruparPorCliente: false });
 
-    // Obtém todos os pagamentos baixados vinculados a esses honorários
-    const todosPags = (db.data.honorario_pagamentos || []).filter(p => honIds.has(p.honorario_id));
-
-    // Filtra apenas pagamentos que entraram em contas PJ / exigíveis (exclui contas de pessoa física/sócio)
-    const pagamentosPJ = todosPags.filter(p => {
-      const c = (p.conta_destino || '').toLowerCase();
-      if (c.includes('pessoa física') || c.includes('sócio') || c.includes('autônomo')) {
-        return false;
-      }
-      return true; // Conta PJ Principal, Conta PJ Secundária ou padrão PJ
-    });
-
-    if (pagamentosPJ.length === 0) {
-      window.ZGestorApp.showToast(`Nenhum pagamento baixado em contas PJ encontrado na competência ${competencia} para emissão de NFS-e.`, 'info');
+    if (dados.totais.qtdGeral === 0) {
+      window.ZGestorApp.showToast(`Nenhum pagamento baixado encontrado na competência ${competencia} para conferência e emissão de NFS-e.`, 'info');
       return;
     }
 
-    const totalFaturado = pagamentosPJ.reduce((acc, p) => acc + Number(p.valor || 0), 0);
-    const empresasUnicas = new Set(pagamentosPJ.map(p => p.empresa_id)).size;
-
-    const linhasHtml = pagamentosPJ.map((p, idx) => {
-      const honRef = honorariosMes.find(h => h.id === p.honorario_id);
-      const emp = p.empresa_id ? (db.obterEmpresaSegura ? db.obterEmpresaSegura(p.empresa_id, honRef) : db.data.empresas.find(e => e.id === p.empresa_id)) : null;
-      const nomeTom = emp ? emp.razao_social : (honRef?.nome_cliente || 'Cliente Avulso');
-      const fantasiaTom = emp ? emp.nome_fantasia : (honRef?.descricao_cobranca || 'Cobrança Avulsa');
-      const docTom = emp ? emp.cnpj : (honRef?.documento_cliente || '—');
-      const contaNome = p.conta_destino ? p.conta_destino.split('(')[0].trim() : 'Conta PJ Principal';
-      return `
+    const renderTabelaGrupo = (itens, corCabecalho, corRodape, labelSubtotal) => {
+      if (!itens || itens.length === 0) {
+        return `
+          <div class="p-3 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
+            Nenhum recebimento registrado nesta categoria na competência ${competencia}.
+          </div>
+        `;
+      }
+      const subtotal = itens.reduce((acc, it) => acc + Number(it.valor || 0), 0);
+      const rows = itens.map((p, idx) => `
         <tr class="hover:bg-slate-50">
-          <td class="py-2.5 px-2 text-center text-slate-500 font-mono">${idx + 1}</td>
-          <td class="py-2.5 px-2">
-            <div class="font-bold text-slate-900">${V.escapeHtml(nomeTom)}</div>
-            <div class="text-[11px] text-slate-500">${V.escapeHtml(fantasiaTom)}</div>
+          <td class="py-2 px-2 text-center text-slate-500 font-mono">${idx + 1}</td>
+          <td class="py-2 px-2 font-mono text-slate-900 text-[11px] font-semibold whitespace-nowrap">${V.escapeHtml(p.cnpj_cpf_exibicao)}</td>
+          <td class="py-2 px-2">
+            <div class="font-bold text-slate-900">${V.escapeHtml(p.nome_tomador)}</div>
+            ${p.nome_fantasia && p.nome_fantasia !== p.nome_tomador ? `<div class="text-[10px] text-slate-500">${V.escapeHtml(p.nome_fantasia)}</div>` : ''}
           </td>
-          <td class="py-2.5 px-2 font-mono text-slate-800 text-[11px] font-semibold">${V.escapeHtml(docTom)}</td>
-          <td class="py-2.5 px-2 text-slate-700 text-[11px]">${emp ? `${emp.municipio || 'Mutum'}/${emp.uf || 'MG'}` : '—'}</td>
-          <td class="py-2.5 px-2 text-slate-800 text-center font-medium">${V.formatDate(p.data_pagamento)}</td>
-          <td class="py-2.5 px-2 text-slate-700 text-[11px]">
-            <span class="inline-block px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 font-semibold border border-indigo-200">${contaNome}</span>
-          </td>
-          <td class="py-2.5 px-2 text-slate-600 text-[11px] text-center">${p.forma_pagamento || 'PIX'}</td>
-          <td class="py-2.5 px-2 text-right font-extrabold text-slate-900 text-sm">${V.formatCurrency(p.valor)}</td>
+          <td class="py-2 px-2 text-slate-700 text-center text-[11px]">${V.formatDate(p.data_pagamento)}</td>
+          <td class="py-2 px-2 text-slate-700 text-[11px]">${V.escapeHtml(p.conta_exibicao)}</td>
+          <td class="py-2 px-2 text-slate-600 text-center text-[11px]">${V.escapeHtml(p.forma_exibicao)}</td>
+          <td class="py-2 px-2 text-right font-extrabold text-slate-900 text-xs whitespace-nowrap">${V.formatCurrency(p.valor)}</td>
         </tr>
-      `;
-    }).join('');
+      `).join('');
 
-    const html = `
-      <div class="print-sheet p-6">
-        ${this.cabecalhoPadraoRelatorio(
-          `Relatório para Emissão de Notas Fiscais (NFS-e) — Competência ${competencia}`,
-          `Filtro exclusivo de pagamentos baixados em contas bancárias PJ para faturamento oficial do escritório Zioto Contabilidade`
-        )}
-
-        <!-- KPIs Resumo -->
-        <div class="grid grid-cols-3 gap-3 my-4">
-          <div class="p-3 rounded-xl bg-purple-50 border border-purple-200">
-            <span class="text-[10px] font-bold uppercase text-purple-800">Total Faturado em Contas PJ (Base NFS-e)</span>
-            <div class="text-xl font-black text-purple-900 mt-0.5">${V.formatCurrency(totalFaturado)}</div>
-            <span class="text-[10px] text-purple-700">Somatório de baixas bancárias PJ</span>
-          </div>
-          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
-            <span class="text-[10px] font-bold uppercase text-slate-600">Total de Pagamentos Baixados</span>
-            <div class="text-xl font-black text-slate-900 mt-0.5">${pagamentosPJ.length} recebimento(s)</div>
-            <span class="text-[10px] text-slate-500">Recibos quitados na competência</span>
-          </div>
-          <div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-            <span class="text-[10px] font-bold uppercase text-emerald-800">Empresas Tomadoras</span>
-            <div class="text-xl font-black text-emerald-900 mt-0.5">${empresasUnicas} cliente(s)</div>
-            <span class="text-[10px] text-emerald-700">Notas de Serviços a emitir</span>
-          </div>
-        </div>
-
-        <!-- Tabela das Notas a Emitir -->
-        <table class="w-full text-xs border-collapse mt-2">
+      return `
+        <table class="w-full text-xs border-collapse mt-1.5">
           <thead>
-            <tr class="bg-slate-100 border-y border-slate-300 text-left text-[11px] font-bold uppercase text-slate-600">
+            <tr class="${corCabecalho} border-y border-slate-300 text-left text-[10.5px] font-bold uppercase">
               <th class="py-2 px-2 text-center w-8">#</th>
-              <th class="py-2 px-2">Razão Social do Tomador</th>
-              <th class="py-2 px-2">CNPJ</th>
-              <th class="py-2 px-2">Município / UF</th>
-              <th class="py-2 px-2 text-center">Data Pagamento</th>
-              <th class="py-2 px-2">Conta Destino</th>
+              <th class="py-2 px-2">CNPJ / CPF</th>
+              <th class="py-2 px-2">Nome (Razão Social)</th>
+              <th class="py-2 px-2 text-center">Data Pagto</th>
+              <th class="py-2 px-2">Conta / Destino</th>
               <th class="py-2 px-2 text-center">Forma</th>
-              <th class="py-2 px-2 text-right">Valor Pago (R$)</th>
+              <th class="py-2 px-2 text-right">Valor (R$)</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-200">
-            ${linhasHtml}
+            ${rows}
           </tbody>
           <tfoot>
-            <tr class="bg-slate-50 border-t-2 border-slate-700 font-extrabold text-xs">
-              <td colspan="7" class="py-2 px-2 text-right uppercase">Total Faturado em Contas PJ (Base de Cálculo NFS-e):</td>
-              <td class="py-2 px-2 text-right text-purple-900 text-sm">${V.formatCurrency(totalFaturado)}</td>
+            <tr class="${corRodape} border-t-2 border-slate-700 font-extrabold text-xs">
+              <td colspan="6" class="py-2 px-2 text-right uppercase">${labelSubtotal}</td>
+              <td class="py-2 px-2 text-right text-sm">${V.formatCurrency(subtotal)}</td>
             </tr>
           </tfoot>
         </table>
+      `;
+    };
+
+    const html = `
+      <div class="print-sheet p-6 space-y-5">
+        ${this.cabecalhoPadraoRelatorio(
+          `Relatório de Recebimentos p/ Emissão de NFS-e — Competência ${competencia}`,
+          `Separação oficial por canal de recebimento: Conta Principal (Emitir NFS-e) • Dinheiro • Outras Contas`
+        )}
+
+        <!-- KPIs Resumo Separados -->
+        <div class="grid grid-cols-4 gap-3 my-3">
+          <div class="p-3 rounded-xl bg-purple-50 border-2 border-purple-300">
+            <span class="text-[10px] font-extrabold uppercase text-purple-900">1. Conta Principal (Emitir NFS-e)</span>
+            <div class="text-lg font-black text-purple-950 mt-0.5">${V.formatCurrency(dados.totais.contaPrincipal)}</div>
+            <span class="text-[10px] text-purple-700 font-semibold">${dados.totais.qtdContaPrincipal} pagto(s) • ${dados.totais.clientesContaPrincipal} nota(s)</span>
+          </div>
+          <div class="p-3 rounded-xl bg-amber-50 border border-amber-200">
+            <span class="text-[10px] font-bold uppercase text-amber-900">2. Recebido em Dinheiro</span>
+            <div class="text-lg font-black text-amber-950 mt-0.5">${V.formatCurrency(dados.totais.dinheiro)}</div>
+            <span class="text-[10px] text-amber-700">${dados.totais.qtdDinheiro} recebimento(s) em espécie</span>
+          </div>
+          <div class="p-3 rounded-xl bg-sky-50 border border-sky-200">
+            <span class="text-[10px] font-bold uppercase text-sky-900">3. Outras Contas (Secund./PF)</span>
+            <div class="text-lg font-black text-sky-950 mt-0.5">${V.formatCurrency(dados.totais.outrasContas)}</div>
+            <span class="text-[10px] text-sky-700">${dados.totais.qtdOutrasContas} recebimento(s)</span>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-100 border border-slate-300">
+            <span class="text-[10px] font-bold uppercase text-slate-700">Total Geral Recebido (${competencia})</span>
+            <div class="text-lg font-black text-slate-900 mt-0.5">${V.formatCurrency(dados.totais.geral)}</div>
+            <span class="text-[10px] text-slate-600">${dados.totais.qtdGeral} baixa(s) conciliada(s)</span>
+          </div>
+        </div>
+
+        <!-- SEÇÃO 1: CONTA PRINCIPAL (BASE PARA EMISSÃO DE NFS-e) -->
+        <div class="space-y-1">
+          <div class="flex items-center justify-between bg-purple-900 text-white px-3 py-2 rounded-lg">
+            <span class="text-xs font-extrabold uppercase tracking-wide">1. Recebimentos na Conta Principal — Base Oficial para Emissão de NFS-e</span>
+            <span class="text-xs font-black">${V.formatCurrency(dados.totais.contaPrincipal)}</span>
+          </div>
+          ${renderTabelaGrupo(
+            dados.contaPrincipal,
+            'bg-purple-50 text-purple-950',
+            'bg-purple-50/70 text-purple-950',
+            'Subtotal Conta Principal (Base de Emissão de NFS-e):'
+          )}
+        </div>
+
+        <!-- SEÇÃO 2: DINHEIRO / ESPÉCIE -->
+        <div class="space-y-1 pt-2">
+          <div class="flex items-center justify-between bg-amber-100 text-amber-950 border border-amber-300 px-3 py-1.5 rounded-lg">
+            <span class="text-xs font-extrabold uppercase tracking-wide">2. Recebimentos em Dinheiro / Espécie (Separado — Fora da Conta Principal)</span>
+            <span class="text-xs font-black">${V.formatCurrency(dados.totais.dinheiro)}</span>
+          </div>
+          ${renderTabelaGrupo(
+            dados.dinheiro,
+            'bg-amber-50/80 text-amber-950',
+            'bg-amber-50/50 text-amber-950',
+            'Subtotal Recebido em Dinheiro / Espécie:'
+          )}
+        </div>
+
+        <!-- SEÇÃO 3: OUTRAS CONTAS -->
+        <div class="space-y-1 pt-2">
+          <div class="flex items-center justify-between bg-sky-100 text-sky-950 border border-sky-300 px-3 py-1.5 rounded-lg">
+            <span class="text-xs font-extrabold uppercase tracking-wide">3. Recebimentos em Outras Contas — Conta Secundária / Autônomo / PF (Separado)</span>
+            <span class="text-xs font-black">${V.formatCurrency(dados.totais.outrasContas)}</span>
+          </div>
+          ${renderTabelaGrupo(
+            dados.outrasContas,
+            'bg-sky-50/80 text-sky-950',
+            'bg-sky-50/50 text-sky-950',
+            'Subtotal Recebido em Outras Contas:'
+          )}
+        </div>
 
         <!-- Enquadramento Fiscal do Escritório -->
         <div class="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
-          <div class="font-bold text-slate-800">📌 Dados de Enquadramento Fiscal para Emissão da NFS-e:</div>
+          <div class="font-bold text-slate-800">📌 Dados de Enquadramento Fiscal para Emissão da NFS-e (Conta Principal):</div>
           <div><strong>Atividade / Item LC 116/2003:</strong> 01.07 — Serviços de contabilidade, auditoria e assessoria fiscal e contábil.</div>
           <div><strong>CNAE Principal:</strong> 6920-6/01 — Atividades de contabilidade • <strong>Prestador:</strong> ${esc.razao_social || 'Zioto Contabilidade Ltda'} (CNPJ: ${esc.cnpj || '—'}).</div>
         </div>

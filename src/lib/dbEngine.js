@@ -6463,6 +6463,324 @@
       this.data.modelos_tarefas = this.getModelosTarefas().filter(m => m.id !== modId);
       this.saveLocalData();
     }
+
+    // =========================================================================
+    // SEPARAÇÃO DE RECEBIMENTOS PARA EMISSÃO DE NFS-e E PLANILHA MODELO
+    // Grupos: CONTA_PRINCIPAL | DINHEIRO | OUTRAS_CONTAS
+    // =========================================================================
+    classificarDestinoPagamentoHonorario(pag, hon = null, emp = null) {
+      if (!pag) return 'CONTA_PRINCIPAL';
+      const forma = String(pag.forma_pagamento || '').toLowerCase().trim();
+      const conta = String(pag.conta_destino || '').toLowerCase().trim();
+      const canalHon = String((hon && hon.canal_pagamento) || (emp && emp.canal_pagamento_padrao) || '').toUpperCase().trim();
+
+      // 1. Dinheiro / Espécie
+      if (
+        forma.includes('dinheiro') ||
+        forma.includes('espécie') ||
+        forma.includes('especie') ||
+        conta.includes('dinheiro') ||
+        conta.includes('espécie') ||
+        conta.includes('especie') ||
+        conta.includes('caixa físico') ||
+        conta.includes('caixa fisico') ||
+        (!conta && canalHon === 'DINHEIRO')
+      ) {
+        return 'DINHEIRO';
+      }
+
+      // 2. Outras Contas (PJ Secundária, Inter/Nubank, Autônomo, Sócio, Pessoa Física)
+      if (
+        conta.includes('secundária') ||
+        conta.includes('secundaria') ||
+        conta.includes('inter') ||
+        conta.includes('nubank') ||
+        conta.includes('pessoa física') ||
+        conta.includes('pessoa fisica') ||
+        conta.includes('autônomo') ||
+        conta.includes('autonomo') ||
+        conta.includes('sócio') ||
+        conta.includes('socio') ||
+        conta.includes('outra') ||
+        (!conta && (canalHon === 'PIX_SECUNDARIO' || canalHon === 'PIX_AUTONOMO'))
+      ) {
+        return 'OUTRAS_CONTAS';
+      }
+
+      // 3. Conta Principal (Padrão oficial de emissão de NFS-e)
+      return 'CONTA_PRINCIPAL';
+    }
+
+    obterDadosRelatorioNFSe(competencia, opcoes = {}) {
+      const agruparPorCliente = opcoes.agruparPorCliente !== false;
+      const somenteDigitosDoc = Boolean(opcoes.somenteDigitosDoc);
+
+      const honorariosMes = (this.data.honorarios || []).filter(h => h && h.competencia === competencia);
+      const mapaHon = new Map();
+      honorariosMes.forEach(h => mapaHon.set(h.id, h));
+
+      const todosPags = (this.data.honorario_pagamentos || []).filter(p => p && mapaHon.has(p.honorario_id));
+
+      const formatarDoc = (docBruto) => {
+        const str = String(docBruto || '').trim();
+        if (!str || str === '—') return '';
+        if (somenteDigitosDoc) return str.replace(/\D/g, '');
+        return str;
+      };
+
+      const enriquecerPagamento = (p) => {
+        const hon = mapaHon.get(p.honorario_id) || null;
+        const emp = p.empresa_id ? this.obterEmpresaSegura(p.empresa_id, hon) : (hon && hon.empresa_id ? this.obterEmpresaSegura(hon.empresa_id, hon) : null);
+        const grupo = this.classificarDestinoPagamentoHonorario(p, hon, emp);
+        const docOriginal = emp ? (emp.cnpj || '') : (hon?.documento_cliente || '');
+        const nomeTomador = emp
+          ? (emp.razao_social || emp.nome_fantasia || 'Cliente')
+          : (hon?.nome_cliente || hon?.razao_social_snapshot || 'Cliente Avulso');
+        const nomeFantasia = emp
+          ? (emp.nome_fantasia || emp.razao_social || '')
+          : (hon?.descricao_cobranca || 'Cobrança Avulsa');
+        const municipioUf = emp ? `${emp.municipio || 'Mutum'}/${emp.uf || 'MG'}` : '—';
+        const chaveAgrupamento = emp
+          ? `EMP:${emp.id}`
+          : `AVU:${String(docOriginal || '').replace(/\D/g, '') || nomeTomador.toUpperCase().trim()}`;
+
+        return {
+          ...p,
+          valor: Number(Number(p.valor || 0).toFixed(2)),
+          grupo,
+          cnpj_cpf: formatarDoc(docOriginal),
+          cnpj_cpf_exibicao: docOriginal || '—',
+          nome_tomador: String(nomeTomador || '').trim(),
+          nome_fantasia: String(nomeFantasia || '').trim(),
+          municipio_uf: municipioUf,
+          conta_exibicao: p.conta_destino || (grupo === 'DINHEIRO' ? 'Dinheiro / Espécie (Caixa Físico)' : 'Conta PJ Principal (Itaú)'),
+          forma_exibicao: p.forma_pagamento || (grupo === 'DINHEIRO' ? 'Dinheiro' : 'PIX'),
+          chave_cliente: chaveAgrupamento,
+          descricao_cobranca: hon?.descricao_cobranca || 'HONORÁRIO MENSAL'
+        };
+      };
+
+      const enriquecidos = todosPags
+        .map(enriquecerPagamento)
+        .sort((a, b) => (a.nome_tomador || '').localeCompare(b.nome_tomador || '', 'pt-BR'));
+
+      const contaPrincipal = enriquecidos.filter(i => i.grupo === 'CONTA_PRINCIPAL');
+      const dinheiro = enriquecidos.filter(i => i.grupo === 'DINHEIRO');
+      const outrasContas = enriquecidos.filter(i => i.grupo === 'OUTRAS_CONTAS');
+
+      const somar = (arr) => Number(arr.reduce((acc, item) => acc + Number(item.valor || 0), 0).toFixed(2));
+      const contarClientes = (arr) => new Set(arr.map(item => item.chave_cliente)).size;
+
+      // Gera as linhas exatas da Planilha Modelo de Emissão Automática (Colunas: CNPJ / CPF | Nome | Valor)
+      // Exclusivamente com os recebimentos da CONTA PRINCIPAL
+      let linhasPlanilhaPrincipal = [];
+      if (agruparPorCliente) {
+        const mapaCli = new Map();
+        contaPrincipal.forEach(item => {
+          const existente = mapaCli.get(item.chave_cliente);
+          if (existente) {
+            existente.Valor = Number((existente.Valor + item.valor).toFixed(2));
+            existente._qtdPagamentos += 1;
+          } else {
+            mapaCli.set(item.chave_cliente, {
+              'CNPJ / CPF': item.cnpj_cpf,
+              'Nome': item.nome_tomador,
+              'Valor': Number(item.valor.toFixed(2)),
+              _qtdPagamentos: 1
+            });
+          }
+        });
+        linhasPlanilhaPrincipal = Array.from(mapaCli.values())
+          .sort((a, b) => (a.Nome || '').localeCompare(b.Nome || '', 'pt-BR'))
+          .map(({ _qtdPagamentos, ...cols }) => cols);
+      } else {
+        linhasPlanilhaPrincipal = contaPrincipal.map(item => ({
+          'CNPJ / CPF': item.cnpj_cpf,
+          'Nome': item.nome_tomador,
+          'Valor': Number(item.valor.toFixed(2))
+        }));
+      }
+
+      const mapearConferencia = (item, rotuloGrupo) => ({
+        'Classificação': rotuloGrupo,
+        'Emitir NFS-e?': item.grupo === 'CONTA_PRINCIPAL' ? 'SIM (Conta Principal)' : 'NÃO',
+        'CNPJ / CPF': item.cnpj_cpf,
+        'Nome': item.nome_tomador,
+        'Valor': Number(item.valor.toFixed(2)),
+        'Data Pagamento': item.data_pagamento ? item.data_pagamento.split('-').reverse().join('/') : '',
+        'Forma': item.forma_exibicao,
+        'Conta / Destino': item.conta_exibicao
+      });
+
+      const linhasConferenciaCompleta = [
+        ...contaPrincipal.map(i => mapearConferencia(i, '1. Conta Principal')),
+        ...dinheiro.map(i => mapearConferencia(i, '2. Dinheiro / Espécie')),
+        ...outrasContas.map(i => mapearConferencia(i, '3. Outras Contas'))
+      ];
+
+      return {
+        competencia,
+        todosPagamentos: enriquecidos,
+        contaPrincipal,
+        dinheiro,
+        outrasContas,
+        linhasPlanilhaPrincipal,
+        linhasConferenciaCompleta,
+        totais: {
+          contaPrincipal: somar(contaPrincipal),
+          dinheiro: somar(dinheiro),
+          outrasContas: somar(outrasContas),
+          geral: somar(enriquecidos),
+          qtdContaPrincipal: contaPrincipal.length,
+          qtdDinheiro: dinheiro.length,
+          qtdOutrasContas: outrasContas.length,
+          qtdGeral: enriquecidos.length,
+          clientesContaPrincipal: contarClientes(contaPrincipal),
+          clientesDinheiro: contarClientes(dinheiro),
+          clientesOutrasContas: contarClientes(outrasContas)
+        }
+      };
+    }
+
+    // =========================================================================
+    // CONTROLE DE CARD "RETIFICAR" NAS OBRIGAÇÕES DE TRANSMISSÃO EM TAREFAS
+    // =========================================================================
+    ehTarefaTransmissao(t) {
+      if (!t) return false;
+      const txt = `${t.titulo || ''} ${t.descricao || ''}`.toLowerCase();
+      return (
+        txt.includes('destda') ||
+        txt.includes('sedif') ||
+        txt.includes('pgdas') ||
+        txt.includes('simples nacional') ||
+        txt.includes('sped') ||
+        txt.includes('efd') ||
+        txt.includes('dctf') ||
+        txt.includes('reinf') ||
+        txt.includes('mit') ||
+        txt.includes('ecd') ||
+        txt.includes('ecf') ||
+        txt.includes('esocial') ||
+        txt.includes('fgts') ||
+        txt.includes('sefip') ||
+        txt.includes('gfip') ||
+        txt.includes('defis') ||
+        txt.includes('dasn') ||
+        txt.includes('dirf') ||
+        txt.includes('transmiss') ||
+        txt.includes('declara') ||
+        txt.includes('apura')
+      );
+    }
+
+    marcarTarefaParaRetificar(tarefaId, opcoes = {}) {
+      const idx = (this.data.tarefas || []).findIndex(t => t && t.id === tarefaId);
+      if (idx === -1) throw new Error('Tarefa não encontrada.');
+
+      const t = this.data.tarefas[idx];
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment(t.departamento, user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
+      }
+
+      const hoje = new Date().toISOString().slice(0, 10);
+      const acaoTransmissao = String(opcoes.acaoTransmissao || 'MANTER').toUpperCase();
+      const motivoLimpo = String(opcoes.motivo || '').trim() || 'Retificar declaração após fechamento da apuração';
+
+      if (acaoTransmissao === 'SEM_MOVIMENTO') {
+        t.status = 'ENTREGUE';
+        t.modalidade_entrega = 'SEM_MOVIMENTO';
+        t.data_entrega = t.data_entrega || hoje;
+        t.motivo_pendencia = '';
+      } else if (acaoTransmissao === 'ENTREGUE_NORMAL') {
+        t.status = 'ENTREGUE';
+        t.modalidade_entrega = 'COM_MOVIMENTO';
+        t.data_entrega = t.data_entrega || hoje;
+        t.motivo_pendencia = '';
+      }
+
+      t.precisa_retificar = true;
+      t.motivo_retificacao = motivoLimpo;
+      t.marcada_retificar_em = new Date().toISOString();
+      t.marcada_retificar_por = user ? user.nome : 'Equipe';
+      t.retificada = false;
+      t.data_retificacao = null;
+      if (user) t.responsavel_nome = user.nome;
+
+      if (!opcoes.silencioso) {
+        this.saveLocalData();
+        const emp = this.obterEmpresaSegura(t.empresa_id, t);
+        this.registrarLog(
+          'TAREFA_MARCADA_RETIFICAR',
+          'Tarefas',
+          `Card RETIFICAR adicionado em "${t.titulo}" (${emp ? emp.nome_fantasia : 'Empresa'} - Comp. ${t.competencia}): ${motivoLimpo}`
+        );
+      }
+      return t;
+    }
+
+    marcarTarefasEmLoteParaRetificar(tarefaIds = [], opcoes = {}) {
+      const ids = Array.isArray(tarefaIds) ? tarefaIds.filter(Boolean) : [];
+      if (ids.length === 0) return { atualizadas: 0, tarefas: [] };
+      const atualizadas = [];
+      for (let i = 0; i < ids.length; i++) {
+        const t = this.marcarTarefaParaRetificar(ids[i], { ...opcoes, silencioso: true });
+        if (t) atualizadas.push(t);
+      }
+      if (atualizadas.length > 0) {
+        this.saveLocalData();
+        this.registrarLog(
+          'TAREFAS_LOTE_RETIFICAR',
+          'Tarefas',
+          `${atualizadas.length} obrigação(ões) marcada(s) com o card RETIFICAR: ${String(opcoes.motivo || '').trim()}`
+        );
+      }
+      return { atualizadas: atualizadas.length, tarefas: atualizadas };
+    }
+
+    concluirRetificacaoTarefa(tarefaId, observacaoConclusao = '') {
+      const idx = (this.data.tarefas || []).findIndex(t => t && t.id === tarefaId);
+      if (idx === -1) throw new Error('Tarefa não encontrada.');
+
+      const t = this.data.tarefas[idx];
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment(t.departamento, user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
+      }
+
+      const hoje = new Date().toISOString().slice(0, 10);
+      t.historico_motivo_retificacao = t.motivo_retificacao || t.historico_motivo_retificacao || '';
+      t.precisa_retificar = false;
+      t.retificada = true;
+      t.data_retificacao = hoje;
+      t.retificada_por = user ? user.nome : 'Equipe';
+      if (observacaoConclusao && String(observacaoConclusao).trim()) {
+        t.obs_retificacao_concluida = String(observacaoConclusao).trim();
+      }
+
+      this.saveLocalData();
+      const emp = this.obterEmpresaSegura(t.empresa_id, t);
+      this.registrarLog(
+        'TAREFA_RETIFICACAO_CONCLUIDA',
+        'Tarefas',
+        `Retificação concluída em "${t.titulo}" (${emp ? emp.nome_fantasia : 'Empresa'} - Comp. ${t.competencia}).`
+      );
+      return t;
+    }
+
+    removerSinalizadorRetificarTarefa(tarefaId) {
+      const idx = (this.data.tarefas || []).findIndex(t => t && t.id === tarefaId);
+      if (idx === -1) throw new Error('Tarefa não encontrada.');
+      const t = this.data.tarefas[idx];
+      const user = this.getCurrentUser();
+      if (!this.canManageDepartment(t.departamento, user)) {
+        throw new Error(`Política de Segurança (RLS): Seu perfil (${user?.departamento}) não tem permissão para alterar tarefas do departamento ${t.departamento}.`);
+      }
+      t.precisa_retificar = false;
+      t.motivo_retificacao = '';
+      this.saveLocalData();
+      return t;
+    }
   }
 
   window.zgestorDB = new ZGestorDB();
