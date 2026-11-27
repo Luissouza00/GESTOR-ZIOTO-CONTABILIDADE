@@ -1248,7 +1248,7 @@ window.ZGestorViews = {
               </div>
 
               <!-- Seletor / Busca Inteligente de Empresa (Searchable Dropdown) -->
-              <div class="relative min-w-[300px]" id="wrapper-filtro-empresa">
+              <div class="relative min-w-[210px] xl:min-w-[280px]" id="wrapper-filtro-empresa">
                 <div class="relative flex items-center">
                   <div class="absolute left-2.5 pointer-events-none text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -1522,7 +1522,7 @@ window.ZGestorViews = {
                 if (modo === 'kanban') {
                   return `
                     ${barraLoteHtml}
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 items-start">
+                    <div class="grid grid-cols-1 md:grid-cols-2 ${sidePeekTarefa ? '2xl:grid-cols-5' : 'xl:grid-cols-5'} gap-3 items-start">
                       ${colunas.map(col => {
                         const cards = porGrupo.get(col.key) || [];
                         const todosColMarcados = cards.length > 0 && cards.every(c => selecionadasSet.has(c.id));
@@ -1845,7 +1845,7 @@ window.ZGestorViews = {
 
             <!-- PAINEL LATERAL DIREITO "NOTION SIDE PEEK" (Tema Claro) -->
             ${sidePeekTarefa && sidePeekEmpresa ? `
-              <div class="w-full lg:w-[460px] shrink-0 bg-white border border-slate-200 rounded-2xl p-5 shadow-xl space-y-4 text-slate-800 sticky top-4">
+              <div class="w-full lg:w-[370px] 2xl:w-[450px] shrink-0 bg-white border border-slate-200 rounded-2xl p-4 2xl:p-5 shadow-xl space-y-4 text-slate-800 sticky top-4">
                 <!-- Topo do Side Peek -->
                 <div class="flex items-center justify-between pb-3 border-b border-slate-200">
                   <div class="flex items-center gap-2">
@@ -2269,17 +2269,17 @@ window.ZGestorViews = {
 
             <!-- MATRIZ ANUAL JAN A DEZ POR EMPRESA -->
             <div class="overflow-x-auto w-full">
-              <table class="w-full min-w-[920px] text-left border-collapse">
+              <table class="w-full min-w-[820px] text-left border-collapse">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-600">
-                    <th class="py-2.5 px-2.5 w-[18%]">Empresa Cliente & Regime</th>
+                    <th class="py-2.5 px-2.5 w-[18%] zg-sticky-left">Empresa Cliente & Regime</th>
                     ${mesesLista.map(m => `
                       <th class="py-2.5 px-1 text-center w-[5.4%] ${comp === `${m.num}/${anoFechamento}` ? 'bg-indigo-100 text-indigo-900 rounded-t-lg' : ''}">
                         ${m.curto || m.abrev || (m.nome && m.nome.slice(0, 3)) || ''}/${String(anoFechamento).slice(-2)}
                       </th>
                     `).join('')}
                     <th class="py-2.5 px-2 text-center w-[7%]">Fechado Ano</th>
-                    <th class="py-2.5 px-2.5 text-center w-[11%]">Encerramento Exercício</th>
+                    <th class="py-2.5 px-2.5 text-center w-[11%] zg-sticky-right">Encerramento Exercício</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-xs">
@@ -2357,7 +2357,7 @@ window.ZGestorViews = {
 
           return `
                       <tr class="hover:bg-slate-50">
-                        <td class="py-2.5 px-2.5">
+                        <td class="py-2.5 px-2.5 zg-sticky-left">
                           <div class="font-bold text-slate-900">${this.escapeHtml(emp.razao_social || emp.nome_fantasia)}</div>
                           <div class="text-[10px] text-slate-500">${this.codLimpo(emp.codigo_interno) ? `<span class="font-mono font-bold text-indigo-700">${this.escapeHtml(this.codLimpo(emp.codigo_interno))}</span> • ` : ''}${emp.regime_tributario}</div>
                         </td>
@@ -2368,7 +2368,7 @@ window.ZGestorViews = {
                             <div class="h-full bg-emerald-600 rounded-full" style="width: ${percAno}%"></div>
                           </div>
                         </td>
-                        <td class="py-2.5 px-2 text-center">
+                        <td class="py-2.5 px-2 text-center zg-sticky-right">
                           <button
                             onclick="ZGestorApp.openModalEncerramentoExercicio('${emp.id}', ${anoFechamento})"
                             class="w-full py-1.5 px-2 rounded-xl text-[10px] font-bold transition flex items-center justify-center gap-1 shadow-2xs ${estaEncerrado
@@ -2606,7 +2606,7 @@ window.ZGestorViews = {
                 <!-- Lista Limpa de Guias para Envio -->
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div class="overflow-x-auto w-full">
-                    <table class="w-full min-w-[780px] text-left border-collapse text-xs">
+                    <table class="w-full min-w-[700px] text-left border-collapse text-xs">
                       <thead>
                         <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                           <th class="py-3 px-3 w-10 text-center">Sel.</th>
@@ -2614,7 +2614,7 @@ window.ZGestorViews = {
                           <th class="py-3 px-3">Guia / Imposto</th>
                           <th class="py-3 px-3">Vencimento</th>
                           <th class="py-3 px-3">Status & Protocolo</th>
-                          <th class="py-3 px-3 text-right">Ações Rápidas</th>
+                          <th class="py-3 px-3 text-right zg-sticky-right">Ações Rápidas</th>
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-slate-100">
@@ -2668,7 +2668,7 @@ window.ZGestorViews = {
                                   </div>
                                 ` : ''}
                               </td>
-                              <td class="py-3 px-3 text-right whitespace-nowrap">
+                              <td class="py-3 px-3 text-right whitespace-nowrap zg-sticky-right">
                                 <div class="inline-flex items-center justify-end gap-1">
                                   ${pend ? `
                                     <button type="button" onclick="ZGestorApp.gerarProtocoloOfficeBoySelecionadas('${g.id}')" class="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-[10px] font-bold cursor-pointer" title="Imprimir e Gerar Protocolo Office Boy">Office Boy</button>
@@ -3321,7 +3321,7 @@ window.ZGestorViews = {
         <!-- Tabela de CNDs (Estruturada por Esferas e Preparada para API) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div class="overflow-x-auto w-full">
-            <table class="w-full min-w-[780px] text-left border-collapse">
+            <table class="w-full min-w-[700px] text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                 <th class="py-3 px-3 w-[20%]">Empresa Cliente</th>
@@ -3329,7 +3329,7 @@ window.ZGestorViews = {
                 <th class="py-3 px-2.5 w-[18%]">Resultado & Nº Controle</th>
                 <th class="py-3 px-2.5 w-[14%]">Emissão & Validade</th>
                 <th class="py-3 px-2.5 w-[14%]">Status de Vigência</th>
-                <th class="py-3 px-3 w-[12%] text-right">Ações</th>
+                <th class="py-3 px-3 w-[12%] text-right zg-sticky-right">Ações</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 text-xs">
@@ -3394,7 +3394,7 @@ window.ZGestorViews = {
                         </div>
                       `}
                     </td>
-                    <td class="py-3 px-3 text-right">
+                    <td class="py-3 px-3 text-right zg-sticky-right">
                       <div class="inline-flex items-center justify-end gap-1.5">
                         ${(c.arquivo_pdf_nome || c.arquivo_pdf_base64 || c.arquivo_cofre_id || c.arquivo_pdf_url || c.tem_arquivo_pdf) ? `
                           <button onclick="ZGestorApp.visualizarOuBaixarPDFCND('${c.id}')" class="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold inline-flex items-center gap-1 border border-emerald-300 shadow-xs cursor-pointer" title="Visualizar / Baixar Certidão arquivada no Cofre Digital (${this.escapeHtml(c.arquivo_pdf_nome || 'Certidão.pdf')})">
@@ -4232,7 +4232,7 @@ window.ZGestorViews = {
         <!-- Lista de Empresas (Responsiva com rolagem horizontal) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div class="overflow-x-auto w-full">
-            <table class="w-full min-w-[800px] text-left border-collapse">
+            <table class="w-full min-w-[720px] text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                 <th class="py-3 px-3 ${canSeeHon ? 'w-[18%]' : 'w-[20%]'}">Cód / Empresa ou PF</th>
@@ -4241,7 +4241,7 @@ window.ZGestorViews = {
                 <th class="py-3 px-2.5 ${canSeeHon ? 'w-[15%]' : 'w-[16%]'}">Certificado & Proc.</th>
                 <th class="py-3 px-2.5 ${canSeeHon ? 'w-[12%]' : 'w-[14%]'}">Responsável & Contato</th>
                 ${canSeeHon ? `<th class="py-3 px-2.5 w-[9%]">Honorário</th>` : ''}
-                <th class="py-3 px-3 w-[12%] text-right">Status & Ações</th>
+                <th class="py-3 px-3 w-[12%] text-right zg-sticky-right">Status & Ações</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 text-xs">
@@ -4333,9 +4333,9 @@ window.ZGestorViews = {
                         <div class="text-[10px] text-slate-500">Vence dia ${e.dia_vencimento_honorario}</div>
                       </td>
                     ` : ''}
-                    <td class="py-3 px-3 text-right">
+                    <td class="py-3 px-3 text-right zg-sticky-right">
                       <div class="flex flex-col items-end gap-1">
-                        <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap min-w-[95px] text-center ${e.status === 'ATIVA' ? 'bg-emerald-100 text-emerald-800' :
+                        <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap min-w-[85px] text-center ${e.status === 'ATIVA' ? 'bg-emerald-100 text-emerald-800' :
           e.status === 'EM_ONBOARDING' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'
         }">
                           ${e.status === 'EM_ONBOARDING' ? 'EM ONBOARDING' : e.status}
@@ -4932,7 +4932,7 @@ window.ZGestorViews = {
         <!-- Tabela Principal de Honorários (Responsiva com rolagem horizontal) -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div class="overflow-x-auto w-full">
-            <table class="w-full min-w-[850px] text-left border-collapse">
+            <table class="w-full min-w-[740px] text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase text-slate-500">
                 <th class="py-3 px-2.5 w-10 text-center" title="Selecionar recibos em aberto visíveis">
@@ -4951,7 +4951,7 @@ window.ZGestorViews = {
                 <th class="py-3 px-2.5 w-[13%]">Total a Pagar</th>
                 <th class="py-3 px-2.5 w-[14%]">Pagamentos</th>
                 <th class="py-3 px-2.5 w-[11%]">Em Aberto</th>
-                <th class="py-3 px-3 w-[13%] text-right">Recibo PIX & Ações</th>
+                <th class="py-3 px-3 w-[13%] text-right zg-sticky-right">Recibo PIX & Ações</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 text-xs">
@@ -5067,7 +5067,7 @@ window.ZGestorViews = {
                       </div>
                       <div class="mt-0.5">${statusHonBadge(h.status)}</div>
                     </td>
-                    <td class="py-3 px-3 text-right">
+                    <td class="py-3 px-3 text-right zg-sticky-right">
                       <div class="inline-flex flex-wrap items-center justify-end gap-1">
                         <button onclick="ZGestorReports.imprimirReciboHonorarioPix('${h.id}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-semibold inline-flex items-center gap-1">
                           ${svgPrint} PIX
@@ -5672,7 +5672,7 @@ window.ZGestorViews = {
           <div class="zg-auth-footer mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="zg-auth-version inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.3'}
+              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.4'}
             </span>
           </div>
         </div>
@@ -6403,19 +6403,19 @@ window.ZGestorViews = {
               </button>
             </div>
           ` : `
-            <div class="overflow-x-auto">
-              <table class="w-full text-left text-xs">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full min-w-[740px] text-left text-xs border-collapse">
                 <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
                   <tr>
-                    <th class="py-3 px-4">Empresa</th>
-                    <th class="py-3 px-4">Alvará / Licença</th>
-                    <th class="py-3 px-4">Órgão Emissor</th>
-                    <th class="py-3 px-4">Nº Documento / Inscrição</th>
-                    <th class="py-3 px-4">Validade / Vencimento</th>
-                    <th class="py-3 px-4">Status</th>
-                    <th class="py-3 px-4">Protocolo de Renovação</th>
-                    <th class="py-3 px-4 text-center">Arquivo</th>
-                    <th class="py-3 px-4 text-right">Ações</th>
+                    <th class="py-3 px-3">Empresa</th>
+                    <th class="py-3 px-2.5">Alvará / Licença</th>
+                    <th class="py-3 px-2.5">Órgão Emissor</th>
+                    <th class="py-3 px-2.5">Nº Doc. / Inscrição</th>
+                    <th class="py-3 px-2.5">Validade</th>
+                    <th class="py-3 px-2.5">Status</th>
+                    <th class="py-3 px-2.5">Protocolo</th>
+                    <th class="py-3 px-2.5 text-center">Arquivo</th>
+                    <th class="py-3 px-3 text-right zg-sticky-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
@@ -6426,26 +6426,26 @@ window.ZGestorViews = {
 
                     return `
                       <tr class="hover:bg-slate-50/80 transition">
-                        <td class="py-3.5 px-4 font-semibold text-slate-900 whitespace-nowrap">
+                        <td class="py-3 px-3 font-semibold text-slate-900 min-w-[160px] max-w-[240px]">
                           ${emp ? `
-                            <div class="font-bold text-slate-900">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true }))}</div>
+                            <div class="font-bold text-slate-900 leading-snug">${this.escapeHtml(this.nomeEmp(emp, { comCodigo: true }))}</div>
                             <div class="text-[11px] text-slate-400 font-normal">CNPJ: ${this.escapeHtml(emp.cnpj)}</div>
                           ` : 'Cadastro não localizado'}
                         </td>
-                        <td class="py-3.5 px-4 whitespace-nowrap">
-                          <div class="font-bold text-slate-800">${this.escapeHtml(alv.nome)}</div>
-                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border mt-0.5 ${tipoInfo.badge}">
+                        <td class="py-3 px-2.5 min-w-[140px] max-w-[200px]">
+                          <div class="font-bold text-slate-800 leading-snug">${this.escapeHtml(alv.nome)}</div>
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border mt-0.5 whitespace-nowrap ${tipoInfo.badge}">
                             <i data-lucide="${tipoInfo.icon}" class="w-3 h-3"></i>
                             ${tipoInfo.label}
                           </span>
                         </td>
-                        <td class="py-3.5 px-4 text-slate-600 font-medium whitespace-nowrap">
+                        <td class="py-3 px-2.5 text-slate-600 font-medium max-w-[160px]">
                           ${this.escapeHtml(alv.orgao_emissor || 'Prefeitura')}
                         </td>
-                        <td class="py-3.5 px-4 font-mono text-[11px] text-slate-700 whitespace-nowrap">
+                        <td class="py-3 px-2.5 font-mono text-[11px] text-slate-700 whitespace-nowrap">
                           ${this.escapeHtml(alv.numero_documento || 'Não informado')}
                         </td>
-                        <td class="py-3.5 px-4 whitespace-nowrap">
+                        <td class="py-3 px-2.5 whitespace-nowrap">
                           ${alv.indeterminado ? `
                             <span class="text-emerald-700 font-semibold">Indeterminado / Isento</span>
                           ` : alv.data_vencimento ? `
@@ -6455,7 +6455,7 @@ window.ZGestorViews = {
                             </div>
                           ` : '<span class="text-slate-400">Sem data</span>'}
                         </td>
-                        <td class="py-3.5 px-4 whitespace-nowrap">
+                        <td class="py-3 px-2.5 whitespace-nowrap">
                           <span class="px-2.5 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1.5 w-fit
                             ${st.codigo === 'VIGENTE' || st.codigo === 'DISPENSADO' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : ''}
                             ${st.codigo === 'VENCENDO' || st.codigo === 'ATENCAO' ? 'bg-amber-50 text-amber-800 border-amber-300' : ''}
@@ -6473,7 +6473,7 @@ window.ZGestorViews = {
                             ${st.codigo === 'VIGENTE' ? 'Vigente' : st.codigo === 'VENCENDO' ? 'A Vencer' : st.codigo === 'VENCIDO' ? 'Vencido' : st.codigo === 'EM_RENOVACAO' ? 'Em Renovação' : st.label}
                           </span>
                         </td>
-                        <td class="py-3.5 px-4 whitespace-nowrap">
+                        <td class="py-3 px-2.5 whitespace-nowrap">
                           ${alv.protocolo_renovacao ? `
                             <div class="flex items-center gap-1.5">
                               <span class="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
@@ -6492,7 +6492,7 @@ window.ZGestorViews = {
                             </button>
                           `}
                         </td>
-                        <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                        <td class="py-3 px-2.5 text-center whitespace-nowrap">
                           ${(alv.anexo_base64 || alv.anexo_cofre_id || alv.anexo_url || alv.tem_anexo || alv.anexo_nome) ? `
                             <div class="inline-flex items-center gap-1">
                               <button
@@ -6516,7 +6516,7 @@ window.ZGestorViews = {
                             <span class="text-slate-300 text-xs">—</span>
                           `}
                         </td>
-                        <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                        <td class="py-3 px-3 text-right whitespace-nowrap zg-sticky-right">
                           <div class="flex items-center justify-end gap-1.5">
                             <button
                               type="button"

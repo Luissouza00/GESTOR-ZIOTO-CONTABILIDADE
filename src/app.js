@@ -135,6 +135,7 @@ window.ZGestorApp = {
         this.fecharTodosComboboxEmpresa();
       }
     });
+    this.initVisualizacaoTelasMenores();
     this.renderAll();
     const executarAutoSyncNuvem = () => {
       if (!db.supabaseConnected || db.supabaseConfig?.autoSync === false) return;
@@ -324,6 +325,7 @@ window.ZGestorApp = {
         authScreen.classList.remove('hidden');
         authScreen.innerHTML = window.ZGestorViews.renderLogin(this.state);
         if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
       }
       return;
     }
@@ -920,6 +922,7 @@ window.ZGestorApp = {
       if (iconEl) iconEl.setAttribute('data-lucide', 'eye');
     }
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   toggleSidebar() {
@@ -936,6 +939,7 @@ window.ZGestorApp = {
     }
     if (backdrop) backdrop.classList.remove('hidden');
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   fecharMenuMobile() {
@@ -1049,7 +1053,7 @@ window.ZGestorApp = {
     const toggleBtnEl = document.getElementById('sidebar-toggle-btn');
     const versionEl = document.getElementById('sidebar-system-version');
     const versionCollapsedEl = document.getElementById('sidebar-collapsed-version');
-    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.3';
+    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.4';
 
     if (versionEl) versionEl.textContent = versaoAtual;
     if (versionCollapsedEl) {
@@ -1265,6 +1269,7 @@ window.ZGestorApp = {
     }).join('');
 
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   renderHeader() {
@@ -1351,6 +1356,7 @@ window.ZGestorApp = {
         </div>
       `;
       if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
       return;
     }
 
@@ -1486,8 +1492,16 @@ window.ZGestorApp = {
             <span class="hidden sm:inline">Relatório da Aba Atual</span>
             <span class="sm:hidden">Relatório</span>
           </button>
+          <button
+            type="button"
+            onclick="ZGestorApp.ciclarEscalaVisualizacao()"
+            class="hidden md:inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 transition cursor-pointer"
+            title="Ajustar escala da tela para caber mais colunas em monitores/notebooks menores (Auto / 100% / 90% / 82%)">
+            <i data-lucide="monitor" class="w-3.5 h-3.5 text-indigo-600"></i>
+            <span>Tela: ${this.obterRotuloEscalaVisualizacao()}</span>
+          </button>
           <span class="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold text-[10.5px]" title="Versão ativa do ZGestor">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.3'}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.4'}
           </span>
         </div>
 
@@ -1522,6 +1536,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   _sincronizarDomPreservandoInput(oldParent, newParent, activeEl) {
@@ -1623,6 +1638,7 @@ window.ZGestorApp = {
     }
 
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
 
     if (!inputPreservadoIntacto && (activeId || activeOnInput)) {
       let restoredEl = activeId ? document.getElementById(activeId) : null;
@@ -3664,6 +3680,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   alternarTipoPessoaModalEmpresa(tipo) {
@@ -3777,6 +3794,7 @@ window.ZGestorApp = {
       btn.disabled = true;
       btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> <span>Buscando...</span>`;
       if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
     }
 
     try {
@@ -3839,6 +3857,7 @@ window.ZGestorApp = {
         btn.disabled = false;
         btn.innerHTML = textoOriginal;
         if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
       }
     }
   },
@@ -3962,6 +3981,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   aplicarNovoModeloOnboarding(empresaId, tipoModelo) {
@@ -4346,6 +4366,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   voltarEdicaoParcelamento() {
@@ -4747,6 +4768,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   executarRenovacaoAPI(cndId) {
@@ -4882,6 +4904,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   handleCNDModalPDFSelected(e) {
@@ -4988,6 +5011,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   _criarBlobUrlDeDataUrl(dataUrl, fallbackMime = 'application/pdf') {
@@ -5391,6 +5415,7 @@ window.ZGestorApp = {
     `;
     this.renderContentOnly();
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   handleLoteGuiasSelected(files) {
@@ -5756,6 +5781,7 @@ window.ZGestorApp = {
     `;
     this.renderContentOnly();
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   visualizarArquivoNavegador(arquivoId) {
@@ -7567,6 +7593,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   async submitNovoConvite(e, tipo) {
@@ -7769,6 +7796,7 @@ window.ZGestorApp = {
         </div>
       `;
       if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
       return;
     }
 
@@ -7792,6 +7820,7 @@ window.ZGestorApp = {
           </div>
         `;
         if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
         return;
       }
     }
@@ -7816,6 +7845,7 @@ window.ZGestorApp = {
         </div>
       `;
       if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
       return;
     }
 
@@ -7889,6 +7919,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   simularAtivacaoConvite(token) {
@@ -7923,6 +7954,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   toggleVerInput(inputId, iconId) {
@@ -7937,6 +7969,7 @@ window.ZGestorApp = {
       if (icon) icon.setAttribute('data-lucide', 'eye');
     }
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   async submitAtivarConvite(e, token) {
@@ -8097,6 +8130,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   submitEditarPermissoes(e, userId) {
@@ -9459,6 +9493,7 @@ window.ZGestorApp = {
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   confirmarExclusaoProtocolo(e, protocoloId) {
@@ -10186,6 +10221,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   aoTrocarTipoAlvara(tipo) {
@@ -10360,6 +10396,7 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
       </div>
     `;
     if (window.lucide) window.lucide.createIcons();
+    this.agendarAtualizacaoRolagemHorizontal();
   },
 
   submitProtocoloAlvara(e, alvaraId) {
@@ -11051,6 +11088,201 @@ Elabore um Plano de Ação Executivo com 3 prioridades operacionais imediatas e 
       this.renderAll();
     } catch (err) {
       this.showToast(err.message, 'error');
+    }
+  },
+
+  // ===========================================================================
+  // ESCALA ADAPTATIVA PARA TELAS MENORES + BARRA FLUTUANTE DE ROLAGEM LATERAL
+  // Elimina a necessidade de rolar até o fim da página para rolar para o lado
+  // ===========================================================================
+  initVisualizacaoTelasMenores() {
+    if (this._visualizacaoTelasIniciada) return;
+    this._visualizacaoTelasIniciada = true;
+
+    let modoSalvo = 'AUTO';
+    try {
+      modoSalvo = localStorage.getItem('zgestor_escala_tela') || 'AUTO';
+    } catch (_) {}
+    this.state.escalaVisualizacao = ['AUTO', '100', '90', '82'].includes(modoSalvo) ? modoSalvo : 'AUTO';
+    this.aplicarEscalaVisualizacao();
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('resize', () => {
+        if ((this.state.escalaVisualizacao || 'AUTO') === 'AUTO') {
+          this.aplicarEscalaVisualizacao();
+        }
+        this.agendarAtualizacaoRolagemHorizontal();
+      }, { passive: true });
+
+      window.addEventListener('scroll', () => {
+        this.agendarAtualizacaoRolagemHorizontal();
+      }, { passive: true });
+    }
+
+    const track = typeof document !== 'undefined' ? document.getElementById('zg-floating-hscroll-track') : null;
+    if (track && typeof track.addEventListener === 'function') {
+      track.addEventListener('scroll', () => {
+        if (this._sincronizandoHScroll || !this._containerHScrollAtivo) return;
+        const alvo = this._containerHScrollAtivo;
+        const maxTrack = track.scrollWidth - track.clientWidth;
+        const maxAlvo = alvo.scrollWidth - alvo.clientWidth;
+        if (maxTrack <= 0 || maxAlvo <= 0) return;
+        this._sincronizandoHScroll = true;
+        alvo.scrollLeft = (track.scrollLeft / maxTrack) * maxAlvo;
+        setTimeout(() => { this._sincronizandoHScroll = false; }, 16);
+      }, { passive: true });
+    }
+  },
+
+  obterRotuloEscalaVisualizacao() {
+    const modo = this.state.escalaVisualizacao || 'AUTO';
+    if (modo === 'AUTO') return 'Auto';
+    return `${modo}%`;
+  },
+
+  ciclarEscalaVisualizacao() {
+    const ordem = ['AUTO', '100', '90', '82'];
+    const atual = this.state.escalaVisualizacao || 'AUTO';
+    const prox = ordem[(ordem.indexOf(atual) + 1) % ordem.length];
+    this.state.escalaVisualizacao = prox;
+    try {
+      localStorage.setItem('zgestor_escala_tela', prox);
+    } catch (_) {}
+    this.aplicarEscalaVisualizacao();
+    this.renderHeader();
+    this.agendarAtualizacaoRolagemHorizontal();
+
+    const desc = {
+      AUTO: 'Automática (ajusta sozinha ao tamanho do monitor/notebook)',
+      '100': '100% (tamanho padrão)',
+      '90': '90% (compacta p/ caber mais colunas)',
+      '82': '82% (ultra compacta p/ telas menores)'
+    };
+    this.showToast(`Visualização da tela: ${desc[prox] || prox}`, 'info');
+  },
+
+  aplicarEscalaVisualizacao() {
+    if (typeof document === 'undefined' || !document.documentElement || !document.documentElement.style) return;
+    const modo = this.state.escalaVisualizacao || 'AUTO';
+    const largura = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1600;
+
+    let px = 16;
+    if (modo === '100') {
+      px = 16;
+    } else if (modo === '90') {
+      px = 14.4;
+    } else if (modo === '82') {
+      px = 13.2;
+    } else {
+      // Modo AUTO: mantém 100% em monitores amplos (>= 1520px) e reduz suavemente em telas menores
+      if (largura >= 1520 || largura < 768) px = 16;
+      else if (largura >= 1280) px = 14.5;
+      else px = 13.6;
+    }
+    document.documentElement.style.fontSize = `${px}px`;
+  },
+
+  agendarAtualizacaoRolagemHorizontal() {
+    if (this._timerHScroll) return;
+    const disparar = () => {
+      this._timerHScroll = null;
+      this.atualizarRolagemHorizontalFlutuante();
+    };
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      this._timerHScroll = window.requestAnimationFrame(disparar);
+    } else {
+      this._timerHScroll = setTimeout(disparar, 30);
+    }
+  },
+
+  atualizarRolagemHorizontalFlutuante() {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+    const bar = document.getElementById('zg-floating-hscroll');
+    const track = document.getElementById('zg-floating-hscroll-track');
+    const spacer = document.getElementById('zg-floating-hscroll-spacer');
+    const main = document.getElementById('main-view');
+    if (!bar || !track || !spacer || !main || typeof main.querySelectorAll !== 'function') return;
+
+    const modalRoot = document.getElementById('modal-root');
+    const modalAberto = Boolean(modalRoot && modalRoot.innerHTML && modalRoot.innerHTML.trim() !== '');
+    const authApp = document.getElementById('app-authenticated');
+    const oculto = !authApp || authApp.hasAttribute('hidden') || (authApp.classList && authApp.classList.contains('hidden'));
+
+    if (modalAberto || oculto) {
+      bar.classList.remove('zg-visible');
+      this._containerHScrollAtivo = null;
+      return;
+    }
+
+    const viewportH = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 800;
+    const viewportW = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1366;
+    const candidatos = Array.from(main.querySelectorAll('.overflow-x-auto'));
+
+    let melhor = null;
+    for (let i = 0; i < candidatos.length; i++) {
+      const el = candidatos[i];
+      if (!el || el.scrollWidth <= el.clientWidth + 6) continue;
+      if (typeof el.getBoundingClientRect !== 'function') continue;
+      const rect = el.getBoundingClientRect();
+      // Visível na tela, mas sua barra nativa inferior ainda está abaixo do fim da janela
+      if (rect.height > 40 && rect.top < viewportH - 65 && rect.bottom > viewportH - 6) {
+        melhor = { el, rect };
+        break;
+      }
+    }
+
+    if (!melhor) {
+      bar.classList.remove('zg-visible');
+      this._containerHScrollAtivo = null;
+      return;
+    }
+
+    const alvo = melhor.el;
+    if (this._containerHScrollAtivo !== alvo) {
+      this._containerHScrollAtivo = alvo;
+      if (!alvo._zgHScrollBound && typeof alvo.addEventListener === 'function') {
+        alvo._zgHScrollBound = true;
+        alvo.addEventListener('scroll', () => {
+          if (this._sincronizandoHScroll || this._containerHScrollAtivo !== alvo) return;
+          const maxAlvo = alvo.scrollWidth - alvo.clientWidth;
+          const maxTrack = track.scrollWidth - track.clientWidth;
+          if (maxAlvo <= 0 || maxTrack <= 0) return;
+          this._sincronizandoHScroll = true;
+          track.scrollLeft = (alvo.scrollLeft / maxAlvo) * maxTrack;
+          setTimeout(() => { this._sincronizandoHScroll = false; }, 16);
+        }, { passive: true });
+      }
+    }
+
+    const larguraTrack = Math.min(420, Math.max(150, Math.round(alvo.clientWidth * 0.42)));
+    track.style.width = `${larguraTrack}px`;
+    const proporcao = alvo.scrollWidth / Math.max(1, alvo.clientWidth);
+    spacer.style.width = `${Math.max(larguraTrack + 24, Math.round(larguraTrack * proporcao))}px`;
+
+    // Centraliza horizontalmente sobre a área útil da tabela
+    const centroTabela = melhor.rect.left + (melhor.rect.width / 2);
+    bar.classList.add('zg-visible');
+    const larguraBar = bar.offsetWidth || (larguraTrack + 160);
+    const leftIdeal = Math.max(12, Math.min(viewportW - larguraBar - 12, Math.round(centroTabela - (larguraBar / 2))));
+    bar.style.left = `${leftIdeal}px`;
+
+    // Sincroniza posição inicial da barra
+    const maxAlvo = alvo.scrollWidth - alvo.clientWidth;
+    const maxTrack = track.scrollWidth - track.clientWidth;
+    if (maxAlvo > 0 && maxTrack > 0 && !this._sincronizandoHScroll) {
+      this._sincronizandoHScroll = true;
+      track.scrollLeft = (alvo.scrollLeft / maxAlvo) * maxTrack;
+      setTimeout(() => { this._sincronizandoHScroll = false; }, 16);
+    }
+  },
+
+  rolarTabelaHorizontalAtiva(deltaPx) {
+    const alvo = this._containerHScrollAtivo;
+    if (!alvo) return;
+    if (typeof alvo.scrollBy === 'function') {
+      alvo.scrollBy({ left: Number(deltaPx || 0), behavior: 'smooth' });
+    } else {
+      alvo.scrollLeft += Number(deltaPx || 0);
     }
   }
 };

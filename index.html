@@ -99,6 +99,142 @@
     }
 
     /* =========================================================================
+       OTIMIZAÇÃO INTELIGENTE PARA TELAS MENORES (NOTEBOOKS 1280px–1480px)
+       + COLUNAS DE AÇÃO FIXAS À DIREITA + BARRA DE ROLAGEM FLUTUANTE
+       ========================================================================= */
+    .overflow-x-auto {
+      scrollbar-width: thin;
+      scrollbar-color: #94a3b8 #f1f5f9;
+    }
+
+    .overflow-x-auto::-webkit-scrollbar {
+      height: 9px;
+      width: 9px;
+    }
+
+    .overflow-x-auto::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 9999px;
+    }
+
+    .overflow-x-auto::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 9999px;
+    }
+
+    .overflow-x-auto::-webkit-scrollbar-thumb:hover {
+      background: #4f46e5;
+    }
+
+    @media (min-width: 768px) {
+      th.zg-sticky-right,
+      td.zg-sticky-right {
+        position: sticky;
+        right: 0;
+        z-index: 4;
+        box-shadow: -6px 0 10px -6px rgba(15, 23, 42, 0.14);
+      }
+
+      thead th.zg-sticky-right {
+        background-color: #f8fafc;
+        z-index: 6;
+      }
+
+      tbody tr td.zg-sticky-right {
+        background-color: #ffffff;
+      }
+
+      tbody tr:hover td.zg-sticky-right {
+        background-color: #f8fafc;
+      }
+
+      th.zg-sticky-left,
+      td.zg-sticky-left {
+        position: sticky;
+        left: 0;
+        z-index: 4;
+        box-shadow: 6px 0 10px -6px rgba(15, 23, 42, 0.12);
+      }
+
+      thead th.zg-sticky-left {
+        background-color: #f8fafc;
+        z-index: 6;
+      }
+
+      tbody tr td.zg-sticky-left {
+        background-color: #ffffff;
+      }
+
+      tbody tr:hover td.zg-sticky-left {
+        background-color: #f8fafc;
+      }
+    }
+
+    /* Em telas de notebook menores (<= 1480px), compacta espaços laterais automaticamente */
+    @media (min-width: 768px) and (max-width: 1480px) {
+      #main-view table th,
+      #main-view table td {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+      }
+    }
+
+    /* Barra de Rolagem Horizontal Flutuante Sempre Visível no Rodapé da Tela */
+    #zg-floating-hscroll {
+      position: fixed;
+      bottom: 10px;
+      z-index: 42;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 9999px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.55);
+      color: #f8fafc;
+      max-width: calc(100vw - 24px);
+    }
+
+    #zg-floating-hscroll.zg-visible {
+      display: flex;
+    }
+
+    #zg-floating-hscroll-track {
+      overflow-x: auto;
+      overflow-y: hidden;
+      height: 12px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.14);
+      scrollbar-width: thin;
+      scrollbar-color: #818cf8 rgba(255, 255, 255, 0.12);
+    }
+
+    #zg-floating-hscroll-track::-webkit-scrollbar {
+      height: 10px;
+    }
+
+    #zg-floating-hscroll-track::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 9999px;
+    }
+
+    #zg-floating-hscroll-track::-webkit-scrollbar-thumb {
+      background: #818cf8;
+      border-radius: 9999px;
+      cursor: grab;
+    }
+
+    #zg-floating-hscroll-track::-webkit-scrollbar-thumb:hover {
+      background: #a5b4fc;
+    }
+
+    #zg-floating-hscroll-spacer {
+      height: 1px;
+    }
+
+    /* =========================================================================
        CSS Crítico Nativo da Tela Inicial (Login) — Garante layout perfeito
        desde o milissegundo zero, mesmo offline ou se o CDN externo atrasar
        ========================================================================= */
@@ -411,10 +547,10 @@
           class="flex items-center justify-between sidebar-footer-text text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
           <span>Versão do Sistema:</span>
           <span id="sidebar-system-version"
-            class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/80">v1.5.2</span>
+            class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/80">v1.5.4</span>
         </div>
         <div id="sidebar-collapsed-version" class="hidden text-center font-mono font-bold text-[10px] text-indigo-400">
-          v1.5.2</div>
+          v1.5.4</div>
         <button
           onclick="window.zgestorDB.resetToSeedData(); window.ZGestorApp.renderAll(); window.ZGestorApp.showToast('Base de demonstração restaurada!', 'info');"
           class="w-full py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer">
@@ -440,24 +576,38 @@
 
   </div><!-- /#app-authenticated -->
 
+  <!-- Barra Flutuante de Rolagem Horizontal (Permite rolar tabelas largas sem descer até o fim da página) -->
+  <div id="zg-floating-hscroll" role="region" aria-label="Rolagem horizontal rápida da tabela">
+    <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-300 pl-1 hidden sm:inline whitespace-nowrap">Rolagem lateral</span>
+    <button type="button" onclick="window.ZGestorApp && window.ZGestorApp.rolarTabelaHorizontalAtiva(-320)"
+      class="px-2 py-0.5 rounded-full bg-slate-800 hover:bg-indigo-600 text-white text-xs font-extrabold transition cursor-pointer shrink-0"
+      title="Rolar tabela para a esquerda">◀</button>
+    <div id="zg-floating-hscroll-track" style="width: 260px;">
+      <div id="zg-floating-hscroll-spacer"></div>
+    </div>
+    <button type="button" onclick="window.ZGestorApp && window.ZGestorApp.rolarTabelaHorizontalAtiva(320)"
+      class="px-2 py-0.5 rounded-full bg-slate-800 hover:bg-indigo-600 text-white text-xs font-extrabold transition cursor-pointer shrink-0"
+      title="Rolar tabela para a direita">▶</button>
+  </div>
+
   <!-- Container de Modais e Notificações -->
   <div id="modal-root"></div>
   <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
   <!-- Versão Oficial Unificada e Scripts da Aplicação (Cache-Busting Automático) -->
-  <script>window.ZGESTOR_VERSION = 'v1.5.3';</script>
-  <script src="./src/data/seedData.js?v=1.5.3"></script>
-  <script src="./src/data/carteiraOficial.js?v=1.5.3"></script>
-  <script src="./src/lib/dbEngine.js?v=1.5.3"></script>
-  <script src="./src/ui/views.js?v=1.5.3"></script>
-  <script src="./src/ui/reports.js?v=1.5.3"></script>
-  <script src="./src/app.js?v=1.5.3"></script>
+  <script>window.ZGESTOR_VERSION = 'v1.5.4';</script>
+  <script src="./src/data/seedData.js?v=1.5.4"></script>
+  <script src="./src/data/carteiraOficial.js?v=1.5.4"></script>
+  <script src="./src/lib/dbEngine.js?v=1.5.4"></script>
+  <script src="./src/ui/views.js?v=1.5.4"></script>
+  <script src="./src/ui/reports.js?v=1.5.4"></script>
+  <script src="./src/app.js?v=1.5.4"></script>
 
   <!-- Registro do Service Worker PWA para Suporte Mobile & Instalação -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('./sw.js?v=1.5.3').then(function (reg) {
+        navigator.serviceWorker.register('./sw.js?v=1.5.4').then(function (reg) {
           if (reg && typeof reg.update === 'function') reg.update();
         }).catch(function () { });
       });

@@ -1,5 +1,5 @@
 // ZGESTOR - Service Worker PWA (Instalação e Suporte Mobile Offline)
-const CACHE_NAME = 'zgestor-pwa-v1.5.3';
+const CACHE_NAME = 'zgestor-pwa-v1.5.4';
 const STATIC_ASSETS = [
   './',
   './index.html',
