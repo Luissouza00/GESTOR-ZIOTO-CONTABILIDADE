@@ -1,6 +1,6 @@
 {
   "name": "zgestor",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "ZGestor Contábil - Sistema de Gestão de Escritório e Portal do Cliente",
   "main": "index.html",
   "scripts": {

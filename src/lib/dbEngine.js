@@ -2183,11 +2183,57 @@
         /^(Empregador Doméstico PF|Empresa em Onboarding|Cliente Cadastrado)\b/.test(String(emp.razao_social || ''))
       );
 
+      const idsDemoIgnorar = new Set(['pag-1', 'pag-2', 'pag-3', 'pag-prev-2', 'hon-1', 'hon-2', 'hon-3', 'hon-4', 'hon-prev-2']);
+      const nuvemPorId = new Set(arrNuvem.filter(x => x && x.id).map(x => String(x.id)));
+      const localHonPorEmpComp = col === 'honorarios' ? new Map() : null;
+      if (localHonPorEmpComp) {
+        for (let i = 0; i < arrLocal.length; i++) {
+          const lh = arrLocal[i];
+          if (lh && lh.empresa_id && lh.competencia && !lh.cliente_avulso && (!lh.tipo_lancamento || lh.tipo_lancamento === 'MENSAL')) {
+            localHonPorEmpComp.set(`${lh.empresa_id}::${lh.competencia}`, lh);
+          }
+        }
+      }
+
       const resultado = arrNuvem
         .filter(itemNuvem => itemNuvem && itemNuvem.id && !excluidosExplicitos.has(String(itemNuvem.id)))
         .map(itemNuvem => {
           const idStr = String(itemNuvem.id);
           const itemLocal = localPorId.get(idStr);
+
+          // Auto-cura financeira: se outro PC do escritório tiver baixa ou ajuste salvo em honorário mensal que ainda estava zerado na recuperação
+          if (col === 'honorarios' && itemNuvem.empresa_id && itemNuvem.competencia && !itemNuvem.cliente_avulso) {
+            const candLocal = itemLocal || localHonPorEmpComp.get(`${itemNuvem.empresa_id}::${itemNuvem.competencia}`);
+            if (candLocal && !idsDemoIgnorar.has(String(candLocal.id))) {
+              const pagoNuvem = Number(itemNuvem.valor_pago || 0);
+              const pagoLocal = Number(candLocal.valor_pago || 0);
+              const antNuvem = Number(itemNuvem.saldo_anterior || 0);
+              const antLocal = Number(candLocal.saldo_anterior || 0);
+              const extLocal = Number(candLocal.servicos_extras || 0);
+              const descLocal = Number(candLocal.desconto || 0);
+              if (
+                (pagoNuvem === 0 && pagoLocal > 0) ||
+                (itemNuvem._aguardando_resgate_baixa_local && (pagoLocal > 0 || antLocal > antNuvem || extLocal > 0 || descLocal > 0))
+              ) {
+                const curado = {
+                  ...itemNuvem,
+                  valor_mensal: Number(candLocal.valor_mensal ?? itemNuvem.valor_mensal ?? 0),
+                  saldo_anterior: Math.max(antNuvem, antLocal),
+                  servicos_extras: extLocal || Number(itemNuvem.servicos_extras || 0),
+                  desconto: descLocal || Number(itemNuvem.desconto || 0),
+                  valor_pago: Math.max(pagoNuvem, pagoLocal),
+                  saldo_aberto: Number(candLocal.saldo_aberto ?? itemNuvem.saldo_aberto ?? 0),
+                  status: candLocal.status || itemNuvem.status,
+                  canal_pagamento: candLocal.canal_pagamento || itemNuvem.canal_pagamento,
+                  observacoes: candLocal.observacoes || itemNuvem.observacoes
+                };
+                delete curado._aguardando_resgate_baixa_local;
+                curouDadosNuvem = true;
+                return curado;
+              }
+            }
+          }
+
           if (!itemLocal) return itemNuvem;
 
           // Auto-cura: se outro computador do escritório tiver o nome/CPF/CNPJ real de um cadastro recuperado, restaura automaticamente
@@ -2208,6 +2254,38 @@
 
           return itemNuvem;
         });
+
+      // Resgata automaticamente pagamentos (honorario_pagamentos) e cobranças AVULSAS / 13º existentes apenas no cache local de outra máquina do escritório
+      if (col === 'honorario_pagamentos') {
+        for (let i = 0; i < arrLocal.length; i++) {
+          const pLoc = arrLocal[i];
+          if (!pLoc || !pLoc.id) continue;
+          const pid = String(pLoc.id);
+          if (nuvemPorId.has(pid) || excluidosExplicitos.has(pid) || idsDemoIgnorar.has(pid)) continue;
+          if (String(pLoc.empresa_id || '').startsWith('emp-') && !['emp-1', 'emp-2', 'emp-3', 'emp-4'].includes(pLoc.empresa_id)) {
+            resultado.push(pLoc);
+            nuvemPorId.add(pid);
+            curouDadosNuvem = true;
+          } else if (!pLoc.empresa_id && pLoc.honorario_id && Number(pLoc.valor || 0) > 0) {
+            resultado.push(pLoc);
+            nuvemPorId.add(pid);
+            curouDadosNuvem = true;
+          }
+        }
+      } else if (col === 'honorarios') {
+        for (let i = 0; i < arrLocal.length; i++) {
+          const hLoc = arrLocal[i];
+          if (!hLoc || !hLoc.id) continue;
+          const hid = String(hLoc.id);
+          if (nuvemPorId.has(hid) || excluidosExplicitos.has(hid) || idsDemoIgnorar.has(hid)) continue;
+          const ehAvulsoOu13 = hLoc.cliente_avulso || hLoc.tipo_lancamento === 'AVULSO' || hLoc.tipo_lancamento === 'DECIMO_TERCEIRO';
+          if (ehAvulsoOu13 && !['emp-1', 'emp-2', 'emp-3', 'emp-4'].includes(hLoc.empresa_id)) {
+            resultado.push(hLoc);
+            nuvemPorId.add(hid);
+            curouDadosNuvem = true;
+          }
+        }
+      }
 
       return { lista: resultado, curouDadosNuvem };
     }

@@ -1053,7 +1053,7 @@ window.ZGestorApp = {
     const toggleBtnEl = document.getElementById('sidebar-toggle-btn');
     const versionEl = document.getElementById('sidebar-system-version');
     const versionCollapsedEl = document.getElementById('sidebar-collapsed-version');
-    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.5';
+    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.6';
 
     if (versionEl) versionEl.textContent = versaoAtual;
     if (versionCollapsedEl) {
@@ -1501,7 +1501,7 @@ window.ZGestorApp = {
             <span>Tela: ${this.obterRotuloEscalaVisualizacao()}</span>
           </button>
           <span class="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold text-[10.5px]" title="Versão ativa do ZGestor">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.5'}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.6'}
           </span>
         </div>
 

@@ -5676,7 +5676,7 @@ window.ZGestorViews = {
           <div class="zg-auth-footer mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="zg-auth-version inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.5'}
+              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.6'}
             </span>
           </div>
         </div>
