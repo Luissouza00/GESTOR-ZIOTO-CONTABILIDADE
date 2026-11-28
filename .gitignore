@@ -4,8 +4,11 @@ node_modules/
 .env.local
 .env.*.local
 
-# Arquivos de teste temporários e rascunhos
+# Arquivos de teste temporários, backups sensíveis e rascunhos
 scratch/
+backups/
+importar_ia/
+cerebro_runtime/
 test_*.js
 teste-*.cjs
 

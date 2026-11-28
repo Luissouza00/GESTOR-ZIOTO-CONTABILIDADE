@@ -321,11 +321,12 @@ window.ZGestorViews = {
     const tarefasPendentes = tarefasVisiveis.filter(t => !t.data_entrega);
     const tarefasVencidas = tarefasPendentes.filter(t => t.prazo_entrega < hoje);
 
+    const statusGuiaEnviadaOuArquivada = ['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'];
     const guiasImpostosComp = db.getGuiasImpostos(comp);
-    const guiasImpostosEnviadas = guiasImpostosComp.filter(g => g.status_envio === 'ENVIADA_CLIENTE');
+    const guiasImpostosEnviadas = guiasImpostosComp.filter(g => statusGuiaEnviadaOuArquivada.includes(g.status_envio));
 
     const guiasComp = db.data.parcelamento_guias.filter(g => g.competencia === comp);
-    const guiasEnviadasParc = guiasComp.filter(g => g.status_guia === 'ENVIADA_CLIENTE');
+    const guiasEnviadasParc = guiasComp.filter(g => statusGuiaEnviadaOuArquivada.includes(g.status_guia) || statusGuiaEnviadaOuArquivada.includes(g.status_envio_protocolo) || g.arquivada_digital);
     const parcelamentosEmAtraso = db.data.parcelamentos.filter(p => p.status === 'EM_ATRASO' || p.status === 'ENCERRADO_FALTA_PAGAMENTO');
 
     const cnds = db.getCNDs();
@@ -5552,6 +5553,9 @@ window.ZGestorViews = {
               ⬆ Restaurar Backup (.JSON)
               <input type="file" accept=".json" onchange="ZGestorApp.importarBackupJSON(event)" class="hidden" />
             </label>
+            <button type="button" onclick="ZGestorApp.abrirModalBackupsAutomaticos()" class="px-3.5 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 text-xs font-bold cursor-pointer">
+              🛡️ Pontos de Restauração Automáticos
+            </button>
           </div>
           ${db.ultimoErroNuvem ? `
             <div class="mt-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px]">
@@ -5672,7 +5676,7 @@ window.ZGestorViews = {
           <div class="zg-auth-footer mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
             <span>ZGestor Enterprise PWA</span>
             <span class="zg-auth-version inline-flex items-center gap-1 font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.4'}
+              <span class="zg-auth-dot w-1.5 h-1.5 rounded-full bg-emerald-500" style="width:6px;height:6px;"></span> ${window.ZGESTOR_VERSION || 'v1.5.5'}
             </span>
           </div>
         </div>

@@ -788,11 +788,14 @@
       }
       this._idbCofrePromise = new Promise((resolve) => {
         try {
-          const req = indexedDB.open('zgestor_cofre_documentos_v1', 1);
+          const req = indexedDB.open('zgestor_cofre_documentos_v1', 2);
           req.onupgradeneeded = (ev) => {
             const dbIdb = ev.target.result;
             if (!dbIdb.objectStoreNames.contains('arquivos')) {
               dbIdb.createObjectStore('arquivos', { keyPath: 'id' });
+            }
+            if (!dbIdb.objectStoreNames.contains('auto_backups')) {
+              dbIdb.createObjectStore('auto_backups', { keyPath: 'id' });
             }
           };
           req.onsuccess = (ev) => resolve(ev.target.result);
@@ -1128,6 +1131,118 @@
       if (!this._suppressCloudSync && this._initialCloudSyncDone && this.supabaseConnected && this.supabase && this.supabaseConfig?.autoSync !== false) {
         this._agendarSyncNuvem();
       }
+      this._agendarSnapshotAutomaticoLocal();
+    }
+
+    _marcarExcluidoNuvem(colecao, id) {
+      if (!colecao || !id) return;
+      if (!this._deletedCloudIds) this._deletedCloudIds = new Map();
+      let set = this._deletedCloudIds.get(colecao);
+      if (!set) {
+        set = new Set();
+        this._deletedCloudIds.set(colecao, set);
+      }
+      set.add(String(id));
+    }
+
+    _agendarSnapshotAutomaticoLocal() {
+      const agoraMs = Date.now();
+      if (this._ultimoAutoBackupMs && (agoraMs - this._ultimoAutoBackupMs < 10 * 60 * 1000)) {
+        return;
+      }
+      if (!Array.isArray(this.data?.empresas) || this.data.empresas.length < 10) {
+        return;
+      }
+      this._ultimoAutoBackupMs = agoraMs;
+      this.salvarPontoRestauracaoAutomatico('Snapshot Automático').catch(() => {});
+    }
+
+    async salvarPontoRestauracaoAutomatico(motivo = 'Snapshot Automático') {
+      if (!this.data || !Array.isArray(this.data.empresas) || this.data.empresas.length === 0) return false;
+      const dbIdb = await this._abrirCofreIndexedDB();
+      if (!dbIdb || !dbIdb.objectStoreNames.contains('auto_backups')) return false;
+      const agora = new Date();
+      const idSnap = `bkp-${agora.getTime()}`;
+      const registro = {
+        id: idSnap,
+        criado_em: agora.toISOString(),
+        motivo,
+        resumo: {
+          empresas: (this.data.empresas || []).length,
+          tarefas: (this.data.tarefas || []).length,
+          guias: (this.data.guias_impostos || []).length,
+          cnds: (this.data.cnds || []).length,
+          honorarios: (this.data.honorarios || []).length
+        },
+        dados_json: JSON.stringify(this.data)
+      };
+      return new Promise((resolve) => {
+        try {
+          const tx = dbIdb.transaction('auto_backups', 'readwrite');
+          const store = tx.objectStore('auto_backups');
+          store.put(registro);
+          const reqKeys = store.getAllKeys();
+          reqKeys.onsuccess = () => {
+            const keys = (reqKeys.result || []).map(String).sort();
+            while (keys.length > 8) {
+              const oldKey = keys.shift();
+              store.delete(oldKey);
+            }
+          };
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch (_) {
+          resolve(false);
+        }
+      });
+    }
+
+    async listarPontosRestauracaoAutomaticos() {
+      const dbIdb = await this._abrirCofreIndexedDB();
+      if (!dbIdb || !dbIdb.objectStoreNames.contains('auto_backups')) return [];
+      return new Promise((resolve) => {
+        try {
+          const tx = dbIdb.transaction('auto_backups', 'readonly');
+          const req = tx.objectStore('auto_backups').getAll();
+          req.onsuccess = () => {
+            const lista = Array.isArray(req.result) ? req.result : [];
+            lista.sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')));
+            resolve(lista.map(it => ({
+              id: it.id,
+              criado_em: it.criado_em,
+              motivo: it.motivo,
+              resumo: it.resumo || {}
+            })));
+          };
+          req.onerror = () => resolve([]);
+        } catch (_) {
+          resolve([]);
+        }
+      });
+    }
+
+    async obterPontoRestauracaoAutomatico(snapId) {
+      if (!snapId) return null;
+      const dbIdb = await this._abrirCofreIndexedDB();
+      if (!dbIdb || !dbIdb.objectStoreNames.contains('auto_backups')) return null;
+      return new Promise((resolve) => {
+        try {
+          const tx = dbIdb.transaction('auto_backups', 'readonly');
+          const req = tx.objectStore('auto_backups').get(snapId);
+          req.onsuccess = () => {
+            const r = req.result;
+            if (!r || !r.dados_json) return resolve(null);
+            try {
+              resolve({ ...r, dados: JSON.parse(r.dados_json) });
+            } catch (_) {
+              resolve(null);
+            }
+          };
+          req.onerror = () => resolve(null);
+        } catch (_) {
+          resolve(null);
+        }
+      });
     }
 
     restaurarBackupJSON(backupData) {
@@ -1165,7 +1280,13 @@
       }
       this.garantirAlvarasPadrao(novoBanco);
       this.data = novoBanco;
+      this._forcarSubstituicaoCompletaNuvem = true;
       this.saveLocalData();
+      if (this.supabaseConnected && this.supabase) {
+        this.pushToSupabase({ forceManual: true, forceEmpty: true }).finally(() => {
+          this._forcarSubstituicaoCompletaNuvem = false;
+        });
+      }
       this.registrarLog('RESTAURACAO_BACKUP', 'Sistema', `Backup JSON restaurado (${novoBanco.empresas.length} empresas).`);
       return { empresas: novoBanco.empresas.length, tarefas: novoBanco.tarefas.length, cnds: novoBanco.cnds.length };
     }
@@ -2022,6 +2143,10 @@
           // Não baixa os PDFs pesados do Cofre na abertura do sistema (são carregados sob demanda ao clicar em Ver/Baixar PDF)
           query = query.neq('colecao', 'arquivos_cofre');
         }
+        // Ordenação determinística obrigatória para impedir salto ou truncamento de páginas no PostgreSQL
+        if (typeof query.order === 'function') {
+          query = query.order('colecao', { ascending: true }).order('id', { ascending: true });
+        }
         if (typeof query.range === 'function') {
           query = query.range(offset, offset + pageSize - 1);
         }
@@ -2035,6 +2160,56 @@
         offset += pageSize;
       }
       return todos;
+    }
+
+    _mesclarColecaoNuvemSegura(col, listaNuvem = [], listaLocal = []) {
+      const arrNuvem = Array.isArray(listaNuvem) ? listaNuvem : [];
+      const arrLocal = Array.isArray(listaLocal) ? listaLocal : [];
+      let curouDadosNuvem = false;
+
+      if (arrLocal.length === 0) {
+        return { lista: arrNuvem, curouDadosNuvem: false };
+      }
+
+      const excluidosExplicitos = (this._deletedCloudIds && this._deletedCloudIds.get(col)) || new Set();
+      const localPorId = new Map();
+      for (let i = 0; i < arrLocal.length; i++) {
+        const it = arrLocal[i];
+        if (it && it.id) localPorId.set(String(it.id), it);
+      }
+
+      const ehPlaceholderRecup = (emp) => Boolean(
+        emp && emp._recuperado_aguardando_nome &&
+        /^(Empregador Doméstico PF|Empresa em Onboarding|Cliente Cadastrado)\b/.test(String(emp.razao_social || ''))
+      );
+
+      const resultado = arrNuvem
+        .filter(itemNuvem => itemNuvem && itemNuvem.id && !excluidosExplicitos.has(String(itemNuvem.id)))
+        .map(itemNuvem => {
+          const idStr = String(itemNuvem.id);
+          const itemLocal = localPorId.get(idStr);
+          if (!itemLocal) return itemNuvem;
+
+          // Auto-cura: se outro computador do escritório tiver o nome/CPF/CNPJ real de um cadastro recuperado, restaura automaticamente
+          if (col === 'empresas' && ehPlaceholderRecup(itemNuvem) && !ehPlaceholderRecup(itemLocal) && itemLocal.razao_social) {
+            const curado = { ...itemNuvem, ...itemLocal };
+            delete curado._recuperado_aguardando_nome;
+            curouDadosNuvem = true;
+            return curado;
+          }
+
+          // Auto-cura: se colaborador já tinha senha própria cadastrada localmente, preserva sobre senha temporária de recuperação
+          if (col === 'profiles' && itemNuvem._senha_temporaria_recuperada && itemLocal.senha_hash && !itemLocal._senha_temporaria_recuperada) {
+            const curado = { ...itemNuvem, senha_hash: itemLocal.senha_hash, senha_salt: itemLocal.senha_salt };
+            delete curado._senha_temporaria_recuperada;
+            curouDadosNuvem = true;
+            return curado;
+          }
+
+          return itemNuvem;
+        });
+
+      return { lista: resultado, curouDadosNuvem };
     }
 
     _registrarSnapshotNuvem() {
@@ -2060,7 +2235,7 @@
     }
 
     _agendarSyncNuvem() {
-      if (!this._initialCloudSyncDone) return;
+      if (!this._initialCloudSyncDone || !this._cloudBaselineReady) return;
       if (this._cloudSyncTimer) clearTimeout(this._cloudSyncTimer);
       this.statusNuvem = 'SINCRONIZANDO';
       this._cloudSyncTimer = setTimeout(() => {
@@ -2074,9 +2249,12 @@
         this.statusNuvem = 'LOCAL';
         return { ok: false, message: 'Supabase não conectado.' };
       }
-      // Evita que um navegador recém-aberto (ainda sem pull inicial) sobrescreva a nuvem com arrays vazios
-      if (!this._initialCloudSyncDone && !opts.forceManual) {
-        await this.syncFromSupabase();
+      // Bloqueio rígido anti-perda: jamais envia dados automáticos antes de concluir ao menos 1 pull íntegro da nuvem
+      if (!this._initialCloudSyncDone && !opts.forceManual && !opts.forceEmpty) {
+        const pullRes = await this.syncFromSupabase();
+        if (!pullRes || !pullRes.ok || !this._initialCloudSyncDone) {
+          return { ok: false, message: 'Sincronização inicial pendente — envio automático bloqueado para proteger os dados da nuvem.' };
+        }
       }
       try {
         this.statusNuvem = 'SINCRONIZANDO';
@@ -2086,8 +2264,9 @@
 
         for (const col of colecoes) {
           const arr = Array.isArray(this.data[col]) ? this.data[col] : [];
+          const excluidosExplicitos = (this._deletedCloudIds && this._deletedCloudIds.get(col)) || new Set();
+
           if (usarDelta) {
-            const prevIds = this._cloudColIds.get(col) || new Set();
             const currentIds = new Set();
             const alterados = [];
             for (let i = 0; i < arr.length; i++) {
@@ -2119,11 +2298,9 @@
               alterados.forEach(a => this._cloudRowHashes.set(a.chave, a.jsonAtual));
             }
 
-            if (arr.length > 0) {
-              const idsRemovidos = [];
-              prevIds.forEach(oldId => {
-                if (!currentIds.has(oldId)) idsRemovidos.push(oldId);
-              });
+            // SOMENTE apaga na nuvem registros que o usuário excluiu explicitamente (tombstones)
+            if (excluidosExplicitos.size > 0) {
+              const idsRemovidos = Array.from(excluidosExplicitos).filter(id => !currentIds.has(id));
               for (let j = 0; j < idsRemovidos.length; j += 100) {
                 const delChunk = idsRemovidos.slice(j, j + 100);
                 await this.supabase
@@ -2132,7 +2309,10 @@
                   .eq('colecao', col)
                   .in('id', delChunk);
               }
-              idsRemovidos.forEach(oldId => this._cloudRowHashes.delete(`${col}:${oldId}`));
+              idsRemovidos.forEach(oldId => {
+                this._cloudRowHashes.delete(`${col}:${oldId}`);
+                excluidosExplicitos.delete(oldId);
+              });
             }
             this._cloudColIds.set(col, currentIds);
             continue;
@@ -2156,8 +2336,9 @@
             if (error) throw new Error(error.message || 'Erro ao enviar ' + col);
           }
 
-          // Proteção anti-perda: nunca apaga uma coleção inteira na nuvem se localmente estiver zerada (exceto se forceEmpty explícito)
-          if (rows.length > 0 || opts.forceEmpty === true) {
+          // Proteção anti-perda definitiva: NUNCA apaga registros da nuvem por ausência local,
+          // exceto em restauração explícita de backup pelo Admin (forceEmpty === true) ou exclusão explícita (tombstones)
+          if (opts.forceEmpty === true || this._forcarSubstituicaoCompletaNuvem === true) {
             const existentes = await this._fetchPaginatedRegistros('id', col);
             if (Array.isArray(existentes) && existentes.length > 0) {
               const idsLocais = new Set(rows.map(r => r.id));
@@ -2171,6 +2352,18 @@
                   .in('id', delChunk);
               }
             }
+          } else if (excluidosExplicitos.size > 0) {
+            const idsLocais = new Set(rows.map(r => r.id));
+            const idsRemover = Array.from(excluidosExplicitos).filter(id => !idsLocais.has(id));
+            for (let j = 0; j < idsRemover.length; j += 100) {
+              const delChunk = idsRemover.slice(j, j + 100);
+              await this.supabase
+                .from('zgestor_registros')
+                .delete()
+                .eq('colecao', col)
+                .in('id', delChunk);
+            }
+            excluidosExplicitos.clear();
           }
         }
 
@@ -2196,7 +2389,7 @@
         this.statusNuvem = 'CONECTADO';
         this.ultimaSyncNuvem = agora;
         this.ultimoErroNuvem = '';
-        return { ok: true, message: 'Todos os dados foram sincronizados com a nuvem Supabase!' };
+        return { ok: true, message: 'Todos os dados foram sincronizados com segurança na nuvem Supabase!' };
       } catch (e) {
         this.statusNuvem = 'ERRO';
         this.ultimoErroNuvem = e.message || String(e);
@@ -2216,6 +2409,12 @@
       }
       this._syncInFlight = (async () => {
         try {
+          // Salva ponto de restauração local antes de mesclar caso este navegador já possua dados relevantes
+          if (!this._preSyncBackupSaved && Array.isArray(this.data?.empresas) && this.data.empresas.length >= 10) {
+            this._preSyncBackupSaved = true;
+            await this.salvarPontoRestauracaoAutomatico('Backup Pré-Sincronização Nuvem').catch(() => {});
+          }
+
           const registros = await this._fetchPaginatedRegistros('colecao, id, dados');
 
           const { data: configs, error: errCfg } = await this.supabase
@@ -2252,11 +2451,15 @@
             });
             this._getCloudCollections().forEach(col => {
               if (Array.isArray(porColecao[col])) {
-                const novoJson = JSON.stringify(porColecao[col]);
+                const { lista: mesclada, curouDadosNuvem } = this._mesclarColecaoNuvemSegura(col, porColecao[col], this.data[col]);
+                const novoJson = JSON.stringify(mesclada);
                 const atualJson = JSON.stringify(this.data[col] || []);
                 if (novoJson !== atualJson) {
-                  this.data[col] = porColecao[col];
+                  this.data[col] = mesclada;
                   atualizado = true;
+                }
+                if (curouDadosNuvem) {
+                  precisaSubirReconciliacao = true;
                 }
               }
             });
@@ -2272,10 +2475,7 @@
 
           this._initialCloudSyncDone = true;
           this._honMutVersion = (this._honMutVersion || 0) + 1;
-
-          if (!precisaSubirReconciliacao) {
-            this._registrarSnapshotNuvem();
-          }
+          this._registrarSnapshotNuvem();
 
           if (atualizado) {
             this._suppressCloudSync = !precisaSubirReconciliacao;
@@ -2292,7 +2492,7 @@
               : 'Conectado ao Supabase! Todos os registros estão sincronizados.'
           };
         } catch (e) {
-          this._initialCloudSyncDone = true;
+          // NUNCA marca _initialCloudSyncDone = true em caso de erro de rede, impedindo sobrescrita acidental da nuvem!
           this.statusNuvem = 'ERRO';
           this.ultimoErroNuvem = e.message || String(e);
           return { ok: false, message: 'Falha ao sincronizar com Supabase: ' + e.message };
@@ -2953,7 +3153,11 @@
       if (!Array.isArray(this.data.guias_impostos)) return;
       this.data.guias_impostos = this.data.guias_impostos.filter(g => {
         const aindaPendente = g.status_envio === 'PENDENTE_GERACAO' || g.status_envio === 'GERADA_AGUARDANDO_ENVIO' || g.status_envio === 'PENDENTE_ENVIO';
-        return !(predicado(g) && aindaPendente);
+        if (predicado(g) && aindaPendente) {
+          this._marcarExcluidoNuvem('guias_impostos', g.id);
+          return false;
+        }
+        return true;
       });
     }
 
@@ -3199,6 +3403,7 @@
         throw new Error(`Política de Segurança (RLS): Sem permissão para excluir tarefa do setor ${tarefa.departamento}.`);
       }
       this.data.tarefas = this.data.tarefas.filter(t => t.id !== tarefaId);
+      this._marcarExcluidoNuvem('tarefas', tarefaId);
       this.saveLocalData();
       this.registrarLog('EXCLUSAO_TAREFA', 'Tarefas', `Tarefa "${tarefa.titulo}" excluída.`);
       return true;
@@ -3444,7 +3649,11 @@
         this.data.guias_impostos = this.data.guias_impostos.filter(g => {
           const ehIcmsEmpComp = g.empresa_id === t.empresa_id && g.competencia === t.competencia && (g.tipo_guia || '').toLowerCase().includes('icms');
           const pendente = !['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'].includes(g.status_envio);
-          return !(ehIcmsEmpComp && pendente);
+          if (ehIcmsEmpComp && pendente) {
+            this._marcarExcluidoNuvem('guias_impostos', g.id);
+            return false;
+          }
+          return true;
         });
       } else {
         this.data.guias_impostos = [];
@@ -3965,6 +4174,7 @@
 
     excluirGuiaImposto(guiaId) {
       this.data.guias_impostos = (this.data.guias_impostos || []).filter(g => g.id !== guiaId);
+      this._marcarExcluidoNuvem('guias_impostos', guiaId);
       this.saveLocalData();
     }
 
@@ -4140,6 +4350,7 @@
       });
 
       this.data.protocolos_guias = (this.data.protocolos_guias || []).filter(p => p.id !== protocoloId);
+      this._marcarExcluidoNuvem('protocolos_guias', protocoloId);
       this.saveLocalData();
       this.registrarLog('EXCLUSAO_PROTOCOLO', 'Guias/Protocolos', `Protocolo ${prot.codigo} excluído do arquivo.`);
       return prot;
@@ -4224,10 +4435,19 @@
     excluirParcelamento(parcId) {
       const parc = this.data.parcelamentos.find(p => p.id === parcId);
       if (!parc) return false;
+      this._marcarExcluidoNuvem('parcelamentos', parcId);
+      (this.data.parcelamento_guias || []).forEach(g => {
+        if (g && g.parcelamento_id === parcId) this._marcarExcluidoNuvem('parcelamento_guias', g.id);
+      });
       this.data.parcelamentos = this.data.parcelamentos.filter(p => p.id !== parcId);
       this.data.parcelamento_guias = this.data.parcelamento_guias.filter(g => g.parcelamento_id !== parcId);
       const enviados = ['IMPRESSA_OFFICE_BOY', 'ENVIADA_WHATSAPP', 'ENVIADA_EMAIL', 'ARQUIVADA_ASSINADA', 'ENVIADA_CLIENTE', 'VISUALIZADA_CLIENTE'];
       if (Array.isArray(this.data.guias_impostos)) {
+        this.data.guias_impostos.forEach(gi => {
+          if (gi && gi.parcelamento_id === parcId && !enviados.includes(gi.status_envio)) {
+            this._marcarExcluidoNuvem('guias_impostos', gi.id);
+          }
+        });
         this.data.guias_impostos = this.data.guias_impostos.filter(gi => !(gi.parcelamento_id === parcId && !enviados.includes(gi.status_envio)));
       }
       this.saveLocalData();
@@ -4617,6 +4837,7 @@
         this.removerDocumentoDoCofre(alvo.arquivo_cofre_id).catch(() => {});
       }
       this.data.cnds = (this.data.cnds || []).filter(c => c.id !== cndId);
+      this._marcarExcluidoNuvem('cnds', cndId);
       this.saveLocalData();
     }
 
@@ -4828,6 +5049,7 @@
         this.removerDocumentoDoCofre(alvo.anexo_cofre_id).catch(() => {});
       }
       this.data.alvaras = this.data.alvaras.filter(a => a.id !== alvaraId);
+      this._marcarExcluidoNuvem('alvaras', alvaraId);
       this.saveLocalData();
       if (alvo) {
         this.registrarLog('EXCLUIR_ALVARA', 'Alvarás e Licenças', `Alvará "${alvo.nome}" removido do sistema.`);
@@ -4971,6 +5193,7 @@
         throw new Error('Acesso não autorizado para exclusão de arquivos.');
       }
       this.data.portal_arquivos = (this.data.portal_arquivos || []).filter(a => a.id !== id);
+      this._marcarExcluidoNuvem('portal_arquivos', id);
       this.saveLocalData();
     }
 
@@ -5250,6 +5473,7 @@
         throw new Error('Acesso não autorizado para exclusão de solicitação de outra empresa.');
       }
       this.data.central_cliente_registros = (this.data.central_cliente_registros || []).filter(r => r.id !== id);
+      this._marcarExcluidoNuvem('central_cliente_registros', id);
       this.saveLocalData();
     }
 
@@ -5407,6 +5631,7 @@
         if (temPag) break;
         const proximo = this.data.honorarios.find(h => h.avulso_pai_id === alvo.id && h.avulso_transportado);
         this.data.honorarios = this.data.honorarios.filter(h => h.id !== alvo.id);
+        this._marcarExcluidoNuvem('honorarios', alvo.id);
         atualId = proximo ? proximo.id : null;
       }
     }
@@ -5686,6 +5911,7 @@
       if (!pag) return null;
       const honorarioId = pag.honorario_id;
       this.data.honorario_pagamentos = this.data.honorario_pagamentos.filter(p => p.id !== pagamentoId);
+      this._marcarExcluidoNuvem('honorario_pagamentos', pagamentoId);
       this._honMutVersion = (this._honMutVersion || 0) + 1;
       const atualizado = this.recalcularHonorario(honorarioId);
       this.registrarLog('ESTORNO_PAGAMENTO_HONORARIO', 'Honorários', `Estornado lançamento de R$ ${pag.valor.toFixed(2)}. Novo saldo em aberto: R$ ${atualizado.saldo_aberto.toFixed(2)}.`);
@@ -5943,6 +6169,7 @@
         this._removerAvulsosTransportadosSemBaixa(filhoDireto.id);
       }
       this.data.honorarios = this.data.honorarios.filter(h => h.id !== honorarioId);
+      this._marcarExcluidoNuvem('honorarios', honorarioId);
       this._honMutVersion = (this._honMutVersion || 0) + 1;
       this.saveLocalData();
       this.registrarLog('EXCLUSAO_HONORARIO', 'Honorários', `Lançamento de honorário (${hon.descricao_cobranca || 'HONORÁRIO MENSAL'} - ${hon.competencia}) excluído.`);
@@ -6045,9 +6272,13 @@
       const emailLimpo = dados.email.trim().toLowerCase();
 
       // Remove/substitui automaticamente convites anteriores ainda pendentes ou revogados do mesmo e-mail para evitar duplicidade
-      this.data.convites = this.data.convites.filter(
-        c => !(c && c.email && c.email.toLowerCase() === emailLimpo && (c.status === 'PENDENTE' || c.status === 'REVOGADO'))
-      );
+      this.data.convites = this.data.convites.filter(c => {
+        if (c && c.email && c.email.toLowerCase() === emailLimpo && (c.status === 'PENDENTE' || c.status === 'REVOGADO')) {
+          this._marcarExcluidoNuvem('convites', c.id);
+          return false;
+        }
+        return true;
+      });
 
       const user = this.getCurrentUser();
       const rawToken = gerarTokenCriptografico(dados.tipo === 'CLIENTE' ? 'tk_cli_' : 'tk_colab_');
@@ -6237,8 +6468,8 @@
           .from('zgestor_registros')
           .upsert(rows, { onConflict: 'colecao,id' });
         if (!error) {
-          this._initialCloudSyncDone = true;
-          this._registrarSnapshotNuvem();
+          // Sincroniza a base completa da nuvem após ativar a conta (sem gravar baseline parcial vazia!)
+          this.syncFromSupabase().catch(() => {});
         }
         return !error;
       } catch (_) {

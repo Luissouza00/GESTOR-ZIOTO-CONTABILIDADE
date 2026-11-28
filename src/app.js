@@ -1053,7 +1053,7 @@ window.ZGestorApp = {
     const toggleBtnEl = document.getElementById('sidebar-toggle-btn');
     const versionEl = document.getElementById('sidebar-system-version');
     const versionCollapsedEl = document.getElementById('sidebar-collapsed-version');
-    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.4';
+    const versaoAtual = window.ZGESTOR_VERSION || 'v1.5.5';
 
     if (versionEl) versionEl.textContent = versaoAtual;
     if (versionCollapsedEl) {
@@ -1501,7 +1501,7 @@ window.ZGestorApp = {
             <span>Tela: ${this.obterRotuloEscalaVisualizacao()}</span>
           </button>
           <span class="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-mono font-bold text-[10.5px]" title="Versão ativa do ZGestor">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.4'}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ${window.ZGESTOR_VERSION || 'v1.5.5'}
           </span>
         </div>
 
@@ -8254,6 +8254,98 @@ window.ZGestorApp = {
       e.target.value = '';
     };
     reader.readAsText(file);
+  },
+
+  async abrirModalBackupsAutomaticos() {
+    const db = window.zgestorDB;
+    if (!db.isAdmin()) {
+      this.showToast('Apenas Administradores podem consultar os pontos de restauração.', 'error');
+      return;
+    }
+    const lista = await db.listarPontosRestauracaoAutomaticos();
+    const modal = document.getElementById('modal-root');
+    if (!modal) return;
+    modal.innerHTML = `
+      <div class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full p-5 text-xs space-y-4 max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div>
+              <h3 class="text-sm font-extrabold text-slate-900">🛡️ Pontos de Restauração Automáticos (Cofre Local)</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">O sistema grava snapshots automáticos periódicos neste computador contra imprevistos.</p>
+            </div>
+            <button type="button" onclick="ZGestorApp.closeModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold cursor-pointer">×</button>
+          </div>
+          ${lista.length === 0 ? `
+            <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-center">
+              Nenhum ponto automático gravado ainda neste navegador. Clique abaixo para criar um ponto agora.
+            </div>
+          ` : `
+            <div class="space-y-2">
+              ${lista.map(it => {
+                const dtFmt = it.criado_em ? new Date(it.criado_em).toLocaleString('pt-BR') : it.id;
+                const r = it.resumo || {};
+                return `
+                  <div class="p-3 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div class="font-bold text-slate-900">${escapeHtml(dtFmt)} — <span class="text-teal-700">${escapeHtml(it.motivo || 'Snapshot')}</span></div>
+                      <div class="text-[11px] text-slate-600 mt-0.5">
+                        ${r.empresas || 0} empresas • ${r.tarefas || 0} tarefas • ${r.guias || 0} guias • ${r.cnds || 0} CNDs • ${r.honorarios || 0} honorários
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <button type="button" onclick="ZGestorApp.baixarPontoAutomaticoJSON('${escapeHtml(it.id)}')" class="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold cursor-pointer">
+                        ⬇ Baixar .JSON
+                      </button>
+                      <button type="button" onclick="ZGestorApp.restaurarPontoAutomatico('${escapeHtml(it.id)}')" class="px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold cursor-pointer">
+                        Restaurar
+                      </button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+          <div class="flex items-center justify-between pt-3 border-t border-slate-200">
+            <button type="button" onclick="window.zgestorDB.salvarPontoRestauracaoAutomatico('Ponto Manual de Segurança').then(()=>{ZGestorApp.showToast('Ponto de segurança gravado!','success');ZGestorApp.abrirModalBackupsAutomaticos();})" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer">
+              + Gravar Ponto Agora
+            </button>
+            <button type="button" onclick="ZGestorApp.closeModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer">
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  async baixarPontoAutomaticoJSON(snapId) {
+    const snap = await window.zgestorDB.obterPontoRestauracaoAutomatico(snapId);
+    if (!snap || !snap.dados_json) {
+      this.showToast('Ponto de restauração não encontrado.', 'error');
+      return;
+    }
+    const blob = new Blob([snap.dados_json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `zgestor_ponto_${snapId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  async restaurarPontoAutomatico(snapId) {
+    const snap = await window.zgestorDB.obterPontoRestauracaoAutomatico(snapId);
+    if (!snap || !snap.dados) {
+      this.showToast('Ponto de restauração não encontrado.', 'error');
+      return;
+    }
+    if (!confirm(`Confirmar restauração do ponto de ${new Date(snap.criado_em).toLocaleString('pt-BR')} (${(snap.dados.empresas || []).length} empresas)?`)) {
+      return;
+    }
+    const res = window.zgestorDB.restaurarBackupJSON(snap.dados);
+    this.closeModal();
+    this.showToast(`Ponto restaurado com sucesso (${res.empresas} empresas, ${res.tarefas} tarefas, ${res.cnds} CNDs)!`, 'success');
+    this.renderAll();
   },
 
   baixarModeloPlanilhaEmpresas() {
